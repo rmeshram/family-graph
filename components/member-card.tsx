@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { MapPin, BookOpen } from 'lucide-react'
+import { MapPin } from 'lucide-react'
 
 interface MemberCardProps {
   member: FamilyMember
@@ -112,19 +112,18 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
               <Badge 
                 variant="secondary" 
                 className={cn(
-                  'text-xs',
+                  'text-xs capitalize',
                   isSelected 
                     ? 'bg-primary/20 text-primary border-primary/30'
                     : 'bg-muted/50'
                 )}
               >
-                {member.relationship}
+                {member.relationship?.replace(/-/g, ' ')}
               </Badge>
             )}
             {hasStories && (
-              <Badge variant="outline" className="text-xs gap-1 bg-accent/10 text-accent border-accent/30">
-                <BookOpen className="h-3 w-3" />
-                {member.stories!.length}
+              <Badge variant="outline" className="text-xs bg-accent/10 text-accent border-accent/30">
+                {member.stories!.length} {member.stories!.length === 1 ? 'story' : 'stories'}
               </Badge>
             )}
           </div>

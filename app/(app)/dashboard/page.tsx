@@ -512,7 +512,7 @@ export default function FamilyGraphApp() {
 
           {/* Member list (graph mode, xl+ only) */}
           {viewMode === 'graph' && (
-            <aside className="hidden w-56 shrink-0 border-r border-border/50 xl:block">
+            <aside className="hidden w-72 shrink-0 border-r border-border/50 xl:block">
               <MemberListSidebar members={members} selectedMemberId={selectedMemberId} onSelectMember={handleSelectMember} />
             </aside>
           )}

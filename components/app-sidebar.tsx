@@ -159,8 +159,8 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold truncate">{displayName}</p>
-            <p className="text-[10px] text-muted-foreground truncate">
-              {profile?.role === 'admin' ? 'Admin' : profile?.role ?? 'Member'}
+            <p className="text-[10px] text-muted-foreground truncate capitalize">
+              {profile?.role ?? 'Member'}
             </p>
           </div>
           {profile?.role === 'admin' && (
