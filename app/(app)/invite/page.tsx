@@ -122,6 +122,19 @@ export default function InvitePage() {
     }
   }
 
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(inviteUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+    toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' })
+  }
+
+  const handleShareWhatsApp = () => {
+    setWhatsappCopied(true)
+    setTimeout(() => setWhatsappCopied(false), 2000)
+    window.open(whatsappUrl, '_blank')
+  }
+
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
