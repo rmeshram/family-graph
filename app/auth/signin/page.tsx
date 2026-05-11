@@ -38,7 +38,10 @@ export default function SignInPage() {
     setIsLoading(true)
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: `${location.origin}/auth/callback`,
+      },
     })
     setIsLoading(false)
     if (error) { setError(error.message); return }
