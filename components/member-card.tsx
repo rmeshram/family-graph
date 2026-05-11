@@ -1,0 +1,148 @@
+'use client'
+
+import { FamilyMember } from '@/lib/types'
+import { Card } from '@/components/ui/card'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import { MapPin, BookOpen } from 'lucide-react'
+
+interface MemberCardProps {
+  member: FamilyMember
+  isSelected: boolean
+  onClick: () => void
+  compact?: boolean
+}
+
+export function MemberCard({ member, isSelected, onClick, compact = false }: MemberCardProps) {
+  const initials = member.name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+
+  const lifespan = member.deathYear
+    ? `${member.birthYear} - ${member.deathYear}`
+    : member.birthYear
+      ? `Born ${member.birthYear}`
+      : ''
+
+  const hasStories = member.stories && member.stories.length > 0
+
+  if (compact) {
+    return (
+      <button
+        onClick={onClick}
+        className={cn(
+          'w-full flex items-center gap-3 p-2 rounded-lg transition-all duration-200',
+          isSelected
+            ? 'bg-primary/20 ring-1 ring-primary'
+            : 'hover:bg-muted/50'
+        )}
+      >
+        <Avatar className="h-8 w-8 border border-border">
+          <AvatarFallback className={cn(
+            'text-xs font-semibold',
+            isSelected 
+              ? 'bg-gradient-to-br from-primary to-secondary text-primary-foreground'
+              : 'bg-muted text-foreground'
+          )}>
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0 text-left">
+          <p className={cn(
+            'text-sm font-medium truncate',
+            isSelected ? 'text-primary' : 'text-foreground'
+          )}>
+            {member.name}
+          </p>
+          {lifespan && (
+            <p className="text-xs text-muted-foreground">{lifespan}</p>
+          )}
+        </div>
+      </button>
+    )
+  }
+
+  return (
+    <Card
+      onClick={onClick}
+      className={cn(
+        'group cursor-pointer p-4 transition-all duration-200 border-border/50',
+        isSelected
+          ? 'ring-1 ring-primary bg-primary/10 border-primary/30'
+          : 'hover:bg-muted/30 hover:border-border'
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="relative">
+          <Avatar className={cn(
+            'h-12 w-12 border-2 transition-all duration-200',
+            isSelected 
+              ? 'border-primary' 
+              : 'border-border/50 group-hover:border-primary/50'
+          )}>
+            <AvatarFallback className={cn(
+              'font-semibold transition-colors',
+              isSelected 
+                ? 'bg-gradient-to-br from-primary to-secondary text-primary-foreground'
+                : 'bg-muted text-foreground group-hover:bg-primary/20'
+            )}>
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          {member.deathYear && (
+            <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-muted border border-card flex items-center justify-center">
+              <span className="text-[8px] text-muted-foreground">+</span>
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className={cn(
+              'font-semibold truncate transition-colors',
+              isSelected ? 'text-primary' : 'text-foreground'
+            )}>
+              {member.name}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {member.relationship && (
+              <Badge 
+                variant="secondary" 
+                className={cn(
+                  'text-xs',
+                  isSelected 
+                    ? 'bg-primary/20 text-primary border-primary/30'
+                    : 'bg-muted/50'
+                )}
+              >
+                {member.relationship}
+              </Badge>
+            )}
+            {hasStories && (
+              <Badge variant="outline" className="text-xs gap-1 bg-accent/10 text-accent border-accent/30">
+                <BookOpen className="h-3 w-3" />
+                {member.stories!.length}
+              </Badge>
+            )}
+          </div>
+          {(lifespan || member.birthPlace) && (
+            <div className="mt-2 space-y-0.5">
+              {lifespan && (
+                <p className="text-xs text-muted-foreground">{lifespan}</p>
+              )}
+              {member.birthPlace && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  {member.birthPlace}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}

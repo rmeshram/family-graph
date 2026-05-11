@@ -1,0 +1,142 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* ── Warm Indigo + Saffron — Dark App Theme ── */
+  --background: #0C0A09;
+  --foreground: #F5F3F0;
+  --card: #1C1917;
+  --card-foreground: #F5F3F0;
+  --popover: #292524;
+  --popover-foreground: #F5F3F0;
+  --primary: #6366F1;
+  --primary-foreground: #FFFFFF;
+  --secondary: #A78BFA;
+  --secondary-foreground: #FFFFFF;
+  --muted: #292524;
+  --muted-foreground: #A8A29E;
+  --accent: #F59E0B;
+  --accent-foreground: #0C0A09;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(245, 243, 240, 0.08);
+  --input: rgba(245, 243, 240, 0.10);
+  --ring: #6366F1;
+  --chart-1: #6366F1;
+  --chart-2: #A78BFA;
+  --chart-3: #34D399;
+  --chart-4: #F59E0B;
+  --chart-5: #FB7185;
+  --radius: 0.75rem;
+  --sidebar: #161412;
+  --sidebar-foreground: #F5F3F0;
+  --sidebar-primary: #6366F1;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #292524;
+  --sidebar-accent-foreground: #F5F3F0;
+  --sidebar-border: rgba(245, 243, 240, 0.08);
+  --sidebar-ring: #6366F1;
+
+  /* Graph-specific */
+  --graph-node-primary: #6366F1;
+  --graph-node-secondary: #A78BFA;
+  --graph-connection: rgba(245, 243, 240, 0.20);
+  --graph-highlight: #F59E0B;
+
+  /* Status */
+  --success: #34D399;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --info: #38BDF8;
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ── Warm Indigo + Saffron — Light Marketing Theme ── */
+.light-theme {
+  --background: #FAFAF7;
+  --foreground: #111827;
+  --card: #FFFFFF;
+  --card-foreground: #111827;
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
+  --primary: #4338CA;
+  --primary-foreground: #FFFFFF;
+  --secondary: #7C3AED;
+  --secondary-foreground: #FFFFFF;
+  --muted: #F4F3EF;
+  --muted-foreground: #6B7280;
+  --accent: #D97706;
+  --accent-foreground: #FFFFFF;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --border: #E5E3DE;
+  --input: #E5E3DE;
+  --ring: #4338CA;
+  --success: #16A34A;
+  --warning: #D97706;
+  --error: #DC2626;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #111827;
+  --sidebar-primary: #4338CA;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F4F3EF;
+  --sidebar-accent-foreground: #111827;
+  --sidebar-border: #E5E3DE;
+  --sidebar-ring: #4338CA;
+
+  color-scheme: light;
+  background-color: var(--background);
+  color: var(--foreground);
+}

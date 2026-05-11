@@ -1,0 +1,342 @@
+"use client"
+
+import { useState } from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Input } from "@/components/ui/input"
+import { sampleFamilyMembers } from "@/lib/sample-data"
+import { useAuth } from "@/hooks/use-auth"
+import { useMembers } from "@/hooks/use-members"
+import { useEvents } from "@/hooks/use-events"
+import {
+  ArrowLeft, Plus, Calendar, MapPin, Users, X,
+  PartyPopper, Church, Home, Coffee, ChevronRight, Clock,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+
+type EventType = "reunion" | "wedding" | "puja" | "birthday" | "funeral" | "other"
+type RSVPStatus = "going" | "not-going" | "maybe" | "pending"
+
+interface FamilyEventItem {
+  id: string
+  title: string
+  type: EventType
+  date: string
+  time?: string
+  location: string
+  description?: string
+  organizer: string
+  invitedMemberIds: string[]
+  rsvps: Record<string, RSVPStatus>
+}
+
+const EVENT_TYPE_ICONS: Record<EventType, React.ElementType> = {
+  reunion: Home,
+  wedding: Church,
+  puja: PartyPopper,
+  birthday: PartyPopper,
+  funeral: Coffee,
+  other: Calendar,
+}
+
+const EVENT_TYPE_COLORS: Record<EventType, string> = {
+  reunion: "bg-blue-500/10 text-blue-600 border-blue-200",
+  wedding: "bg-pink-500/10 text-pink-600 border-pink-200",
+  puja: "bg-orange-500/10 text-orange-600 border-orange-200",
+  birthday: "bg-purple-500/10 text-purple-600 border-purple-200",
+  funeral: "bg-slate-500/10 text-slate-600 border-slate-200",
+  other: "bg-gray-500/10 text-gray-600 border-gray-200",
+}
+
+const SAMPLE_EVENTS: FamilyEventItem[] = [
+  {
+    id: "e1",
+    title: "Annual Sharma Family Reunion 2026",
+    type: "reunion",
+    date: "2026-06-15",
+    time: "11:00 AM",
+    location: "Suresh Dada's Home, Nagpur",
+    description: "Annual gathering of the entire Sharma-Mishra family. Lunch, games, and family tree update session.",
+    organizer: "g2-1",
+    invitedMemberIds: sampleFamilyMembers.map(m => m.id),
+    rsvps: { "g3-1": "going", "g2-1": "going", "g2-2": "going", "g1-1": "going", "g1-2": "going", "g3-2": "maybe", "g2-3": "pending" },
+  },
+  {
+    id: "e2",
+    title: "Karan & Ananya's Engagement",
+    type: "wedding",
+    date: "2026-07-20",
+    time: "6:00 PM",
+    location: "Mishra Residence, Bengaluru",
+    description: "Engagement ceremony of Karan Mishra and Ananya Reddy.",
+    organizer: "g2-5",
+    invitedMemberIds: ["g3-1", "g3-2", "g2-1", "g2-2", "g2-5", "g2-6", "g1-3", "g1-4"],
+    rsvps: { "g3-1": "going", "g3-2": "going", "g2-1": "going" },
+  },
+  {
+    id: "e3",
+    title: "Suresh Dada's 81st Birthday Puja",
+    type: "puja",
+    date: "2026-08-03",
+    time: "9:00 AM",
+    location: "Sharma Home, Nagpur",
+    description: "Birthday puja and celebration for Suresh Kumar Sharma.",
+    organizer: "g2-1",
+    invitedMemberIds: ["g3-1", "g3-2", "g2-1", "g2-2", "g2-3", "g2-4", "g1-1", "g1-2"],
+    rsvps: { "g3-1": "going", "g3-2": "going" },
+  },
+]
+
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "long", year: "numeric" })
+}
+
+function getDaysUntil(dateStr: string) {
+  const today = new Date("2026-05-11")
+  const event = new Date(dateStr)
+  const diff = Math.ceil((event.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  if (diff === 0) return "Today"
+  if (diff === 1) return "Tomorrow"
+  if (diff < 0) return `${Math.abs(diff)} days ago`
+  return `In ${diff} days`
+}
+
+export default function EventsPage() {
+  const { familyId, user } = useAuth()
+  const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
+  const { events: dbEvents, loading: eventsLoading, createEvent: dbCreateEvent, updateRSVP } = useEvents(familyId)
+  const allMembers = familyId && !membersLoading ? dbMembers : sampleFamilyMembers
+
+  // Map DB events to the local FamilyEventItem shape for unified rendering
+  const dbMappedEvents: FamilyEventItem[] = dbEvents.map(e => ({
+    id: e.id,
+    title: e.title,
+    type: "other" as EventType,
+    date: e.eventDate.split("T")[0],
+    time: e.eventDate.includes("T") ? new Date(e.eventDate).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : undefined,
+    location: e.location ?? "",
+    description: e.description,
+    organizer: e.createdBy ?? "",
+    invitedMemberIds: allMembers.map(m => m.id),
+    rsvps: (e.rsvps ?? {}) as Record<string, RSVPStatus>,
+  }))
+
+  const [localEvents, setLocalEvents] = useState<FamilyEventItem[]>(SAMPLE_EVENTS)
+  const events = familyId && !eventsLoading ? dbMappedEvents : localEvents
+  const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>({
+    "e1": "going",
+    "e2": "going",
+    "e3": "pending",
+  })
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [newEvent, setNewEvent] = useState({ title: "", type: "reunion" as EventType, date: "", location: "", description: "" })
+  const [filter, setFilter] = useState<"all" | "upcoming" | "mine">("upcoming")
+
+  const rsvp = (eventId: string, status: RSVPStatus) => {
+    setMyRSVPs(prev => ({ ...prev, [eventId]: status }))
+    if (familyId && user) updateRSVP(eventId, user.id, status === 'not-going' ? 'cant' : status as 'going' | 'maybe' | 'cant').catch(() => { })
+  }
+
+  const createEvent = async () => {
+    if (!newEvent.title || !newEvent.date || !newEvent.location) return
+    if (familyId && user) {
+      try {
+        await dbCreateEvent(familyId, { title: newEvent.title, description: newEvent.description, eventDate: newEvent.date, location: newEvent.location }, user.id)
+      } catch { /* fall through to local */ }
+    } else {
+      const ev: FamilyEventItem = {
+        id: `e${Date.now()}`,
+        ...newEvent,
+        organizer: "g3-1",
+        invitedMemberIds: allMembers.map(m => m.id),
+        rsvps: { "g3-1": "going" },
+      }
+      setLocalEvents(prev => [ev, ...prev])
+    }
+    setShowCreateForm(false)
+    setNewEvent({ title: "", type: "reunion", date: "", location: "", description: "" })
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background">
+      {/* Header */}
+      <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border/50 bg-card/95 backdrop-blur px-4 sm:px-6">
+        <Link href="/dashboard">
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
+        <div className="flex-1">
+          <h1 className="font-bold text-lg">Family Events</h1>
+          <p className="text-xs text-muted-foreground">Reunions, pujas &amp; celebrations</p>
+        </div>
+        <Button size="sm" onClick={() => setShowCreateForm(true)} className="gap-1.5">
+          <Plus className="h-4 w-4" />
+          Create Event
+        </Button>
+      </header>
+
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 space-y-5">
+
+        {/* Create Event Form */}
+        {showCreateForm && (
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">New Event</h2>
+              <button onClick={() => setShowCreateForm(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                placeholder="Event title"
+                value={newEvent.title}
+                onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))}
+                className="sm:col-span-2"
+              />
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={newEvent.type}
+                onChange={e => setNewEvent(p => ({ ...p, type: e.target.value as EventType }))}
+              >
+                {(["reunion", "wedding", "puja", "birthday", "other"] as EventType[]).map(t => (
+                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                ))}
+              </select>
+              <Input
+                type="date"
+                value={newEvent.date}
+                onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))}
+              />
+              <Input
+                placeholder="Location"
+                value={newEvent.location}
+                onChange={e => setNewEvent(p => ({ ...p, location: e.target.value }))}
+                className="sm:col-span-2"
+              />
+              <Input
+                placeholder="Description (optional)"
+                value={newEvent.description}
+                onChange={e => setNewEvent(p => ({ ...p, description: e.target.value }))}
+                className="sm:col-span-2"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowCreateForm(false)}>Cancel</Button>
+              <Button size="sm" onClick={createEvent}>Create Event</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Tabs */}
+        <div className="flex gap-2">
+          {(["upcoming", "all", "mine"] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                filter === f
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Events */}
+        {events.map(event => {
+          const myStatus = myRSVPs[event.id] || "pending"
+          const Icon = EVENT_TYPE_ICONS[event.type]
+          const goingCount = Object.values(event.rsvps).filter(s => s === "going").length
+          const invited = allMembers.filter(m => event.invitedMemberIds.includes(m.id))
+
+          return (
+            <div key={event.id} className="rounded-2xl border border-border bg-card overflow-hidden">
+              {/* Type color bar */}
+              <div className={cn("flex items-center gap-2 px-5 py-3 border-b border-border/50", EVENT_TYPE_COLORS[event.type])}>
+                <Icon className="h-4 w-4" />
+                <Badge variant="outline" className={cn("text-[10px] h-4 py-0 border-current/30 capitalize", EVENT_TYPE_COLORS[event.type])}>
+                  {event.type}
+                </Badge>
+                <span className="ml-auto text-xs font-medium">{getDaysUntil(event.date)}</span>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div>
+                  <h3 className="font-semibold text-base">{event.title}</h3>
+                  {event.description && <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>}
+                </div>
+
+                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    {formatDate(event.date)}{event.time && ` · ${event.time}`}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {event.location}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5" />
+                    {goingCount} going
+                  </span>
+                </div>
+
+                {/* Invited member avatars */}
+                <div className="flex items-center gap-2">
+                  <div className="flex -space-x-2">
+                    {invited.slice(0, 6).map(m => (
+                      <Avatar key={m.id} className="h-7 w-7 border-2 border-card">
+                        <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">
+                          {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ))}
+                    {invited.length > 6 && (
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-muted text-[10px] text-muted-foreground font-medium">
+                        +{invited.length - 6}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">{invited.length} invited</span>
+                </div>
+
+                {/* RSVP buttons */}
+                <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+                  <span className="text-xs text-muted-foreground mr-1">Your RSVP:</span>
+                  {([
+                    ["going", "✅ Going"],
+                    ["maybe", "🤔 Maybe"],
+                    ["not-going", "❌ Can't Go"],
+                  ] as [RSVPStatus, string][]).map(([status, label]) => (
+                    <button
+                      key={status}
+                      onClick={() => rsvp(event.id, status)}
+                      className={cn(
+                        "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                        myStatus === status
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <Button variant="ghost" size="sm" className="ml-auto text-xs gap-1">
+                    Share <ChevronRight className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
