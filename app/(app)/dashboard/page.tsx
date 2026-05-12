@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { FamilyMember, Story } from '@/lib/types'
 import { sampleFamilyMembers, familyFeed } from '@/lib/sample-data'
+import { filterByDegree } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers, useStories } from '@/hooks/use-members'
 import { FamilyTree } from '@/components/family-tree'
@@ -14,6 +15,8 @@ import { SearchDialog } from '@/components/search-dialog'
 import { AIInsightsDialog } from '@/components/ai-insights-dialog'
 import { AddStoryDialog } from '@/components/add-story-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-feed'
+import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -332,11 +335,19 @@ function InviteWidget({ onClose }: { onClose: () => void }) {
 
 export default function FamilyGraphApp() {
   const { user, familyId } = useAuth()
-  const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember } = useMembers(familyId)
+  const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { addStory: dbAddStory } = useStories(familyId)
 
   // Use real DB data when available, fall back to sample data for demo
   const members = familyId && !dbLoading ? dbMembers : sampleFamilyMembers
+
+  const [maxDegree, setMaxDegree] = useState(10)
+
+  // The "self" member is the root for degree calculations
+  const selfMember = members.find(m => m.relationship === 'self') ?? members[0] ?? null
+  const filteredMembers = maxDegree < 10 && selfMember
+    ? filterByDegree(members, selfMember.id, maxDegree)
+    : members
 
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -344,6 +355,8 @@ export default function FamilyGraphApp() {
   const [isAIInsightsOpen, setIsAIInsightsOpen] = useState(false)
   const [isStoryDialogOpen, setIsStoryDialogOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
+  const [claimTargetId, setClaimTargetId] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
@@ -442,8 +455,24 @@ export default function FamilyGraphApp() {
     <TooltipProvider>
       <div className="flex flex-col h-full overflow-hidden">
 
+        {/* Demo mode banner */}
+        {!user && (
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-2">
+            <div className="flex items-center gap-2 text-[12px] text-amber-400/90">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span>You're viewing <strong>demo data</strong> — this is what your family tree could look like</span>
+            </div>
+            <Link
+              href="/auth/signup"
+              className="shrink-0 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors"
+            >
+              Get started free →
+            </Link>
+          </div>
+        )}
+
         {/* ── Top Bar ──────────────────────────────────────────────── */}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 bg-card/95 px-4 backdrop-blur-md">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
           <div className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground">
             <Home className="h-3.5 w-3.5" />
             <span>/</span>
@@ -451,11 +480,13 @@ export default function FamilyGraphApp() {
           </div>
 
           {/* View mode switcher */}
-          <div className="flex items-center rounded-xl border border-border/50 bg-muted/30 p-0.5 gap-0.5 ml-0 lg:ml-3">
+          <div className="flex items-center rounded-xl border border-border/40 bg-muted/30 p-0.5 gap-0.5 ml-0 lg:ml-3">
             {VIEW_MODES.map(v => (
               <button key={v.key} onClick={() => setViewMode(v.key)}
                 className={cn('flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  viewMode === v.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  viewMode === v.key
+                    ? 'bg-card text-foreground shadow-sm border border-border/50'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
               >
                 <v.icon className="h-3.5 w-3.5" />
@@ -512,41 +543,70 @@ export default function FamilyGraphApp() {
 
           {/* Member list (graph mode, xl+ only) */}
           {viewMode === 'graph' && (
-            <aside className="hidden w-72 shrink-0 border-r border-border/50 xl:block">
-              <MemberListSidebar members={members} selectedMemberId={selectedMemberId} onSelectMember={handleSelectMember} />
+            <aside className="hidden w-72 shrink-0 border-r border-border/40 backdrop-blur-xl xl:block" style={{ background: 'var(--surface-sidebar)' }}>
+              <MemberListSidebar
+                members={filteredMembers}
+                selectedMemberId={selectedMemberId}
+                onSelectMember={handleSelectMember}
+                maxDegree={maxDegree}
+                onMaxDegreeChange={setMaxDegree}
+                totalCount={members.length}
+              />
             </aside>
           )}
 
           {/* Main canvas */}
           <main className="flex-1 overflow-hidden relative">
             {viewMode === 'graph' && (
-              <FamilyTree members={members} selectedMemberId={selectedMemberId} onSelectMember={handleSelectMember} />
+              <FamilyTree
+                members={filteredMembers}
+                selectedMemberId={selectedMemberId}
+                onSelectMember={handleSelectMember}
+                onDoubleClickMember={(id) => {
+                  setClaimTargetId(id)
+                  setIsClaimDialogOpen(true)
+                }}
+              />
             )}
             {viewMode === 'orgchart' && (
-              <OrgChartView members={members} onSelect={handleSelectMember} selectedId={selectedMemberId} />
+              <OrgChartView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
             )}
             {viewMode === 'list' && (
-              <ListView members={members} onSelect={handleSelectMember} selectedId={selectedMemberId} />
+              <ListView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
+            )}
+
+            {/* Presence avatars — top right of canvas */}
+            {viewMode === 'graph' && (
+              <div className="absolute top-3 right-3 z-20">
+                <PresenceAvatars />
+              </div>
+            )}
+
+            {/* Live activity feed — bottom left of canvas (visible when no member selected) */}
+            {viewMode === 'graph' && (
+              <div className="absolute bottom-4 left-4 z-20">
+                <LiveActivityFeed />
+              </div>
             )}
           </main>
 
           {/* AI Widget */}
           {showAIWidget && (
-            <aside className="w-80 shrink-0 border-l border-border/50 bg-card">
+            <aside className="w-80 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
               <AIWidget members={members} onClose={() => setShowAIWidget(false)} />
             </aside>
           )}
 
           {/* Invite Widget */}
           {showInviteWidget && (
-            <aside className="w-72 shrink-0 border-l border-border/50 bg-card">
+            <aside className="w-72 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
               <InviteWidget onClose={() => setShowInviteWidget(false)} />
             </aside>
           )}
 
           {/* Member Detail */}
           {selectedMember && !showAIWidget && !showInviteWidget && (
-            <aside className="w-80 shrink-0 border-l border-border/50 bg-card xl:w-96">
+            <aside className="w-80 shrink-0 xl:w-96">
               <MemberDetail
                 member={selectedMember}
                 allMembers={members}
@@ -560,7 +620,7 @@ export default function FamilyGraphApp() {
 
           {/* Feed panel */}
           {showFeed && !selectedMember && !showAIWidget && !showInviteWidget && (
-            <aside className="w-80 shrink-0 border-l border-border/50 bg-card">
+            <aside className="w-80 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
               <FamilyFeedPanel onClose={() => setShowFeed(false)} />
             </aside>
           )}
@@ -573,6 +633,19 @@ export default function FamilyGraphApp() {
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
       <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} onExport={handleExport} onImport={handleImport} />
+      <ClaimNodeDialog
+        member={members.find(m => m.id === claimTargetId) ?? null}
+        userId={user?.id ?? null}
+        open={isClaimDialogOpen}
+        onOpenChange={setIsClaimDialogOpen}
+        onClaim={async (memberId, userId) => {
+          await claimMember(memberId, userId)
+          toast({ title: 'Node claimed!', description: 'Your profile is now linked to this tree.' })
+        }}
+        onSetVisibility={async (memberId, visibility) => {
+          await setVisibility(memberId, visibility)
+        }}
+      />
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

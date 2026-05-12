@@ -34,6 +34,7 @@ export async function middleware(request: NextRequest) {
   // Public routes that don't need auth
   const isPublic =
     pathname === '/' ||
+    pathname === '/dashboard' ||   // demo mode — shows sample data when not logged in
     pathname.startsWith('/auth/') ||
     pathname.startsWith('/onboarding') ||
     pathname.startsWith('/_next') ||

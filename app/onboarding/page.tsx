@@ -105,7 +105,9 @@ export default function OnboardingPage() {
       if (!user) { router.push('/auth/signin'); return }
 
       // 1. Create the family
-      const familyName = `${userData.lastName || 'My'} Family`
+      const nameParts = userData.name.trim().split(' ')
+      const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]
+      const familyName = `${lastName || 'My'} Family`
       const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase()
       const { data: family, error: familyErr } = await supabase
         .from('families')
@@ -119,7 +121,7 @@ export default function OnboardingPage() {
         .from('family_members')
         .insert({
           family_id: family.id,
-          name: `${userData.firstName} ${userData.lastName}`.trim(),
+          name: userData.name.trim(),
           birth_year: userData.birthYear ? parseInt(userData.birthYear) : null,
           birth_place: userData.birthPlace || null,
           relationship: 'self',
@@ -136,7 +138,7 @@ export default function OnboardingPage() {
       await supabase.from('profiles').update({
         family_id: family.id,
         member_id: member.id,
-        display_name: `${userData.firstName} ${userData.lastName}`.trim(),
+        display_name: userData.name.trim(),
         role: 'admin',
       }).eq('id', user.id)
 
@@ -363,8 +365,8 @@ export default function OnboardingPage() {
                     key={goal.id}
                     onClick={() => toggleGoal(goal.id)}
                     className={`p-4 rounded-xl border text-left transition-all ${isSelected
-                        ? "bg-primary/10 border-primary/50"
-                        : "bg-muted/30 border-border hover:border-border/80"
+                      ? "bg-primary/10 border-primary/50"
+                      : "bg-muted/30 border-border hover:border-border/80"
                       }`}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -421,10 +423,10 @@ export default function OnboardingPage() {
               >
                 <div
                   className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isComplete
-                      ? "bg-primary text-white"
-                      : isActive
-                        ? "bg-primary/20 text-primary border-2 border-primary"
-                        : "bg-muted text-muted-foreground"
+                    ? "bg-primary text-white"
+                    : isActive
+                      ? "bg-primary/20 text-primary border-2 border-primary"
+                      : "bg-muted text-muted-foreground"
                     }`}
                 >
                   {isComplete ? (

@@ -43,7 +43,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
         <Avatar className="h-8 w-8 border border-border">
           <AvatarFallback className={cn(
             'text-xs font-semibold',
-            isSelected 
+            isSelected
               ? 'bg-gradient-to-br from-primary to-secondary text-primary-foreground'
               : 'bg-muted text-foreground'
           )}>
@@ -79,13 +79,13 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
         <div className="relative">
           <Avatar className={cn(
             'h-12 w-12 border-2 transition-all duration-200',
-            isSelected 
-              ? 'border-primary' 
+            isSelected
+              ? 'border-primary'
               : 'border-border/50 group-hover:border-primary/50'
           )}>
             <AvatarFallback className={cn(
               'font-semibold transition-colors',
-              isSelected 
+              isSelected
                 ? 'bg-gradient-to-br from-primary to-secondary text-primary-foreground'
                 : 'bg-muted text-foreground group-hover:bg-primary/20'
             )}>
@@ -109,11 +109,11 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             {member.relationship && (
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className={cn(
                   'text-xs capitalize',
-                  isSelected 
+                  isSelected
                     ? 'bg-primary/20 text-primary border-primary/30'
                     : 'bg-muted/50'
                 )}

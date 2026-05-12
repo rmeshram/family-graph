@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import Script from 'next/script'
 import { AuthProvider } from '@/hooks/use-auth'
 import './globals.css'
 
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
   title: 'Family Graph - The Living Family Intelligence Network',
   description: 'Visualize, preserve, and understand your family heritage across generations with AI-powered insights.',
   generator: 'v0.app',
+  manifest: '/manifest.json',
   icons: {
     icon: [
       {
@@ -50,6 +52,13 @@ export default function RootLayout({
           {children}
         </AuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
+        <Script
+          id="sw-register"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(function(){}); }`,
+          }}
+        />
       </body>
     </html>
   )

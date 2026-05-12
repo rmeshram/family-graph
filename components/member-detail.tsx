@@ -8,14 +8,14 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  Edit, 
-  Link2, 
-  Sparkles, 
-  Trash2, 
-  X, 
-  MapPin, 
-  Briefcase, 
+import {
+  Edit,
+  Link2,
+  Sparkles,
+  Trash2,
+  X,
+  MapPin,
+  Briefcase,
   Calendar,
   BookOpen,
   GraduationCap,
@@ -53,10 +53,10 @@ const milestoneColors: Record<string, string> = {
   other: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
 }
 
-export function MemberDetail({ 
-  member, 
-  allMembers, 
-  onClose, 
+export function MemberDetail({
+  member,
+  allMembers,
+  onClose,
   onEdit,
   onDelete,
   onAddStory,
@@ -89,19 +89,19 @@ export function MemberDetail({
   const sortedMilestones = [...(member.milestones || [])].sort((a, b) => a.year - b.year)
 
   return (
-    <Card className="h-full overflow-hidden border-0 rounded-none bg-card">
-      <CardHeader className="pb-4 border-b border-border/50">
+    <Card className="h-full overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
+      <CardHeader className="pb-4 border-b border-border/40">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div className="relative">
-              <Avatar className="h-16 w-16 border-2 border-primary/30 ring-2 ring-primary/10">
-                <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground text-xl font-bold">
+              <Avatar className="h-16 w-16 border-2 border-amber-400/30 ring-2 ring-amber-400/10">
+                <AvatarFallback className="bg-gradient-to-br from-amber-600/20 to-indigo-600/25 text-amber-200 text-xl font-bold">
                   {initials}
                 </AvatarFallback>
               </Avatar>
               {member.deathYear && (
-                <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-muted border-2 border-card flex items-center justify-center">
-                  <span className="text-[10px] text-muted-foreground">+</span>
+                <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-muted border-2 flex items-center justify-center" style={{ borderColor: 'var(--background)' }}>
+                  <span className="text-[10px] text-muted-foreground">†</span>
                 </div>
               )}
             </div>
@@ -109,12 +109,12 @@ export function MemberDetail({
               <h2 className="text-xl font-bold text-foreground">{member.name}</h2>
               <div className="flex items-center gap-2 flex-wrap">
                 {member.relationship && (
-                  <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30">
+                  <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20">
                     {member.relationship}
                   </Badge>
                 )}
                 {age && (
-                  <Badge variant="outline" className="text-muted-foreground">
+                  <Badge variant="outline" className="text-muted-foreground border-border/50">
                     {member.deathYear ? `Lived ${age} years` : `Age ${age}`}
                   </Badge>
                 )}
@@ -137,20 +137,20 @@ export function MemberDetail({
         <CardContent className="p-0">
           <Tabs defaultValue="overview" className="w-full">
             <TabsList className="w-full rounded-none border-b border-border/50 bg-transparent h-auto p-0">
-              <TabsTrigger 
-                value="overview" 
+              <TabsTrigger
+                value="overview"
                 className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3"
               >
                 Overview
               </TabsTrigger>
-              <TabsTrigger 
-                value="timeline" 
+              <TabsTrigger
+                value="timeline"
                 className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3"
               >
                 Timeline
               </TabsTrigger>
-              <TabsTrigger 
-                value="stories" 
+              <TabsTrigger
+                value="stories"
                 className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3"
               >
                 Stories
@@ -161,20 +161,20 @@ export function MemberDetail({
               {/* Quick Info */}
               <div className="grid grid-cols-2 gap-3">
                 {member.birthPlace && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border/50">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-muted/30 border border-border/40">
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Birthplace</p>
-                      <p className="text-sm font-medium text-foreground">{member.birthPlace}</p>
+                      <p className="text-xs font-medium text-foreground">{member.birthPlace}</p>
                     </div>
                   </div>
                 )}
                 {member.occupation && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border/50">
-                    <Briefcase className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-muted/30 border border-border/40">
+                    <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Occupation</p>
-                      <p className="text-sm font-medium text-foreground">{member.occupation}</p>
+                      <p className="text-xs font-medium text-foreground">{member.occupation}</p>
                     </div>
                   </div>
                 )}
@@ -205,7 +205,7 @@ export function MemberDetail({
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {parents.map((p) => (
-                          <Badge key={p.id} variant="outline" className="bg-muted/30">
+                          <Badge key={p.id} variant="outline" className="bg-muted/30 border-border/50 text-foreground">
                             {p.name}
                           </Badge>
                         ))}
@@ -219,7 +219,7 @@ export function MemberDetail({
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {spouses.map((s) => (
-                          <Badge key={s.id} variant="outline" className="bg-accent/20 text-accent border-accent/30">
+                          <Badge key={s.id} variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/25">
                             <Heart className="h-3 w-3 mr-1" />
                             {s.name}
                           </Badge>
@@ -266,7 +266,7 @@ export function MemberDetail({
                   <div className="space-y-4">
                     {sortedMilestones.map((milestone, index) => (
                       <div key={milestone.id} className="relative flex gap-4 pl-8">
-                        <div 
+                        <div
                           className={cn(
                             'absolute left-0 w-6 h-6 rounded-full border-2 flex items-center justify-center',
                             milestoneColors[milestone.type]
@@ -347,9 +347,9 @@ export function MemberDetail({
             <Sparkles className="mr-2 h-4 w-4" />
             AI Story
           </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={onDelete}
           >

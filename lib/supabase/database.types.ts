@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       families: {
@@ -26,7 +26,15 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Update: Partial<Database['public']['Tables']['families']['Insert']>
+        Update: {
+          id?: string
+          name?: string
+          invite_code?: string
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       family_members: {
         Row: {
@@ -59,6 +67,10 @@ export interface Database {
           added_by: string | null
           added_at: string
           updated_at: string
+          // Migration 002: claiming & privacy
+          claimed_by_user_id: string | null
+          is_claimed: boolean
+          visibility: string
         }
         Insert: {
           id?: string
@@ -90,8 +102,45 @@ export interface Database {
           added_by?: string | null
           added_at?: string
           updated_at?: string
+          claimed_by_user_id?: string | null
+          is_claimed?: boolean
+          visibility?: string
         }
-        Update: Partial<Database['public']['Tables']['family_members']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string
+          name?: string
+          birth_year?: number | null
+          death_year?: number | null
+          birth_place?: string | null
+          current_place?: string | null
+          photo_url?: string | null
+          bio?: string | null
+          relationship?: string | null
+          occupation?: string | null
+          parent_ids?: string[]
+          spouse_ids?: string[]
+          generation?: number
+          is_alive?: boolean
+          gender?: string | null
+          tags?: string[]
+          side?: string | null
+          role?: string | null
+          gotra?: string | null
+          caste?: string | null
+          hometown?: string | null
+          native_language?: string | null
+          religion?: string | null
+          phone?: string | null
+          email?: string | null
+          added_by?: string | null
+          added_at?: string
+          updated_at?: string
+          claimed_by_user_id?: string | null
+          is_claimed?: boolean
+          visibility?: string
+        }
+        Relationships: []
       }
       stories: {
         Row: {
@@ -118,7 +167,19 @@ export interface Database {
           language?: string | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['stories']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string
+          member_id?: string
+          title?: string
+          content?: string
+          date?: string | null
+          author?: string | null
+          ai_generated?: boolean
+          language?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       memories: {
         Row: {
@@ -147,7 +208,20 @@ export interface Database {
           uploaded_by?: string | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['memories']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string
+          title?: string
+          description?: string | null
+          photo_url?: string | null
+          event_type?: string
+          year?: number | null
+          date?: string | null
+          tagged_member_ids?: string[]
+          uploaded_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       voice_notes: {
         Row: {
@@ -176,7 +250,20 @@ export interface Database {
           recorded_by?: string | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['voice_notes']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string
+          member_id?: string
+          title?: string
+          duration_seconds?: number
+          file_url?: string | null
+          transcription?: string | null
+          translation?: string | null
+          language?: string | null
+          recorded_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       events: {
         Row: {
@@ -201,7 +288,18 @@ export interface Database {
           rsvps?: Json
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['events']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string
+          title?: string
+          description?: string | null
+          event_date?: string
+          location?: string | null
+          created_by?: string | null
+          rsvps?: Json
+          created_at?: string
+        }
+        Relationships: []
       }
       invite_links: {
         Row: {
@@ -226,7 +324,18 @@ export interface Database {
           max_uses?: number | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['invite_links']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string
+          code?: string
+          role?: string
+          created_by?: string
+          expires_at?: string | null
+          used_count?: number
+          max_uses?: number | null
+          created_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -249,7 +358,17 @@ export interface Database {
           role?: string
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['profiles']['Insert']>
+        Update: {
+          id?: string
+          family_id?: string | null
+          member_id?: string | null
+          display_name?: string | null
+          avatar_url?: string | null
+          phone?: string | null
+          role?: string
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: Record<string, never>

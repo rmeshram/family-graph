@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import Link from "next/link"
+import { QRCodeSVG } from "qrcode.react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -293,40 +294,74 @@ export default function InvitePage() {
             {/* QR Code Tab */}
             <TabsContent value="qr" className="space-y-4 mt-0">
               <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/50 bg-card p-6">
-                {/* QR Code placeholder */}
-                <div className="relative h-48 w-48 rounded-2xl border-4 border-primary/20 bg-white p-2">
-                  <div className="absolute inset-4 grid grid-cols-7 gap-0.5">
-                    {Array.from({ length: 49 }, (_, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "rounded-sm",
-                          (i < 7 || i > 41 || (i >= 7 && i <= 13 && i % 7 === 0) || (i >= 7 && i <= 13 && i % 7 === 6) ||
-                            (i === 7 || i === 13 || i === 35 || i === 41) ||
-                            Math.random() > 0.5)
-                            ? "bg-foreground"
-                            : "bg-transparent"
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-md">
-                      <Users className="h-5 w-5 text-primary-foreground" />
+                <div className="relative rounded-2xl bg-white p-3 shadow-inner">
+                  <QRCodeSVG
+                    value={inviteUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/join/DEMO`}
+                    size={176}
+                    bgColor="#ffffff"
+                    fgColor="#111827"
+                    level="H"
+                    imageSettings={{
+                      src: '/manifest.json',
+                      x: undefined,
+                      y: undefined,
+                      height: 36,
+                      width: 36,
+                      opacity: 0,
+                      excavate: true,
+                    }}
+                  />
+                  {/* Center logo overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-md">
+                      <Users className="h-4 w-4 text-primary-foreground" />
                     </div>
                   </div>
                 </div>
                 <div className="text-center">
-                  <p className="font-semibold">Sharma-Mishra Family</p>
+                  <p className="font-semibold">
+                    {inviteUrl ? 'Invite QR Code' : 'Generate a link first'}
+                  </p>
                   <p className="text-xs text-muted-foreground mt-0.5">Scan to join the family tree</p>
-                  <Badge variant="outline" className="mt-2 font-mono text-xs">SHARMA-X7K2P</Badge>
+                  {inviteUrl && (
+                    <Badge variant="outline" className="mt-2 font-mono text-xs">
+                      {inviteUrl.split('/').pop()?.toUpperCase()}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => {
+                      if (navigator.share) {
+                        navigator.share({ title: 'Join our family tree', url: inviteUrl })
+                      }
+                    }}
+                    disabled={!inviteUrl}
+                  >
                     <Share2 className="h-4 w-4" />
                     Share QR
                   </Button>
-                  <Button variant="outline" size="sm" className="gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => {
+                      const svg = document.querySelector('.qr-container svg') as SVGElement
+                      if (!svg) return
+                      const svgData = new XMLSerializer().serializeToString(svg)
+                      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+                      const url = URL.createObjectURL(svgBlob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = 'family-invite-qr.svg'
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                    disabled={!inviteUrl}
+                  >
                     <Copy className="h-4 w-4" />
                     Download
                   </Button>

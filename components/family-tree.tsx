@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { FamilyMember } from '@/lib/types'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
-import { ZoomIn, ZoomOut, Maximize2, Grid3X3 } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize2, Grid3X3, ChevronDown, ChevronRight, Lock, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -12,11 +13,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ParticleBackground } from '@/components/particle-background'
 
 interface FamilyTreeProps {
   members: FamilyMember[]
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
+  onDoubleClickMember?: (id: string) => void
 }
 
 interface NodePosition {
@@ -25,7 +28,7 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selectedMemberId, onSelectMember }: FamilyTreeProps) {
+export function FamilyTree({ members, selectedMemberId, onSelectMember, onDoubleClickMember }: FamilyTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -33,6 +36,11 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null)
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+
+  // Touch state for pinch-zoom
+  const touchRef = useRef<{ dist: number; midX: number; midY: number } | null>(null)
+  const touchPanRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -49,9 +57,22 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
   }, [])
 
   const nodePositions = useMemo<NodePosition[]>(() => {
+    // Collect all descendant IDs of collapsed nodes to hide them
+    const hiddenIds = new Set<string>()
+    const getDescendants = (id: string) => {
+      members.forEach(m => {
+        if (m.parentIds.includes(id) && !hiddenIds.has(m.id)) {
+          hiddenIds.add(m.id)
+          getDescendants(m.id)
+        }
+      })
+    }
+    collapsedIds.forEach(id => getDescendants(id))
+
+    const visibleMembers = members.filter(m => !hiddenIds.has(m.id))
     const generations = new Map<number, FamilyMember[]>()
-    
-    members.forEach((member) => {
+
+    visibleMembers.forEach((member) => {
       const gen = member.generation
       if (!generations.has(gen)) {
         generations.set(gen, [])
@@ -60,9 +81,9 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
     })
 
     const positions: NodePosition[] = []
-    const nodeWidth = 140
-    const nodeHeight = 120
-    const horizontalGap = 60
+    const nodeWidth = 150
+    const nodeHeight = 140
+    const horizontalGap = 40
     const verticalGap = 140
 
     generations.forEach((genMembers, gen) => {
@@ -79,7 +100,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
     })
 
     return positions
-  }, [members, dimensions.width])
+  }, [members, dimensions.width, collapsedIds])
 
   const connections = useMemo(() => {
     const lines: { from: NodePosition; to: NodePosition; type: 'parent' | 'spouse' }[] = []
@@ -135,6 +156,55 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
     setZoom((z) => Math.min(Math.max(z * delta, 0.3), 2.5))
   }, [])
 
+  // ── Touch handlers (pinch-zoom + single-finger pan) ────────────────────────
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[1].clientX - e.touches[0].clientX
+      const dy = e.touches[1].clientY - e.touches[0].clientY
+      touchRef.current = {
+        dist: Math.hypot(dx, dy),
+        midX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        midY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      }
+      touchPanRef.current = null
+    } else if (e.touches.length === 1) {
+      touchPanRef.current = { x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y }
+      touchRef.current = null
+    }
+  }, [pan])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    if (e.touches.length === 2 && touchRef.current) {
+      const dx = e.touches[1].clientX - e.touches[0].clientX
+      const dy = e.touches[1].clientY - e.touches[0].clientY
+      const newDist = Math.hypot(dx, dy)
+      const scale = newDist / touchRef.current.dist
+      setZoom(z => Math.min(Math.max(z * scale, 0.3), 2.5))
+      touchRef.current = { ...touchRef.current, dist: newDist }
+    } else if (e.touches.length === 1 && touchPanRef.current) {
+      setPan({
+        x: e.touches[0].clientX - touchPanRef.current.x,
+        y: e.touches[0].clientY - touchPanRef.current.y,
+      })
+    }
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    touchRef.current = null
+    touchPanRef.current = null
+  }, [])
+
+  const toggleCollapse = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCollapsedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   const centerView = useCallback(() => {
     setZoom(1)
     setPan({ x: 0, y: 0 })
@@ -142,19 +212,19 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
 
   const fitToView = useCallback(() => {
     if (nodePositions.length === 0) return
-    
+
     const minX = Math.min(...nodePositions.map(p => p.x)) - 100
     const maxX = Math.max(...nodePositions.map(p => p.x)) + 100
     const minY = Math.min(...nodePositions.map(p => p.y)) - 100
     const maxY = Math.max(...nodePositions.map(p => p.y)) + 100
-    
+
     const contentWidth = maxX - minX
     const contentHeight = maxY - minY
-    
+
     const scaleX = dimensions.width / contentWidth
     const scaleY = dimensions.height / contentHeight
     const newZoom = Math.min(scaleX, scaleY, 1) * 0.9
-    
+
     setZoom(newZoom)
     setPan({
       x: (dimensions.width - contentWidth * newZoom) / 2 - minX * newZoom,
@@ -166,27 +236,44 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden cursor-grab active:cursor-grabbing"
-      style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)' }}
+      style={{ background: 'var(--surface-base)' }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
-      {/* Grid pattern background */}
-      <div 
-        className="absolute inset-0 opacity-5"
+      {/* Cosmic canvas — stars + nebulae */}
+      <ParticleBackground className="absolute inset-0 pointer-events-none z-0" />
+
+      {/* Dot pattern overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none z-[1]"
         style={{
-          backgroundImage: `
-            linear-gradient(rgba(148, 163, 184, 0.3) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(148, 163, 184, 0.3) 1px, transparent 1px)
-          `,
-          backgroundSize: '40px 40px',
+          backgroundImage: 'radial-gradient(circle, var(--tree-canvas-dot) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
         }}
       />
-      
+
+      {/* Nebula accent overlays */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 pointer-events-none z-[1]"
+        style={{
+          background: 'radial-gradient(ellipse 60% 40% at 15% 30%, rgba(99,102,241,0.06) 0%, transparent 100%)',
+        }}
+      />
+      <div
+        className="absolute inset-0 pointer-events-none z-[1]"
+        style={{
+          background: 'radial-gradient(ellipse 50% 35% at 85% 75%, rgba(139,92,246,0.05) 0%, transparent 100%)',
+        }}
+      />
+
+      <div
+        className="absolute inset-0 z-[2]"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: 'center center',
@@ -199,15 +286,26 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
           style={{ left: -dimensions.width / 2, top: -dimensions.height / 2 }}
         >
           <defs>
-            <linearGradient id="connectionGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.6" />
-              <stop offset="100%" stopColor="#7C3AED" stopOpacity="0.3" />
+            <linearGradient id="edgeGoldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#D97706" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#FCD34D" stopOpacity="0.6" />
             </linearGradient>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <linearGradient id="edgeGoldGradientH" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#D97706" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#FCD34D" stopOpacity="0.6" />
+            </linearGradient>
+            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
               <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glowGold" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
           </defs>
@@ -215,216 +313,293 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember }: Family
           {connections.map((conn, i) => {
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
-            
+
             if (conn.type === 'spouse') {
-              const isHighlighted = 
+              const isHighlighted =
                 hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id)?.x === conn.from.x)?.id ||
                 hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id)?.x === conn.to.x)?.id
-              
+
+              const x1 = conn.from.x + offsetX
+              const y1 = conn.from.y + offsetY
+              const x2 = conn.to.x + offsetX
+              const y2 = conn.to.y + offsetY
+
               return (
                 <g key={i}>
-                  <line
-                    x1={conn.from.x + offsetX}
-                    y1={conn.from.y + offsetY}
-                    x2={conn.to.x + offsetX}
-                    y2={conn.to.y + offsetY}
-                    stroke={isHighlighted ? '#F59E0B' : '#F59E0B'}
-                    strokeWidth={isHighlighted ? 3 : 2}
-                    strokeDasharray="8,6"
-                    opacity={isHighlighted ? 1 : 0.5}
-                    filter={isHighlighted ? 'url(#glow)' : undefined}
+                  {/* glow */}
+                  <line x1={x1} y1={y1} x2={x2} y2={y2}
+                    stroke="#F59E0B" strokeWidth={10} opacity={0.07} />
+                  {/* main dashed */}
+                  <line x1={x1} y1={y1} x2={x2} y2={y2}
+                    stroke="#F59E0B"
+                    strokeWidth={isHighlighted ? 2.5 : 1.5}
+                    strokeDasharray="8,5"
+                    opacity={isHighlighted ? 0.9 : 0.55}
+                    filter={isHighlighted ? 'url(#glowGold)' : undefined}
                   />
-                  {/* Marriage indicator */}
-                  <circle
-                    cx={(conn.from.x + conn.to.x) / 2 + offsetX}
-                    cy={(conn.from.y + conn.to.y) / 2 + offsetY}
-                    r="6"
+                  {/* marriage diamond */}
+                  <rect
+                    x={(x1 + x2) / 2 - 5}
+                    y={(y1 + y2) / 2 - 5}
+                    width={10} height={10}
+                    rx={2}
                     fill="#F59E0B"
-                    opacity={0.8}
+                    opacity={0.85}
+                    transform={`rotate(45, ${(x1 + x2) / 2}, ${(y1 + y2) / 2})`}
                   />
                 </g>
               )
             }
 
             const midY = (conn.from.y + conn.to.y) / 2
-            const isHighlighted = 
+            const isHighlighted =
               hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id && p.y === conn.from.y)?.id === m.id)?.id ||
               hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id && p.y === conn.to.y)?.id === m.id)?.id
-            
+
+            const d = `M ${conn.from.x + offsetX} ${conn.from.y + 40 + offsetY}
+                        C ${conn.from.x + offsetX} ${midY + offsetY},
+                          ${conn.to.x + offsetX} ${midY + offsetY},
+                          ${conn.to.x + offsetX} ${conn.to.y - 40 + offsetY}`
+
             return (
-              <path
-                key={i}
-                d={`M ${conn.from.x + offsetX} ${conn.from.y + 35 + offsetY} 
-                    C ${conn.from.x + offsetX} ${midY + offsetY},
-                      ${conn.to.x + offsetX} ${midY + offsetY},
-                      ${conn.to.x + offsetX} ${conn.to.y - 35 + offsetY}`}
-                fill="none"
-                stroke={isHighlighted ? '#4F46E5' : 'url(#connectionGradient)'}
-                strokeWidth={isHighlighted ? 3 : 2}
-                opacity={isHighlighted ? 1 : 0.6}
-                filter={isHighlighted ? 'url(#glow)' : undefined}
-              />
+              <g key={i}>
+                {/* Wide glow halo */}
+                <path d={d} fill="none"
+                  stroke="#F59E0B" strokeWidth={14}
+                  opacity={isHighlighted ? 0.12 : 0.06}
+                />
+                {/* Animated flowing main line */}
+                <path d={d} fill="none"
+                  stroke="url(#edgeGoldGradient)"
+                  strokeWidth={isHighlighted ? 2.5 : 1.8}
+                  opacity={isHighlighted ? 1 : 0.75}
+                  strokeDasharray="200"
+                  filter={isHighlighted ? 'url(#glowGold)' : undefined}
+                >
+                  <animate
+                    attributeName="stroke-dashoffset"
+                    from="200" to="0"
+                    dur={`${2.5 + (i % 3) * 0.5}s`}
+                    repeatCount="indefinite"
+                  />
+                </path>
+              </g>
             )
           })}
         </svg>
 
         <TooltipProvider>
-          {nodePositions.map((pos) => {
-            const member = members.find((m) => m.id === pos.id)!
-            const isSelected = selectedMemberId === member.id
-            const isHovered = hoveredMemberId === member.id
-            const initials = member.name
-              .split(' ')
-              .map((n) => n[0])
-              .join('')
-              .slice(0, 2)
+          <AnimatePresence mode="popLayout">
+            {nodePositions.map((pos, index) => {
+              const member = members.find((m) => m.id === pos.id)!
+              const isSelected = selectedMemberId === member.id
+              const isHovered = hoveredMemberId === member.id
+              const initials = member.name
+                .split(' ')
+                .map((n) => n[0])
+                .join('')
+                .slice(0, 2)
 
-            const isDeceased = !!member.deathYear
-            const lifespan = member.deathYear
-              ? `${member.birthYear} - ${member.deathYear}`
-              : member.birthYear
-                ? `b. ${member.birthYear}`
-                : ''
+              const isDeceased = !!member.deathYear
+              const lifespan = member.deathYear
+                ? `${member.birthYear}–${member.deathYear}`
+                : member.birthYear
+                  ? `b. ${member.birthYear}`
+                  : ''
+              const isCollapsed = collapsedIds.has(member.id)
+              const hasChildren = members.some(m => m.parentIds.includes(member.id))
+              const relationshipLabel = member.relationship
+                ? member.relationship.toUpperCase()
+                : null
 
-            return (
-              <Tooltip key={member.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    className={cn(
-                      'absolute flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-300',
-                      'border backdrop-blur-sm',
-                      isSelected 
-                        ? 'bg-primary/20 border-primary shadow-lg shadow-primary/20 scale-110' 
-                        : isHovered
-                          ? 'bg-card/80 border-primary/50 shadow-lg scale-105'
-                          : 'bg-card/60 border-border/50 hover:bg-card/80 hover:border-primary/30'
-                    )}
-                    style={{
-                      left: pos.x - 60,
-                      top: pos.y - 45,
-                      width: 120,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectMember(member.id)
-                    }}
-                    onMouseEnter={() => setHoveredMemberId(member.id)}
-                    onMouseLeave={() => setHoveredMemberId(null)}
-                  >
-                    <div className="relative">
-                      <Avatar
+              return (
+                <motion.div
+                  key={member.id}
+                  className="absolute"
+                  style={{ left: pos.x - 75, top: pos.y - 60, width: 150 }}
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 280,
+                    damping: 26,
+                    delay: index * 0.028,
+                  }}
+                >
+                  {/* Relationship label above node */}
+                  {relationshipLabel && (
+                    <p className="text-center text-[8px] font-semibold tracking-[0.04em] uppercase mb-1 leading-tight px-1 text-wrap break-words" style={{ color: 'var(--tree-node-label)' }}>
+                      {relationshipLabel}
+                    </p>
+                  )}
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
                         className={cn(
-                          'h-14 w-14 border-2 transition-all duration-300',
-                          isSelected
-                            ? 'border-primary ring-2 ring-primary/30'
-                            : isHovered
-                              ? 'border-primary/70'
-                              : 'border-border/50'
+                          'flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-200 w-full',
+                          'border backdrop-blur-md',
+                          isSelected ? 'shadow-lg shadow-amber-500/10'
+                            : isHovered ? 'shadow-lg shadow-indigo-500/10' : ''
                         )}
+                        style={{
+                          background: isSelected ? 'var(--tree-node-bg-selected)'
+                            : isHovered ? 'var(--tree-node-bg-hover)'
+                              : 'var(--tree-node-bg)',
+                          borderColor: isSelected ? 'var(--tree-node-border-selected)'
+                            : isHovered ? 'var(--tree-node-border-hover)'
+                              : 'var(--tree-node-border)',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSelectMember(member.id)
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
+                          onDoubleClickMember?.(member.id)
+                        }}
+                        onMouseEnter={() => setHoveredMemberId(member.id)}
+                        onMouseLeave={() => setHoveredMemberId(null)}
                       >
-                        <AvatarFallback
-                          className={cn(
-                            'font-bold text-lg transition-colors',
-                            isSelected || isHovered
-                              ? 'bg-gradient-to-br from-primary to-secondary text-primary-foreground'
-                              : 'bg-muted text-foreground'
+                        <div className="relative">
+                          <Avatar
+                            className={cn(
+                              'h-14 w-14 border-2 transition-all duration-200',
+                              isSelected
+                                ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                : isHovered
+                                  ? 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                  : 'border-slate-600/40'
+                            )}
+                          >
+                            <AvatarFallback
+                              className={cn(
+                                'font-bold text-lg transition-colors',
+                                isSelected
+                                  ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30 text-amber-200'
+                                  : isHovered
+                                    ? 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25 text-indigo-200'
+                                    : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30'
+                              )}
+                              style={(!isSelected && !isHovered) ? { color: 'var(--tree-node-text)' } : undefined}
+                            >
+                              {initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          {isDeceased && (
+                            <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-slate-600 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <span className="text-[8px] text-slate-300">†</span>
+                            </div>
                           )}
-                        >
-                          {initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      {isDeceased && (
-                        <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-muted border-2 border-card flex items-center justify-center">
-                          <span className="text-[8px] text-muted-foreground">+</span>
+                          {member.isClaimed && (
+                            <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <ShieldCheck className="h-2.5 w-2.5 text-white" />
+                            </div>
+                          )}
+                          {member.visibility === 'private' && (
+                            <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-orange-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <Lock className="h-2.5 w-2.5 text-white" />
+                            </div>
+                          )}
                         </div>
-                      )}
+                        <div className="text-center w-full">
+                          <p
+                            className={cn(
+                              'text-[11px] font-semibold truncate w-full',
+                              isSelected ? 'text-amber-200' : isHovered ? 'text-slate-100' : ''
+                            )}
+                            style={(!isSelected && !isHovered) ? { color: 'var(--tree-node-text)' } : undefined}
+                          >
+                            {member.name.split(' ')[0]}
+                          </p>
+                          {lifespan && (
+                            <p className="text-[9px] mt-0.5" style={{ color: 'var(--tree-node-subtext)' }}>
+                              {lifespan}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs border-slate-700/50" style={{ background: 'var(--surface-panel)' }}>
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-100">{member.name}</p>
+                        {member.relationship && (
+                          <p className="text-xs text-amber-400/80">{member.relationship}</p>
+                        )}
+                        {member.occupation && (
+                          <p className="text-xs text-slate-400">{member.occupation}</p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                  {/* Collapse/expand toggle — sibling of Tooltip, NOT nested inside it */}
+                  {hasChildren && isHovered && (
+                    <button
+                      onClick={(e) => toggleCollapse(member.id, e)}
+                      className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 border border-indigo-400/30 shadow-sm hover:bg-indigo-500 transition-colors z-10"
+                      title={isCollapsed ? 'Expand branch' : 'Collapse branch'}
+                    >
+                      {isCollapsed
+                        ? <ChevronRight className="h-3 w-3 text-white" />
+                        : <ChevronDown className="h-3 w-3 text-white" />
+                      }
+                    </button>
+                  )}
+                  {isCollapsed && (
+                    <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 flex h-5 items-center gap-0.5 rounded-full bg-muted/90 border border-border/50 px-1.5 pointer-events-none">
+                      <span className="text-[8px] text-slate-500">+branch</span>
                     </div>
-                    <div className="text-center w-full">
-                      <p className={cn(
-                        'text-xs font-semibold truncate w-full',
-                        isSelected ? 'text-primary' : 'text-foreground'
-                      )}>
-                        {member.name.split(' ')[0]}
-                      </p>
-                      {lifespan && (
-                        <p className="text-[10px] text-muted-foreground">
-                          {lifespan}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <div className="space-y-1">
-                    <p className="font-semibold">{member.name}</p>
-                    {member.relationship && (
-                      <p className="text-xs text-muted-foreground">{member.relationship}</p>
-                    )}
-                    {member.occupation && (
-                      <p className="text-xs">{member.occupation}</p>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            )
-          })}
+                  )}
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
         </TooltipProvider>
       </div>
 
-      {/* Generation labels */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-4 pointer-events-none">
-        {[0, 1, 2, 3].map((gen) => {
-          const labels = ['Great Grandparents', 'Grandparents', 'Parents', 'Your Generation']
-          return (
-            <div
-              key={gen}
-              className="text-xs font-medium text-muted-foreground/50 whitespace-nowrap"
-              style={{ transform: 'rotate(-90deg)' }}
-            >
-              {labels[gen]}
-            </div>
-          )
-        })}
-      </div>
-
       {/* Controls */}
-      <div className="absolute bottom-4 right-4 flex gap-2">
+      <div className="absolute bottom-4 right-4 flex gap-1.5 z-[3]">
         <Button
           variant="secondary"
           size="icon"
           onClick={() => setZoom((z) => Math.min(z * 1.2, 2.5))}
-          className="h-9 w-9 bg-card/90 backdrop-blur-sm border border-border/50 hover:bg-card hover:border-primary/50"
+          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
+          style={{ background: 'var(--surface-card)' }}
         >
-          <ZoomIn className="h-4 w-4" />
+          <ZoomIn className="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="secondary"
           size="icon"
           onClick={() => setZoom((z) => Math.max(z * 0.8, 0.3))}
-          className="h-9 w-9 bg-card/90 backdrop-blur-sm border border-border/50 hover:bg-card hover:border-primary/50"
+          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
+          style={{ background: 'var(--surface-card)' }}
         >
-          <ZoomOut className="h-4 w-4" />
+          <ZoomOut className="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="secondary"
           size="icon"
           onClick={fitToView}
-          className="h-9 w-9 bg-card/90 backdrop-blur-sm border border-border/50 hover:bg-card hover:border-primary/50"
+          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
+          style={{ background: 'var(--surface-card)' }}
         >
-          <Grid3X3 className="h-4 w-4" />
+          <Grid3X3 className="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="secondary"
           size="icon"
           onClick={centerView}
-          className="h-9 w-9 bg-card/90 backdrop-blur-sm border border-border/50 hover:bg-card hover:border-primary/50"
+          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
+          style={{ background: 'var(--surface-card)' }}
         >
-          <Maximize2 className="h-4 w-4" />
+          <Maximize2 className="h-3.5 w-3.5" />
         </Button>
       </div>
 
       {/* Zoom indicator */}
-      <div className="absolute bottom-4 left-4 px-3 py-1.5 rounded-lg bg-card/90 backdrop-blur-sm border border-border/50 text-xs text-muted-foreground">
+      <div className="absolute bottom-4 left-4 px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-700/40 text-[11px] text-muted-foreground z-[3]" style={{ background: 'var(--surface-card)' }}>
         {Math.round(zoom * 100)}%
       </div>
     </div>

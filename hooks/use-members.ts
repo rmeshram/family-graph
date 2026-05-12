@@ -173,7 +173,24 @@ export function useMembers(familyId: string | null) {
     if (error) throw new Error(error.message)
   }, [supabase, members])
 
-  return { members, loading, error, addMember, updateMember, deleteMember, refetch: fetchMembers }
+  const claimMember = useCallback(async (memberId: string, userId: string) => {
+    const { error } = await supabase
+      .from('family_members')
+      .update({ claimed_by_user_id: userId, is_claimed: true } as any)
+      .eq('id', memberId)
+      .eq('is_claimed', false)
+    if (error) throw new Error(error.message)
+  }, [supabase])
+
+  const setVisibility = useCallback(async (memberId: string, visibility: 'public' | 'family' | 'private') => {
+    const { error } = await supabase
+      .from('family_members')
+      .update({ visibility } as any)
+      .eq('id', memberId)
+    if (error) throw new Error(error.message)
+  }, [supabase])
+
+  return { members, loading, error, addMember, updateMember, deleteMember, claimMember, setVisibility, refetch: fetchMembers }
 }
 
 // ─── useStories hook ──────────────────────────────────────────────────────────

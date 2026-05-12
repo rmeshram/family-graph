@@ -58,6 +58,10 @@ export interface FamilyMember {
   email?: string
   addedBy?: string
   addedAt?: string
+  // Claiming & privacy
+  claimedByUserId?: string
+  isClaimed?: boolean
+  visibility?: 'public' | 'family' | 'private'
 }
 
 export interface Story {

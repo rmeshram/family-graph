@@ -4,52 +4,102 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* ── Warm Indigo + Saffron — Dark App Theme ── */
-  --background: #0C0A09;
-  --foreground: #F5F3F0;
-  --card: #1C1917;
-  --card-foreground: #F5F3F0;
-  --popover: #292524;
-  --popover-foreground: #F5F3F0;
+  /* ── Luminous Nexus — Deep Cosmic Dark Theme ── */
+  --background: #0A0D16;
+  --foreground: #E8EDFB;
+  --card: #0F1420;
+  --card-foreground: #E8EDFB;
+  --popover: #141A2E;
+  --popover-foreground: #E8EDFB;
   --primary: #6366F1;
   --primary-foreground: #FFFFFF;
-  --secondary: #A78BFA;
+  --secondary: #818CF8;
   --secondary-foreground: #FFFFFF;
-  --muted: #292524;
-  --muted-foreground: #A8A29E;
+  --muted: #1A2035;
+  --muted-foreground: #8895B3;
   --accent: #F59E0B;
-  --accent-foreground: #0C0A09;
+  --accent-foreground: #0A0D16;
   --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
-  --border: rgba(245, 243, 240, 0.08);
-  --input: rgba(245, 243, 240, 0.10);
+  --border: rgba(148, 163, 184, 0.08);
+  --input: rgba(148, 163, 184, 0.10);
   --ring: #6366F1;
   --chart-1: #6366F1;
-  --chart-2: #A78BFA;
+  --chart-2: #818CF8;
   --chart-3: #34D399;
   --chart-4: #F59E0B;
   --chart-5: #FB7185;
   --radius: 0.75rem;
-  --sidebar: #161412;
-  --sidebar-foreground: #F5F3F0;
+  --sidebar: #070A12;
+  --sidebar-foreground: #E8EDFB;
   --sidebar-primary: #6366F1;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #292524;
-  --sidebar-accent-foreground: #F5F3F0;
-  --sidebar-border: rgba(245, 243, 240, 0.08);
+  --sidebar-accent: #1A2035;
+  --sidebar-accent-foreground: #E8EDFB;
+  --sidebar-border: rgba(148, 163, 184, 0.06);
   --sidebar-ring: #6366F1;
 
   /* Graph-specific */
   --graph-node-primary: #6366F1;
-  --graph-node-secondary: #A78BFA;
-  --graph-connection: rgba(245, 243, 240, 0.20);
+  --graph-node-secondary: #818CF8;
+  --graph-connection: rgba(99, 102, 241, 0.18);
   --graph-highlight: #F59E0B;
+
+  /* Glow tokens */
+  --glow-gold: rgba(245, 158, 11, 0.20);
+  --glow-primary: rgba(99, 102, 241, 0.12);
+  --surface-glass: rgba(15, 20, 32, 0.70);
+  --nebula-1: rgba(99, 102, 241, 0.06);
+  --nebula-2: rgba(139, 92, 246, 0.04);
+
+  /* ── Surface tokens — use these instead of hardcoded hex ── */
+  --surface-base: #0A0D16;
+  --surface-card: #0F1420;
+  --surface-sidebar: #070A12;
+  --surface-panel: #141A2E;
+  --surface-header: rgba(10, 13, 22, 0.95);
+  --surface-overlay: rgba(15, 20, 32, 0.80);
+
+  /* Tree node tokens */
+  --tree-node-bg: rgba(15, 20, 32, 0.72);
+  --tree-node-bg-hover: rgba(15, 20, 32, 0.90);
+  --tree-node-bg-selected: rgba(15, 20, 32, 0.96);
+  --tree-node-border: rgba(51, 65, 85, 0.30);
+  --tree-node-border-hover: rgba(71, 85, 105, 0.52);
+  --tree-node-border-selected: rgba(251, 191, 36, 0.50);
+  --tree-node-shadow-selected: rgba(245, 158, 11, 0.10);
+  --tree-node-text: #CBD5E1;
+  --tree-node-subtext: #64748B;
+  --tree-node-label: rgba(251, 191, 36, 0.60);
+  --tree-canvas-dot: rgba(255, 255, 255, 0.025);
 
   /* Status */
   --success: #34D399;
   --warning: #F59E0B;
   --error: #EF4444;
   --info: #38BDF8;
+}
+
+@keyframes edgeFlow {
+  from {
+    stroke-dashoffset: 200;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes starTwinkle {
+
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
 }
 
 @theme inline {
@@ -135,6 +185,34 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #E5E3DE;
   --sidebar-ring: #4338CA;
+
+  /* Glow tokens — softer in light */
+  --glow-gold: rgba(217, 119, 6, 0.12);
+  --glow-primary: rgba(67, 56, 202, 0.08);
+  --surface-glass: rgba(255, 255, 255, 0.75);
+  --nebula-1: rgba(99, 102, 241, 0.03);
+  --nebula-2: rgba(139, 92, 246, 0.02);
+
+  /* ── Light surface tokens ── */
+  --surface-base: #EEF2FA;
+  --surface-card: #FFFFFF;
+  --surface-sidebar: #F5F7FD;
+  --surface-panel: #FFFFFF;
+  --surface-header: rgba(238, 242, 250, 0.95);
+  --surface-overlay: rgba(255, 255, 255, 0.82);
+
+  /* Light tree node tokens */
+  --tree-node-bg: rgba(255, 255, 255, 0.82);
+  --tree-node-bg-hover: rgba(255, 255, 255, 0.96);
+  --tree-node-bg-selected: rgba(255, 255, 255, 1.00);
+  --tree-node-border: rgba(203, 213, 225, 0.70);
+  --tree-node-border-hover: rgba(148, 163, 184, 0.80);
+  --tree-node-border-selected: rgba(245, 158, 11, 0.55);
+  --tree-node-shadow-selected: rgba(245, 158, 11, 0.15);
+  --tree-node-text: #1E293B;
+  --tree-node-subtext: #64748B;
+  --tree-node-label: rgba(161, 98, 7, 0.75);
+  --tree-canvas-dot: rgba(0, 0, 0, 0.03);
 
   color-scheme: light;
   background-color: var(--background);

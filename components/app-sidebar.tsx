@@ -12,9 +12,14 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   GitBranch, Camera, UserPlus, Clock, Sparkles,
   Users, Globe, Star, BarChart3, Activity,
-  CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut,
+  CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut, Printer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
+
+const ANALYTICS_DATA = [
+  { v: 32 }, { v: 18 }, { v: 45 }, { v: 27 }, { v: 38 },
+]
 
 const NAV_ITEMS = [
   { icon: GitBranch, label: 'Family Tree', href: '/dashboard', color: 'text-primary' },
@@ -26,6 +31,7 @@ const NAV_ITEMS = [
   { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500' },
   { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400' },
   { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400' },
+  { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400' },
 ]
 
 interface AppSidebarProps {
@@ -63,8 +69,8 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const sidebarContent = (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/50 px-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary shadow-lg shadow-primary/20">
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/40 px-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary shadow-lg shadow-primary/20 ring-1 ring-amber-500/20">
           <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-primary-foreground" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="7" r="3" />
             <circle cx="6" cy="17" r="2.5" />
@@ -89,9 +95,9 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
           { label: 'Living', value: stats.living, icon: Star, color: 'text-green-400' },
           { label: 'Cities', value: stats.cities, icon: Globe, color: 'text-blue-400' },
         ].map(s => (
-          <div key={s.label} className="flex flex-col rounded-lg bg-muted/40 px-2.5 py-2">
+          <div key={s.label} className="flex flex-col rounded-xl bg-muted/30 border border-border/50 px-2.5 py-2">
             <s.icon className={cn('h-3.5 w-3.5 mb-0.5', s.color)} />
-            <span className="text-base font-bold">{s.value}</span>
+            <span className="text-base font-bold text-foreground">{s.value}</span>
             <span className="text-[10px] text-muted-foreground">{s.label}</span>
           </div>
         ))}
@@ -107,25 +113,41 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
               href={item.href}
               onClick={() => setOpen(false)}
               className={cn(
-                'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                  ? 'bg-muted/40 text-primary border-l-2 border-primary pl-[10px]'
+                  : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground border-l-2 border-transparent pl-[10px]'
               )}
             >
               <item.icon className={cn('h-4 w-4', isActive ? 'text-primary' : item.color)} />
               {item.label}
-              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
             </Link>
           )
         })}
 
         <Separator className="my-2" />
 
+        {/* Advanced Analytics mini-chart */}
+        <div className="mt-3 px-2">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 mb-2 px-1">Advanced Analytics</p>
+          <div className="rounded-xl bg-muted/20 border border-border/40 p-2">
+            <p className="text-[10px] text-muted-foreground mb-1">Missing data</p>
+            <ResponsiveContainer width="100%" height={56}>
+              <BarChart data={ANALYTICS_DATA} barSize={10} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                <Bar dataKey="v" radius={[3, 3, 0, 0]}>
+                  {ANALYTICS_DATA.map((_, idx) => (
+                    <Cell key={idx} fill="#6366F1" fillOpacity={0.55 + idx * 0.09} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         {onInsightsClick && (
           <button
             onClick={() => { onInsightsClick(); setOpen(false) }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors border-l-2 border-transparent pl-[10px]"
           >
             <BarChart3 className="h-4 w-4 text-pink-400" />
             AI Insights
@@ -135,12 +157,12 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
         {onFeedClick && (
           <button
             onClick={() => { onFeedClick(); setOpen(false) }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors border-l-2 border-transparent pl-[10px]"
           >
             <Activity className="h-4 w-4 text-cyan-400" />
             Family Feed
             {feedCount !== undefined && (
-              <Badge className="ml-auto h-4 px-1.5 text-[10px]">{feedCount}</Badge>
+              <Badge className="ml-auto h-4 px-1.5 text-[10px] bg-cyan-500/20 text-cyan-400 border-cyan-500/30">{feedCount}</Badge>
             )}
           </button>
         )}
@@ -150,15 +172,15 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
       </nav>
 
       {/* User Profile */}
-      <div className="shrink-0 border-t border-border/50 p-3 space-y-2">
-        <div className="flex items-center gap-2.5 rounded-xl bg-muted/40 p-2.5">
+      <div className="shrink-0 border-t border-border/40 p-3 space-y-2">
+        <div className="flex items-center gap-2.5 rounded-xl bg-muted/30 border border-border/50 p-2.5">
           <Avatar className="h-8 w-8">
             <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
               {initials || 'FG'}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold truncate">{displayName}</p>
+            <p className="text-xs font-semibold truncate text-foreground">{displayName}</p>
             <p className="text-[10px] text-muted-foreground truncate capitalize">
               {profile?.role ?? 'Member'}
             </p>
@@ -173,7 +195,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
         {user && (
           <button
             onClick={handleSignOut}
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" />
             Sign out
@@ -205,9 +227,10 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 w-64 border-r border-border/50 bg-card transition-transform duration-300 lg:relative lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 w-64 border-r border-border/40 backdrop-blur-2xl transition-transform duration-300 lg:relative lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
+        style={{ background: 'var(--surface-sidebar)' }}
       >
         {sidebarContent}
       </aside>

@@ -6,18 +6,25 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { useMemo, useState } from 'react'
-import { Search, Users, Layers, Clock } from 'lucide-react'
+import { Search, Users, Layers, Clock, Network } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface MemberListSidebarProps {
   members: FamilyMember[]
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
+  maxDegree?: number
+  onMaxDegreeChange?: (d: number) => void
+  totalCount?: number
 }
 
 export function MemberListSidebar({
   members,
   selectedMemberId,
   onSelectMember,
+  maxDegree = 10,
+  onMaxDegreeChange,
+  totalCount,
 }: MemberListSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -71,9 +78,16 @@ export function MemberListSidebar({
   }, [members])
 
   return (
-    <div className="flex h-full flex-col border-r border-border/50 bg-card">
-      <div className="border-b border-border/50 p-4">
-        <h2 className="font-semibold text-foreground mb-1">Family Members</h2>
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border/40 p-4">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-semibold text-foreground">Family Members</h2>
+          {totalCount !== undefined && totalCount > members.length && (
+            <span className="text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/30">
+              {members.length}/{totalCount}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Users className="h-3 w-3" />
@@ -81,32 +95,73 @@ export function MemberListSidebar({
           </span>
           <span className="flex items-center gap-1">
             <Layers className="h-3 w-3" />
-            {stats.generations} generations
+            {stats.generations} gen
           </span>
         </div>
       </div>
 
-      <div className="px-4 py-3 border-b border-border/50">
+      {/* Degree filter */}
+      {onMaxDegreeChange && (
+        <div className="px-4 py-2.5 border-b border-border/40 bg-muted/10">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Network className="h-3 w-3" />
+              Depth
+            </span>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => onMaxDegreeChange(d)}
+                  className={cn(
+                    'h-5 w-5 rounded text-[10px] font-bold transition-colors',
+                    maxDegree === d
+                      ? 'bg-primary text-white'
+                      : maxDegree > d
+                        ? 'bg-primary/20 text-primary'
+                        : 'bg-muted/40 text-muted-foreground hover:bg-muted/60'
+                  )}
+                >
+                  {d}
+                </button>
+              ))}
+              <button
+                onClick={() => onMaxDegreeChange(10)}
+                className={cn(
+                  'h-5 px-1.5 rounded text-[10px] font-bold transition-colors',
+                  maxDegree === 10
+                    ? 'bg-primary text-white'
+                    : 'bg-muted/40 text-muted-foreground hover:bg-muted/60'
+                )}
+              >
+                All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 py-3 border-b border-border/40">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search family..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-muted/30 border-border/50 focus:border-primary/50"
+            className="pl-9 bg-muted/30 border-border/40 focus:border-primary/50 text-foreground placeholder:text-muted-foreground"
           />
         </div>
       </div>
 
       <Tabs defaultValue="all" className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mt-3 grid w-auto grid-cols-3 bg-muted/30">
-          <TabsTrigger value="all" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+        <TabsList className="mx-4 mt-3 grid w-auto grid-cols-3 bg-muted/30 border border-border/40">
+          <TabsTrigger value="all" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-white text-muted-foreground">
             All
           </TabsTrigger>
-          <TabsTrigger value="generations" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+          <TabsTrigger value="generations" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-white text-muted-foreground">
             By Gen
           </TabsTrigger>
-          <TabsTrigger value="recent" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+          <TabsTrigger value="recent" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-white text-muted-foreground">
             Recent
           </TabsTrigger>
         </TabsList>
