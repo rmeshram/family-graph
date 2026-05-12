@@ -12,7 +12,7 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   GitBranch, Camera, UserPlus, Clock, Sparkles,
   Users, Globe, Star, BarChart3, Activity,
-  CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut, Printer,
+  CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut, Printer, BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400' },
   { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400' },
   { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400' },
+  { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400' },
 ]
 
 interface AppSidebarProps {

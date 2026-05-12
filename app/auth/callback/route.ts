@@ -10,6 +10,19 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      // After OAuth (Google), detect new vs returning user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('family_id')
+          .eq('id', user.id)
+          .single()
+        // New user (no family yet) → onboarding
+        if (!profile?.family_id) {
+          return NextResponse.redirect(`${origin}/onboarding`)
+        }
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }

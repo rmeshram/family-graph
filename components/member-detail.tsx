@@ -27,6 +27,10 @@ import {
   CheckCircle2,
   TrendingUp,
   GitBranch,
+  Globe,
+  Users,
+  Lock,
+  Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -83,6 +87,8 @@ interface MemberDetailProps {
   onEdit: () => void
   onDelete?: () => void
   onAddStory?: () => void
+  isAdmin?: boolean
+  onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
 }
 
 const milestoneIcons: Record<string, React.ReactNode> = {
@@ -110,6 +116,8 @@ export function MemberDetail({
   onEdit,
   onDelete,
   onAddStory,
+  isAdmin = false,
+  onSetVisibility,
 }: MemberDetailProps) {
   const initials = member.name
     .split(' ')
@@ -296,6 +304,45 @@ export function MemberDetail({
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              <Separator className="bg-border/50" />
+
+              {/* Privacy / Visibility — admin only */}
+              {isAdmin && onSetVisibility && (
+                <div className="rounded-xl bg-muted/30 border border-border/40 p-3 space-y-2">
+                  <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                    Privacy
+                  </h3>
+                  <div className="flex gap-2">
+                    {([
+                      { key: 'public', label: 'Public', icon: Globe, color: 'text-green-400 border-green-500/40 bg-green-500/10' },
+                      { key: 'family', label: 'Family', icon: Users, color: 'text-primary border-primary/40 bg-primary/10' },
+                      { key: 'private', label: 'Private', icon: Lock, color: 'text-red-400 border-red-500/40 bg-red-500/10' },
+                    ] as const).map(({ key, label, icon: Icon, color }) => {
+                      const active = (member.visibility ?? 'family') === key
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => onSetVisibility(member.id, key)}
+                          className={cn(
+                            'flex-1 flex flex-col items-center gap-1 rounded-lg border py-2 text-[10px] font-medium transition-all',
+                            active ? color : 'border-border/40 text-muted-foreground hover:border-border/60'
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {(member.visibility ?? 'family') === 'public' && 'Visible to anyone with the invite link'}
+                    {(member.visibility ?? 'family') === 'family' && 'Visible to all family members'}
+                    {(member.visibility ?? 'family') === 'private' && 'Only visible to admins'}
+                  </p>
                 </div>
               )}
 

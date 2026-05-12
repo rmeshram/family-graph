@@ -183,8 +183,13 @@ export function useMembers(familyId: string | null) {
         }).eq('id', m.id)
       }
     }
-    const { error } = await supabase.from('family_members').delete().eq('id', id)
+    // Use count to detect RLS silent block (0 rows deleted = permission denied)
+    const { error, count } = await supabase
+      .from('family_members')
+      .delete({ count: 'exact' })
+      .eq('id', id)
     if (error) throw new Error(error.message)
+    if ((count ?? 0) === 0) throw new Error('Permission denied: only family admins can delete members')
   }, [supabase, members])
 
   const claimMember = useCallback(async (memberId: string, userId: string) => {

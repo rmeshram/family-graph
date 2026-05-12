@@ -38,7 +38,11 @@ export default function SignUpPage() {
     setIsLoading(true)
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        // Magic link fallback — if user clicks the link instead of entering the code
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     })
     setIsLoading(false)
     if (error) { setError(error.message); return }
@@ -53,9 +57,13 @@ export default function SignUpPage() {
     const { data, error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' })
     setIsLoading(false)
     if (error) { setError(error.message); return }
-    // New user → onboarding; returning user → dashboard
-    const isNew = data.user?.created_at === data.user?.last_sign_in_at
-    router.push(isNew ? '/onboarding' : '/dashboard')
+    // Reliable new-user detection: check if profile has family_id set
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('family_id')
+      .eq('id', data.user!.id)
+      .single()
+    router.push(!profile?.family_id ? '/onboarding' : '/dashboard')
     router.refresh()
   }
 
@@ -116,8 +124,9 @@ export default function SignUpPage() {
               {error}
             </div>
           )}
-          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm text-center">
-            6-digit code sent to <strong>{email}</strong> ✓
+          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm text-center space-y-1">
+            <div>6-digit code sent to <strong>{email}</strong> ✓</div>
+            <div className="text-[11px] text-primary/70">Can't see the code? Click the magic link button in the email instead.</div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="otp">Enter 6-digit code</Label>

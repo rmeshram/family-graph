@@ -38,7 +38,11 @@ export default function SignInPage() {
     setIsLoading(true)
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        // Magic-link fallback (if user clicks link instead of entering code)
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     })
     setIsLoading(false)
     if (error) { setError(error.message); return }
@@ -50,10 +54,16 @@ export default function SignInPage() {
     e.preventDefault()
     setError('')
     setIsLoading(true)
-    const { error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' })
+    const { data, error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' })
     setIsLoading(false)
     if (error) { setError(error.message); return }
-    router.push('/dashboard')
+    // If user has no family yet, send to onboarding
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('family_id')
+      .eq('id', data.user!.id)
+      .single()
+    router.push(!profile?.family_id ? '/onboarding' : '/dashboard')
     router.refresh()
   }
 
@@ -98,7 +108,7 @@ export default function SignInPage() {
                 autoFocus
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">We'll email you a 6-digit code — no password needed</p>
+            <p className="text-[11px] text-muted-foreground">We'll email you a sign-in link and a 6-digit code — no password needed</p>
           </div>
 
           <Button type="submit" className="w-full h-11" disabled={isLoading || !email.includes('@')}>
@@ -118,8 +128,9 @@ export default function SignInPage() {
             </div>
           )}
 
-          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm text-center">
-            6-digit code sent to <strong>{email}</strong> ✓
+          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm text-center space-y-1">
+            <div>Code sent to <strong>{email}</strong> ✓</div>
+            <div className="text-[11px] text-primary/70">Enter the 6-digit code below, or click the magic link in the email.</div>
           </div>
 
           <div className="space-y-2">

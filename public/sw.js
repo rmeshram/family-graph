@@ -66,3 +66,31 @@ self.addEventListener('fetch', (event) => {
     return
   }
 })
+
+// Push notifications: birthday / anniversary reminders
+self.addEventListener('push', (event) => {
+  const data = event.data?.json() ?? {}
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Family Graph', {
+      body: data.body || 'You have a new family update',
+      icon: '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
+      tag: data.tag || 'family-graph',
+      data: { url: data.url || '/dashboard' },
+    })
+  )
+})
+
+// Notification tap: open or focus the relevant page
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/dashboard'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus()
+      }
+      return clients.openWindow(url)
+    })
+  )
+})

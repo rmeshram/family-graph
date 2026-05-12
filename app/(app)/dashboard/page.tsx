@@ -334,35 +334,13 @@ function InviteWidget({ onClose }: { onClose: () => void }) {
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function FamilyGraphApp() {
-  const { user, familyId } = useAuth()
+  const { user, familyId, profile } = useAuth()
   const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
-  // Use real DB data when available, fall back to sample data for demo
-  // Merge DB stories into member objects so member-detail Stories tab works
-  const members = useMemo(() => {
-    if (!familyId || dbLoading) return sampleFamilyMembers
-    return dbMembers.map(m => ({
-      ...m,
-      stories: storiesByMember[m.id] ?? [],
-    }))
-  }, [familyId, dbLoading, dbMembers, storiesByMember])
-
+  // All useState BEFORE any useMemo (avoids Turbopack TDZ in dev mode)
   const [maxDegree, setMaxDegree] = useState(10)
   const [showExtended, setShowExtended] = useState(false)
-
-  // The "self" member is the root for degree calculations
-  const selfMember = members.find(m => m.relationship === 'self') ?? members[0] ?? null
-  const filteredMembers = useMemo(() => {
-    let base = maxDegree < 10 && selfMember
-      ? filterByDegree(members, selfMember.id, maxDegree)
-      : members
-    if (!showExtended) {
-      base = base.filter(m => !m.networkGroup || m.networkGroup === 'core')
-    }
-    return base
-  }, [members, maxDegree, selfMember, showExtended])
-
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
@@ -377,6 +355,28 @@ export default function FamilyGraphApp() {
   const [viewMode, setViewMode] = useState<TreeViewMode>('graph')
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
+
+  // Use real DB data when available, fall back to sample data for demo
+  // Merge DB stories into member objects so member-detail Stories tab works
+  const members = useMemo(() => {
+    if (!familyId || dbLoading) return sampleFamilyMembers
+    return dbMembers.map(m => ({
+      ...m,
+      stories: storiesByMember[m.id] ?? [],
+    }))
+  }, [familyId, dbLoading, dbMembers, storiesByMember])
+
+  // The "self" member is the root for degree calculations
+  const selfMember = members.find(m => m.relationship === 'self') ?? members[0] ?? null
+  const filteredMembers = useMemo(() => {
+    let base = maxDegree < 10 && selfMember
+      ? filterByDegree(members, selfMember.id, maxDegree)
+      : members
+    if (!showExtended) {
+      base = base.filter(m => !m.networkGroup || m.networkGroup === 'core')
+    }
+    return base
+  }, [members, maxDegree, selfMember, showExtended])
 
   const { toast } = useToast()
   const selectedMember = members.find((m) => m.id === selectedMemberId)
@@ -400,18 +400,21 @@ export default function FamilyGraphApp() {
 
   const handleDeleteMember = useCallback(async () => {
     if (!selectedMemberId) return
-    const memberToDelete = members.find(m => m.id === selectedMemberId)
-    if (familyId) {
-      try {
-        await dbDeleteMember(selectedMemberId)
-      } catch (e: unknown) {
-        toast({ title: 'Failed to delete', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
-        return
-      }
+    if (!familyId) {
+      toast({ title: 'Demo mode', description: 'Sign in to manage members.', variant: 'destructive' })
+      setIsDeleteDialogOpen(false)
+      return
     }
-    setSelectedMemberId(null)
-    setIsDeleteDialogOpen(false)
-    toast({ title: 'Member removed', description: `${memberToDelete?.name} has been removed.` })
+    const memberToDelete = members.find(m => m.id === selectedMemberId)
+    try {
+      await dbDeleteMember(selectedMemberId)
+      setSelectedMemberId(null)
+      setIsDeleteDialogOpen(false)
+      toast({ title: 'Member removed', description: `${memberToDelete?.name} has been removed.` })
+    } catch (e: unknown) {
+      toast({ title: 'Could not delete', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+      setIsDeleteDialogOpen(false)
+    }
   }, [selectedMemberId, members, familyId, dbDeleteMember, toast])
 
   const handleAddStory = useCallback(async (memberId: string, storyData: Omit<Story, 'id' | 'createdAt'>) => {
@@ -643,6 +646,15 @@ export default function FamilyGraphApp() {
                 onEdit={() => setEditingMember(selectedMember)}
                 onDelete={() => setIsDeleteDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
+                isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
+                onSetVisibility={async (memberId, v) => {
+                  try {
+                    await setVisibility(memberId, v)
+                    toast({ title: 'Visibility updated' })
+                  } catch (e: unknown) {
+                    toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+                  }
+                }}
               />
             </aside>
           )}
