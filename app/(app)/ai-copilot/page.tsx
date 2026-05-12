@@ -30,6 +30,7 @@ import {
   ThumbsDown,
   Bot,
   User,
+  Lightbulb,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -194,6 +195,15 @@ function generateAIResponse(query: string, members: FamilyMember[]): { content: 
     }
   }
 
+  // Memory prompt / record story
+  if (q.includes('help me record') || q.includes('record:')) {
+    const promptText = query.replace(/help me record:?\s*/i, '').trim()
+    return {
+      content: `🎙️ **Memory Capture Guide**\n\n*"${promptText}"*\n\n**How to capture this story:**\n\n1. **Set the scene** — Sit with them in a comfortable, quiet place. Turn on the recorder in **Memory Vault → Voice Notes**.\n\n2. **Starter questions:**\n   • "Can you tell me about that time...?"\n   • "What do you remember most vividly?"\n   • "How old were you when this happened?"\n   • "Who else was there with you?"\n\n3. **Let them speak** — Don't interrupt. Let silences breathe.\n\n4. **After recording** — Add it to Memory Vault. The AI will auto-transcribe and tag the members mentioned.\n\n*Tip: Even 5 minutes of audio is precious. Future generations will treasure it.*`,
+      relatedIds: [],
+    }
+  }
+
   // Add member queries
   const addMatch = q.match(/add (?:my )?(.+?) (?:named? )?(.+)/i)
   if (addMatch) {
@@ -257,6 +267,17 @@ const SUGGESTIONS = [
   { icon: BookOpen, label: "Tell me our family history", color: "text-amber-400" },
   { icon: Zap, label: "How many members do we have?", color: "text-pink-400" },
   { icon: MessageSquare, label: "Who is the oldest member?", color: "text-cyan-400" },
+]
+
+// ─── Memory Prompts ───────────────────────────────────────────────────────────
+
+const MEMORY_PROMPTS = [
+  { prompt: "Ask your grandfather about his childhood home", target: "Suresh Dada", icon: "🏡" },
+  { prompt: "Record Dadi's dal baati churma recipe before it's lost", target: "Laxmi Dadi", icon: "🍲" },
+  { prompt: "Ask Nani about Partition stories she remembers", target: "Sushila Devi", icon: "📜" },
+  { prompt: "Capture father's memory of founding Saraswati Vidyalaya", target: "Suresh Dada", icon: "🏫" },
+  { prompt: "Ask the elders about the 1998 family reunion in Nagpur", target: "Whole family", icon: "👨‍👩‍👧‍👦" },
+  { prompt: "Record the story of how the family migrated from Varanasi", target: "Suresh Dada", icon: "🗺️" },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -381,6 +402,29 @@ export default function AICopilotPage() {
                 {s.label}
               </button>
             ))}
+          </div>
+
+          {/* Memory Prompts */}
+          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 mb-2">
+              <Lightbulb className="h-3.5 w-3.5" />
+              Memory Prompts — stories to capture before they&apos;re lost
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {MEMORY_PROMPTS.map((mp) => (
+                <button
+                  key={mp.prompt}
+                  onClick={() => sendMessage(`Help me record: ${mp.prompt}`)}
+                  className="flex items-start gap-2 rounded-lg border border-amber-500/10 bg-amber-500/5 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-amber-500/30 hover:text-foreground hover:bg-amber-500/10"
+                >
+                  <span className="text-base leading-none mt-0.5">{mp.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="line-clamp-1 leading-tight">{mp.prompt}</p>
+                    <p className="text-[10px] text-amber-400/70 mt-0.5">{mp.target}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

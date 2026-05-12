@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -23,8 +24,57 @@ import {
   Star,
   Clock,
   PlusCircle,
+  CheckCircle2,
+  TrendingUp,
+  GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function computeProfileCompleteness(member: FamilyMember): { score: number; missing: string[] } {
+  const checks = [
+    { label: 'Birth year', has: !!member.birthYear },
+    { label: 'Birthplace', has: !!member.birthPlace },
+    { label: 'Occupation', has: !!member.occupation },
+    { label: 'Biography', has: !!member.bio },
+    { label: 'Milestones', has: (member.milestones?.length ?? 0) > 0 },
+    { label: 'Stories', has: (member.stories?.length ?? 0) > 0 },
+    { label: 'Gotra', has: !!member.gotra },
+    { label: 'Photo', has: !!member.photoUrl },
+  ]
+  const done = checks.filter(c => c.has)
+  const missing = checks.filter(c => !c.has).map(c => c.label)
+  return { score: Math.round((done.length / checks.length) * 100), missing }
+}
+
+function findRelationshipPath(
+  fromId: string,
+  toId: string,
+  members: FamilyMember[]
+): FamilyMember[] | null {
+  if (fromId === toId) return []
+  const memberMap = new Map(members.map(m => [m.id, m]))
+  const visited = new Set<string>()
+  const queue: { id: string; path: string[] }[] = [{ id: fromId, path: [fromId] }]
+  while (queue.length > 0) {
+    const { id, path } = queue.shift()!
+    if (visited.has(id)) continue
+    visited.add(id)
+    if (id === toId) return path.map(i => memberMap.get(i)!).filter(Boolean)
+    const m = memberMap.get(id)
+    if (!m) continue
+    const neighbors = [
+      ...m.parentIds,
+      ...m.spouseIds,
+      ...members.filter(x => x.parentIds.includes(id)).map(x => x.id),
+    ]
+    for (const nId of neighbors) {
+      if (!visited.has(nId)) queue.push({ id: nId, path: [...path, nId] })
+    }
+  }
+  return null
+}
 
 interface MemberDetailProps {
   member: FamilyMember
@@ -87,6 +137,12 @@ export function MemberDetail({
     : null
 
   const sortedMilestones = [...(member.milestones || [])].sort((a, b) => a.year - b.year)
+
+  const selfMember = allMembers.find(m => m.relationship === 'self')
+  const completeness = computeProfileCompleteness(member)
+  const relationPath = selfMember && member.id !== selfMember.id
+    ? findRelationshipPath(selfMember.id, member.id, allMembers)
+    : null
 
   return (
     <Card className="h-full overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
@@ -187,6 +243,59 @@ export function MemberDetail({
                     Biography
                   </h3>
                   <p className="text-sm leading-relaxed text-muted-foreground">{member.bio}</p>
+                </div>
+              )}
+
+              {/* Profile Completeness */}
+              <div className="rounded-xl bg-muted/30 border border-border/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <TrendingUp className="h-3.5 w-3.5 text-primary" />
+                    Profile Completeness
+                  </h3>
+                  <span className={cn(
+                    "text-xs font-bold",
+                    completeness.score >= 80 ? "text-green-400" : completeness.score >= 50 ? "text-amber-400" : "text-red-400"
+                  )}>{completeness.score}%</span>
+                </div>
+                <Progress
+                  value={completeness.score}
+                  className={cn(
+                    "h-1.5",
+                    completeness.score >= 80 ? "[&>div]:bg-green-400" : completeness.score >= 50 ? "[&>div]:bg-amber-400" : "[&>div]:bg-red-400"
+                  )}
+                />
+                {completeness.missing.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Missing: {completeness.missing.slice(0, 4).join(', ')}{completeness.missing.length > 4 ? '…' : ''}
+                  </p>
+                )}
+                {completeness.score === 100 && (
+                  <p className="text-[10px] text-green-400 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Complete profile
+                  </p>
+                )}
+              </div>
+
+              {/* Relationship Path */}
+              {relationPath !== null && (
+                <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3 space-y-2">
+                  <h3 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                    <GitBranch className="h-3.5 w-3.5" />
+                    Your Connection · {relationPath.length - 1} step{relationPath.length !== 2 ? 's' : ''}
+                  </h3>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {relationPath.map((m, i) => (
+                      <span key={m.id} className="flex items-center gap-1">
+                        <span className="rounded-full bg-amber-500/10 text-amber-300 text-[10px] px-2 py-0.5 font-medium">
+                          {m.name.split(' ')[0]}
+                        </span>
+                        {i < relationPath.length - 1 && (
+                          <span className="text-[10px] text-muted-foreground">→</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 

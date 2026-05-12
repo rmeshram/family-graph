@@ -34,6 +34,7 @@ import {
   Share2,
   ChevronRight,
   Volume2,
+  MessageCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -345,8 +346,18 @@ function MemoryDetail({ memory, members, onBack }: { memory: MemoryItem; members
       <div className="mt-4">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-xl font-bold">{memory.title}</h2>
-          <div className="flex gap-2">
-            <Button variant="outline" size="icon" className="h-8 w-8">
+          <div className="flex gap-2">            <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-green-500/40 text-green-600 hover:bg-green-500/10"
+            onClick={() => {
+              const text = `${memory.title} (${memory.year})\n\n${memory.description ?? ''}\n\nShared from Family Graph`
+              window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+            }}
+          >
+            <MessageCircle className="h-4 w-4" />
+            WhatsApp
+          </Button>            <Button variant="outline" size="icon" className="h-8 w-8">
               <Share2 className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="icon" className="h-8 w-8">
