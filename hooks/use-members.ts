@@ -37,6 +37,15 @@ function dbToMember(row: DBMember): FamilyMember {
     phone: row.phone ?? undefined,
     email: row.email ?? undefined,
     addedAt: row.added_at,
+    // Migration 002
+    claimedByUserId: (row as any).claimed_by_user_id ?? undefined,
+    isClaimed: (row as any).is_claimed ?? false,
+    visibility: ((row as any).visibility as FamilyMember['visibility']) ?? 'family',
+    // Migration 003: extended & affiliated family
+    networkGroup: ((row as any).network_group as FamilyMember['networkGroup']) ?? 'core',
+    affiliatedFamilyId: (row as any).affiliated_family_id ?? undefined,
+    affiliatedFamilyName: (row as any).affiliated_family_name ?? undefined,
+    affiliatedJunctionId: (row as any).affiliated_junction_id ?? undefined,
   }
 }
 
@@ -72,7 +81,12 @@ function memberToInsert(
     phone: member.phone ?? null,
     email: member.email ?? null,
     added_by: userId,
-  }
+    // Migration 003
+    ...(member.networkGroup && member.networkGroup !== 'core' ? { network_group: member.networkGroup } : {}),
+    ...(member.affiliatedFamilyId ? { affiliated_family_id: member.affiliatedFamilyId } : {}),
+    ...(member.affiliatedFamilyName ? { affiliated_family_name: member.affiliatedFamilyName } : {}),
+    ...(member.affiliatedJunctionId ? { affiliated_junction_id: member.affiliatedJunctionId } : {}),
+  } as Database['public']['Tables']['family_members']['Insert']
 }
 
 // ─── useMembers hook ──────────────────────────────────────────────────────────
@@ -199,33 +213,42 @@ export function useStories(familyId: string | null) {
   const supabase = createClient()
   const [storiesByMember, setStoriesByMember] = useState<Record<string, Story[]>>({})
 
+  const fetchStories = useCallback(async () => {
+    if (!familyId) return
+    const { data } = await supabase
+      .from('stories')
+      .select('*')
+      .eq('family_id', familyId)
+      .order('created_at', { ascending: false })
+    if (!data) return
+    const grouped: Record<string, Story[]> = {}
+    data.forEach(row => {
+      if (!grouped[row.member_id]) grouped[row.member_id] = []
+      grouped[row.member_id].push({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        date: row.date ?? undefined,
+        author: row.author ?? undefined,
+        createdAt: row.created_at,
+        aiGenerated: row.ai_generated,
+        language: row.language ?? undefined,
+      })
+    })
+    setStoriesByMember(grouped)
+  }, [familyId, supabase])
+
+  useEffect(() => { fetchStories() }, [fetchStories])
+
+  // Real-time subscription so new stories appear instantly
   useEffect(() => {
     if (!familyId) return
-    const fetchStories = async () => {
-      const { data } = await supabase
-        .from('stories')
-        .select('*')
-        .eq('family_id', familyId)
-        .order('created_at', { ascending: false })
-      if (!data) return
-      const grouped: Record<string, Story[]> = {}
-      data.forEach(row => {
-        if (!grouped[row.member_id]) grouped[row.member_id] = []
-        grouped[row.member_id].push({
-          id: row.id,
-          title: row.title,
-          content: row.content,
-          date: row.date ?? undefined,
-          author: row.author ?? undefined,
-          createdAt: row.created_at,
-          aiGenerated: row.ai_generated,
-          language: row.language ?? undefined,
-        })
-      })
-      setStoriesByMember(grouped)
-    }
-    fetchStories()
-  }, [familyId, supabase])
+    const ch = supabase
+      .channel(`stories:${familyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stories', filter: `family_id=eq.${familyId}` }, fetchStories)
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [familyId, supabase, fetchStories])
 
   const addStory = useCallback(async (
     memberId: string,

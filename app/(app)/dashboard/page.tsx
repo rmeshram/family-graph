@@ -336,10 +336,17 @@ function InviteWidget({ onClose }: { onClose: () => void }) {
 export default function FamilyGraphApp() {
   const { user, familyId } = useAuth()
   const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
-  const { addStory: dbAddStory } = useStories(familyId)
+  const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
   // Use real DB data when available, fall back to sample data for demo
-  const members = familyId && !dbLoading ? dbMembers : sampleFamilyMembers
+  // Merge DB stories into member objects so member-detail Stories tab works
+  const members = useMemo(() => {
+    if (!familyId || dbLoading) return sampleFamilyMembers
+    return dbMembers.map(m => ({
+      ...m,
+      stories: storiesByMember[m.id] ?? [],
+    }))
+  }, [familyId, dbLoading, dbMembers, storiesByMember])
 
   const [maxDegree, setMaxDegree] = useState(10)
   const [showExtended, setShowExtended] = useState(false)

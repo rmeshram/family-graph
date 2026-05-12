@@ -71,6 +71,11 @@ export type Database = {
           claimed_by_user_id: string | null
           is_claimed: boolean
           visibility: string
+          // Migration 003: extended & affiliated family
+          network_group: string
+          affiliated_family_id: string | null
+          affiliated_family_name: string | null
+          affiliated_junction_id: string | null
         }
         Insert: {
           id?: string
@@ -105,6 +110,11 @@ export type Database = {
           claimed_by_user_id?: string | null
           is_claimed?: boolean
           visibility?: string
+          // Migration 003
+          network_group?: string
+          affiliated_family_id?: string | null
+          affiliated_family_name?: string | null
+          affiliated_junction_id?: string | null
         }
         Update: {
           id?: string
@@ -139,6 +149,11 @@ export type Database = {
           claimed_by_user_id?: string | null
           is_claimed?: boolean
           visibility?: string
+          // Migration 003
+          network_group?: string
+          affiliated_family_id?: string | null
+          affiliated_family_name?: string | null
+          affiliated_junction_id?: string | null
         }
         Relationships: []
       }
