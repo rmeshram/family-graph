@@ -47,13 +47,16 @@ export function AddMemberDialog({
   const [bio, setBio] = useState('')
   const [parentId, setParentId] = useState<string>('')
   const [spouseId, setSpouseId] = useState<string>('')
+  const [networkGroup, setNetworkGroup] = useState<'core' | 'extended' | 'affiliated'>('core')
+  const [affiliatedFamilyName, setAffiliatedFamilyName] = useState('')
+  const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const parentIds = parentId && parentId !== 'none' ? [parentId] : []
     const spouseIds = spouseId && spouseId !== 'none' ? [spouseId] : []
-    
+
     const parentMember = existingMembers.find((m) => m.id === parentId)
     const generation = parentMember ? parentMember.generation + 1 : 0
 
@@ -68,6 +71,10 @@ export function AddMemberDialog({
       parentIds,
       spouseIds,
       generation,
+      networkGroup: networkGroup !== 'core' ? networkGroup : undefined,
+      affiliatedFamilyName: networkGroup === 'affiliated' && affiliatedFamilyName ? affiliatedFamilyName : undefined,
+      affiliatedFamilyId: networkGroup === 'affiliated' && affiliatedFamilyName ? affiliatedFamilyName.toLowerCase().replace(/\s+/g, '-') : undefined,
+      affiliatedJunctionId: networkGroup === 'affiliated' && affiliatedJunctionId && affiliatedJunctionId !== 'none' ? affiliatedJunctionId : undefined,
     })
 
     resetForm()
@@ -84,6 +91,9 @@ export function AddMemberDialog({
     setBio('')
     setParentId('')
     setSpouseId('')
+    setNetworkGroup('core')
+    setAffiliatedFamilyName('')
+    setAffiliatedJunctionId('')
   }
 
   return (
@@ -277,6 +287,74 @@ export function AddMemberDialog({
                 />
               </div>
             </div>
+
+            <Separator className="bg-border/50" />
+
+            {/* Network Tier */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                Network Tier
+              </div>
+              <div className="space-y-2">
+                <Label>Relationship to main family</Label>
+                <Select value={networkGroup} onValueChange={(v) => setNetworkGroup(v as 'core' | 'extended' | 'affiliated')}>
+                  <SelectTrigger className="bg-muted/30 border-border/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="core">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-amber-400 inline-block" />
+                        Core Family (direct blood relative)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="extended">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-violet-400 inline-block" />
+                        Extended Relative (2nd cousin, great-uncle/aunt…)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="affiliated">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-teal-400 inline-block" />
+                        Affiliated Family (in-law relatives, spouse's family)
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {networkGroup === 'affiliated' && (
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-2">
+                    <Label>Family Name</Label>
+                    <Input
+                      value={affiliatedFamilyName}
+                      onChange={(e) => setAffiliatedFamilyName(e.target.value)}
+                      placeholder="e.g. Rao Family"
+                      className="bg-muted/30 border-border/50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Connects through</Label>
+                    <Select value={affiliatedJunctionId} onValueChange={setAffiliatedJunctionId}>
+                      <SelectTrigger className="bg-muted/30 border-border/50">
+                        <SelectValue placeholder="Select member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {existingMembers.map((member) => (
+                          <SelectItem key={member.id} value={member.id}>
+                            {member.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
           </form>
         </ScrollArea>
 
@@ -284,8 +362,8 @@ export function AddMemberDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             onClick={handleSubmit}
             className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
           >

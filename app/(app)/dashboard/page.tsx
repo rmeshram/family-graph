@@ -34,7 +34,7 @@ import { Toaster } from '@/components/ui/toaster'
 import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Download, Home, Activity,
-  Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network,
+  Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -342,12 +342,19 @@ export default function FamilyGraphApp() {
   const members = familyId && !dbLoading ? dbMembers : sampleFamilyMembers
 
   const [maxDegree, setMaxDegree] = useState(10)
+  const [showExtended, setShowExtended] = useState(false)
 
   // The "self" member is the root for degree calculations
   const selfMember = members.find(m => m.relationship === 'self') ?? members[0] ?? null
-  const filteredMembers = maxDegree < 10 && selfMember
-    ? filterByDegree(members, selfMember.id, maxDegree)
-    : members
+  const filteredMembers = useMemo(() => {
+    let base = maxDegree < 10 && selfMember
+      ? filterByDegree(members, selfMember.id, maxDegree)
+      : members
+    if (!showExtended) {
+      base = base.filter(m => !m.networkGroup || m.networkGroup === 'core')
+    }
+    return base
+  }, [members, maxDegree, selfMember, showExtended])
 
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -494,6 +501,21 @@ export default function FamilyGraphApp() {
               </button>
             ))}
           </div>
+
+          {/* Extended family toggle */}
+          <button
+            onClick={() => setShowExtended(v => !v)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium border transition-colors',
+              showExtended
+                ? 'bg-teal-500/10 border-teal-500/40 text-teal-400 hover:bg-teal-500/15'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground hover:border-border/60'
+            )}
+            title={showExtended ? 'Hide extended & affiliated family' : 'Show extended & affiliated family'}
+          >
+            <Users2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Extended</span>
+          </button>
 
           <div className="ml-auto flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => setIsSearchDialogOpen(true)} className="h-8 gap-1.5 text-xs text-muted-foreground">

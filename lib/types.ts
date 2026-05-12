@@ -62,6 +62,11 @@ export interface FamilyMember {
   claimedByUserId?: string
   isClaimed?: boolean
   visibility?: 'public' | 'family' | 'private'
+  // Extended & affiliated family network
+  networkGroup?: 'core' | 'extended' | 'affiliated'
+  affiliatedFamilyId?: string     // shared key for all members of same external family cluster
+  affiliatedFamilyName?: string   // display name e.g. "Rao Family"
+  affiliatedJunctionId?: string   // ID of the core-tree member this cluster connects through
 }
 
 export interface Story {
