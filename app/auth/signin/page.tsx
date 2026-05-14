@@ -62,11 +62,12 @@ export default function SignInPage() {
     const { data, error } = result
     setIsLoading(false)
     if (error) { setError(error.message); return }
+    if (!data.user) { setError('Sign in failed — please try again.'); return }
     // If user has no family yet, send to onboarding
     const { data: profile } = await supabase
       .from('profiles')
       .select('family_id')
-      .eq('id', data.user!.id)
+      .eq('id', data.user.id)
       .single()
     router.push(!profile?.family_id ? '/onboarding' : '/dashboard')
     router.refresh()

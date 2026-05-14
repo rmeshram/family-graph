@@ -62,11 +62,12 @@ export default function SignUpPage() {
     const { data, error } = result
     setIsLoading(false)
     if (error) { setError(error.message); return }
+    if (!data.user) { setError('Sign up failed — please try again.'); return }
     // Reliable new-user detection: check if profile has family_id set
     const { data: profile } = await supabase
       .from('profiles')
       .select('family_id')
-      .eq('id', data.user!.id)
+      .eq('id', data.user.id)
       .single()
     router.push(!profile?.family_id ? '/onboarding' : '/dashboard')
     router.refresh()
