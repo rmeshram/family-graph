@@ -98,9 +98,12 @@ export default function OnboardingPage() {
     if (currentStep > 0) setCurrentStep(currentStep - 1)
   }
 
-  const handleRequestPush = async () => {
-    await requestPushPermission()
-    setPushGranted(Notification.permission === "granted")
+  const handleRequestPush = () => {
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    // Must be called synchronously from a user gesture — no await
+    Notification.requestPermission().then((permission) => {
+      setPushGranted(permission === "granted")
+    })
   }
 
   const handleComplete = async () => {
