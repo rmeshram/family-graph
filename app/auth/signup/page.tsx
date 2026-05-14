@@ -190,6 +190,22 @@ export default function SignUpPage() {
         Already have an account?{" "}
         <Link href="/auth/signin" className="text-primary hover:underline font-medium">Sign in</Link>
       </p>
+
+      <div className="relative mt-6">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border/40" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-background px-2 text-xs text-muted-foreground/60">or</span>
+        </div>
+      </div>
+
+      <Link
+        href="/dashboard"
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] py-2.5 text-sm font-medium text-amber-400 hover:bg-amber-500/15 transition-colors"
+      >
+        🌳 Explore demo — no sign in needed
+      </Link>
     </div>
   )
 }
