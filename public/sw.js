@@ -1,6 +1,6 @@
 // Family Graph Service Worker — Cache-first for shell, network-first for API
 
-const CACHE_NAME = 'family-graph-v1'
+const CACHE_NAME = 'family-graph-v3'
 const SHELL_ASSETS = [
   '/',
   '/dashboard',
@@ -39,7 +39,19 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/auth/')) return
   if (url.pathname.startsWith('/api/')) return
 
-  // Static assets: cache-first
+  // JS chunks: always network-first so updated code is never stale
+  if (url.pathname.startsWith('/_next/static/chunks/')) {
+    event.respondWith(
+      fetch(request).then((response) => {
+        const clone = response.clone()
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone))
+        return response
+      }).catch(() => caches.match(request))
+    )
+    return
+  }
+
+  // Other static assets (css, fonts, images): cache-first
   if (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||

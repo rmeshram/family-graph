@@ -39,15 +39,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
+      <head />
+      <body className="font-sans bg-background text-foreground">
         {/* Restore theme before first paint to avoid flash */}
-        <script
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('fg-theme');if(t==='light')document.documentElement.classList.add('light-theme');}catch(e){}})()`,
           }}
         />
-      </head>
-      <body className="font-sans bg-background text-foreground">
         <AuthProvider>
           {children}
         </AuthProvider>
