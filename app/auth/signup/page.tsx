@@ -54,7 +54,12 @@ export default function SignUpPage() {
     e.preventDefault()
     setError('')
     setIsLoading(true)
-    const { data, error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' })
+    // Try 'email' type first (works for most cases), fall back to 'magiclink'
+    let result = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' })
+    if (result.error) {
+      result = await supabase.auth.verifyOtp({ email, token: otp, type: 'magiclink' })
+    }
+    const { data, error } = result
     setIsLoading(false)
     if (error) { setError(error.message); return }
     // Reliable new-user detection: check if profile has family_id set
