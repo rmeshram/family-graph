@@ -13,6 +13,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ParticleBackground } from '@/components/particle-background'
+import { useGraphIndex } from '@/hooks/use-graph-index'
+import { useViewportCulling, isEdgeVisible } from '@/hooks/use-viewport-culling'
 
 interface FamilyTreeProps {
   members: FamilyMember[]
@@ -36,15 +38,44 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
-  const [collapsedClusters, setCollapsedClusters] = useState<Set<string>>(new Set())
+  // Affiliated clusters start collapsed — user taps to progressively discover each family
+  const [collapsedClusters, setCollapsedClusters] = useState<Set<string>>(() => {
+    // Will be populated once members are available via the useEffect below
+    return new Set<string>()
+  })
+  // Track which clusters have ever been expanded (for stagger animation)
+  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set())
+  // Track extended family reveal state for stagger animation
+  const [extendedRevealed, setExtendedRevealed] = useState(false)
 
   // Touch state for pinch-zoom
   const touchRef = useRef<{ dist: number; midX: number; midY: number } | null>(null)
   const touchPanRef = useRef<{ x: number; y: number } | null>(null)
+  // Track whether we've done the initial auto-fit (only do it once per tree)
+  const hasAutoFit = useRef(false)
+  // Track whether dimensions have been measured from the actual DOM
+  const hasMeasuredDimensions = useRef(false)
+
+  // Collapse all affiliated clusters on first member load
+  useEffect(() => {
+    const clusterIds = new Set(
+      members
+        .filter(m => m.networkGroup === 'affiliated' && m.affiliatedFamilyId)
+        .map(m => m.affiliatedFamilyId!)
+    )
+    if (clusterIds.size > 0) {
+      setCollapsedClusters(prev => {
+        // Only set defaults if we haven't touched clusters yet (prev is empty)
+        if (prev.size === 0) return clusterIds
+        return prev
+      })
+    }
+  }, [members])
 
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
+        hasMeasuredDimensions.current = true
         setDimensions({
           width: containerRef.current.clientWidth,
           height: containerRef.current.clientHeight,
@@ -76,8 +107,11 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     const horizontalGap = 40
     const verticalGap = 140
 
-    // ── Core + Extended: use existing generation-based centering ─────────────
-    const mainMembers = visibleMembers.filter(m => m.networkGroup !== 'affiliated')
+    //  Core + Extended: layout core by generation, extended members in a
+    //  separate column grid to the left so they don't widen the core rows.
+    const coreMembers = visibleMembers.filter(m => !m.networkGroup || m.networkGroup === 'core')
+    const extendedMembers = visibleMembers.filter(m => m.networkGroup === 'extended')
+    const mainMembers = coreMembers // only core members define row width
     const generations = new Map<number, typeof mainMembers>()
     mainMembers.forEach((member) => {
       const gen = member.generation
@@ -98,7 +132,28 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       })
     })
 
-    // ── Affiliated clusters: anchor to junction node, place to the right ─────
+    //  Extended members: render in a compact grid to the LEFT of the core tree.
+    //  Group by generation, place at x < minCoreX - extColumnWidth - 60
+    if (extendedMembers.length > 0) {
+      const coreMinX = positions.length > 0 ? Math.min(...positions.map(p => p.x)) : dimensions.width / 2
+      const extNodeW = 130
+      const extHGap = 28
+      const extCols = Math.min(4, extendedMembers.length) // max 4 columns
+      const extColWidth = extCols * extNodeW + (extCols - 1) * extHGap
+      const extAnchorX = coreMinX - extColWidth - 80
+
+      extendedMembers.forEach((member, idx) => {
+        const col = idx % extCols
+        const row = Math.floor(idx / extCols)
+        positions.push({
+          id: member.id,
+          x: extAnchorX + col * (extNodeW + extHGap) + extNodeW / 2,
+          y: 100 + row * (nodeHeight + verticalGap - 60), // tighter vertical spacing
+        })
+      })
+    }
+
+    //  Affiliated clusters: anchor to junction node, place to the right 
     const affiliatedMembers = visibleMembers.filter(m => m.networkGroup === 'affiliated')
     const clusterMap = new Map<string, typeof affiliatedMembers>()
     affiliatedMembers.forEach(m => {
@@ -152,7 +207,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     return positions
   }, [members, dimensions.width, collapsedIds, collapsedClusters])
 
-  // ── Affiliated cluster metadata (bounds, junction pos) ─────────────────────
+  //  Affiliated cluster metadata (bounds, junction pos) 
   interface ClusterMeta {
     id: string
     name: string
@@ -225,8 +280,37 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     return lines
   }, [members, nodePositions])
 
-  // Pre-compute member map for O(1) lookups
-  const memberMap = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
+  //  Graph index — O(1) relationship lookups, replaces O(n) searches 
+  const graphIndex = useGraphIndex(members)
+  // Keep memberMap as alias for backward compat with SVG rendering code below
+  const memberMap = graphIndex.memberMap
+
+  //  Viewport culling — only render nodes visible on screen 
+  const viewport = useMemo(() => ({
+    pan, zoom,
+    width: dimensions.width,
+    height: dimensions.height,
+  }), [pan, zoom, dimensions])
+  const visibleIds = useViewportCulling(nodePositions, viewport, 220)
+
+  //  LOD tier — controls render complexity based on zoom level 
+  // 'dot'     (zoom < 0.30): SVG circles only, zero React node cards
+  // 'compact' (zoom 0.30-0.65): avatar + name, no details
+  // 'full'    (zoom > 0.65): full interactive card
+  const renderMode = zoom < 0.30 ? 'dot' : zoom < 0.65 ? 'compact' : 'full'
+
+  // Stagger index map: extended/affiliated nodes get a staggered animation delay
+  const staggerMap = useMemo(() => {
+    const map = new Map<string, number>()
+    let idx = 0
+    for (const pos of nodePositions) {
+      const m = memberMap.get(pos.id)
+      if (m && (m.networkGroup === 'extended' || m.networkGroup === 'affiliated')) {
+        map.set(pos.id, idx++)
+      }
+    }
+    return map
+  }, [nodePositions, memberMap])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
@@ -250,24 +334,38 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
-    const delta = e.deltaY > 0 ? 0.9 : 1.1
     const rect = containerRef.current?.getBoundingClientRect()
     if (!rect) return
-    // Cursor position relative to container
-    const cursorX = e.clientX - rect.left
-    const cursorY = e.clientY - rect.top
-    setZoom(prevZoom => {
-      const newZoom = Math.min(Math.max(prevZoom * delta, 0.2), 4)
-      // Adjust pan so the point under the cursor stays fixed
-      setPan(prevPan => ({
-        x: cursorX - (cursorX - prevPan.x) * (newZoom / prevZoom),
-        y: cursorY - (cursorY - prevPan.y) * (newZoom / prevZoom),
+
+    // Distinguish trackpad scroll (pan) from pinch/mouse-wheel (zoom).
+    // Trackpad two-finger swipe: ctrlKey=false, small deltaY, often non-zero deltaX.
+    // Trackpad pinch or mouse wheel: ctrlKey=true (browser sets this for pinch),
+    // OR large |deltaY| with deltaX ≈ 0 (mouse wheel).
+    const isPinchOrMouseWheel = e.ctrlKey || (Math.abs(e.deltaX) < 3 && Math.abs(e.deltaY) >= 40)
+
+    if (isPinchOrMouseWheel) {
+      // ZOOM — anchor to cursor position
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      const cursorX = e.clientX - rect.left
+      const cursorY = e.clientY - rect.top
+      setZoom(prevZoom => {
+        const newZoom = Math.min(Math.max(prevZoom * delta, 0.2), 4)
+        setPan(prevPan => ({
+          x: cursorX - (cursorX - prevPan.x) * (newZoom / prevZoom),
+          y: cursorY - (cursorY - prevPan.y) * (newZoom / prevZoom),
+        }))
+        return newZoom
+      })
+    } else {
+      // PAN — trackpad two-finger swipe, translate the canvas directly
+      setPan(prev => ({
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY,
       }))
-      return newZoom
-    })
+    }
   }, [])
 
-  // ── Touch handlers (pinch-zoom + single-finger pan) ────────────────────────
+  //  Touch handlers (pinch-zoom + single-finger pan) 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const dx = e.touches[1].clientX - e.touches[0].clientX
@@ -346,7 +444,8 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
 
     const scaleX = dimensions.width / contentWidth
     const scaleY = dimensions.height / contentHeight
-    const newZoom = Math.min(scaleX, scaleY, 1) * 0.9
+    // Clamp minimum zoom to 0.4 (compact mode) so the tree is always readable
+    const newZoom = Math.max(Math.min(scaleX, scaleY, 1) * 0.9, 0.4)
 
     setZoom(newZoom)
     setPan({
@@ -370,6 +469,14 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       return targetZoom
     })
   }, [nodePositions, dimensions])
+
+  // Auto-fit on first load — wait for real container dimensions before fitting
+  useEffect(() => {
+    if (nodePositions.length > 0 && hasMeasuredDimensions.current && !hasAutoFit.current) {
+      hasAutoFit.current = true
+      fitToView()
+    }
+  }, [nodePositions, dimensions, fitToView])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -448,14 +555,14 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
         className="absolute inset-0 z-[2]"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: 'center center',
+          transformOrigin: '0 0',
         }}
       >
         <svg
           className="absolute inset-0 pointer-events-none"
           width={dimensions.width * 2}
           height={dimensions.height * 2}
-          style={{ left: -dimensions.width / 2, top: -dimensions.height / 2 }}
+          style={{ left: -dimensions.width / 2, top: -dimensions.height / 2, overflow: 'visible' }}
         >
           <defs>
             <linearGradient id="edgeGoldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -486,7 +593,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             </filter>
           </defs>
 
-          {/* ── Branch zone backgrounds ─────────────────────────────────────── */}
+          {/*  Branch zone backgrounds  */}
           {(() => {
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
@@ -519,7 +626,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             })
           })()}
 
-          {/* ── Affiliated cluster island backgrounds ──────────────────────── */}
+          {/*  Affiliated cluster island backgrounds  */}
           {affiliatedClusters.map(cluster => {
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
@@ -553,7 +660,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             )
           })}
 
-          {/* ── Bridge edges (junction → affiliated cluster) ────────────────── */}
+          {/*  Bridge edges (junction → affiliated cluster)  */}
           {affiliatedClusters.map(cluster => {
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
@@ -597,8 +704,10 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             )
           })}
 
-          {/* ── Regular edges (parent-child + spouse) ──────────────────────── */}
+          {/*  Regular edges (parent-child + spouse)  */}
           {connections.map((conn, i) => {
+            // Skip edges where both endpoints are off-screen
+            if (!isEdgeVisible(conn.from, conn.to, viewport, 400)) return null
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
             const fromMember = memberMap.get(conn.fromId)
@@ -665,8 +774,39 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
           })}
         </svg>
 
+        {/*  DOT MODE: zoom < 0.30 — pure SVG, zero React cards in DOM  */}
+        {renderMode === 'dot' && (
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            width={dimensions.width * 2}
+            height={dimensions.height * 2}
+            style={{ left: -dimensions.width / 2, top: -dimensions.height / 2, overflow: 'visible' }}
+          >
+            {nodePositions.map(pos => {
+              const member = memberMap.get(pos.id)
+              if (!member) return null
+              const ng = member.networkGroup ?? 'core'
+              const fill = ng === 'affiliated' ? '#14B8A6' : ng === 'extended' ? '#8B5CF6' : '#F59E0B'
+              const offsetX = dimensions.width / 2
+              const offsetY = dimensions.height / 2
+              return (
+                <circle
+                  key={pos.id}
+                  cx={pos.x + offsetX}
+                  cy={pos.y + offsetY}
+                  r={ng === 'core' ? 7 : 5}
+                  fill={fill}
+                  opacity={selectedMemberId === pos.id ? 1 : 0.65}
+                />
+              )
+            })}
+          </svg>
+        )}
+
+        {/*  COMPACT + FULL modes: viewport-culled React node cards  */}
         <TooltipProvider>
-          {nodePositions.map((pos) => {
+          {renderMode !== 'dot' && nodePositions.map((pos) => {
+            if (!visibleIds.has(pos.id)) return null
             const member = memberMap.get(pos.id)!
             if (!member) return null
             const isSelected = selectedMemberId === member.id
@@ -675,6 +815,9 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             const isExtended = networkGroup === 'extended'
             const isAffiliated = networkGroup === 'affiliated'
             const nodeWidth = isAffiliated ? 120 : isExtended ? 130 : 150
+            const staggerDelay = isExtended || isAffiliated
+              ? `${(staggerMap.get(member.id) ?? 0) * 35}ms`
+              : '0ms'
             const initials = member.name
               .split(' ')
               .map((n) => n[0])
@@ -688,11 +831,62 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                 ? `b. ${member.birthYear}`
                 : ''
             const isCollapsed = collapsedIds.has(member.id)
-            const hasChildren = members.some(m => m.parentIds.includes(member.id))
+            // ✔ O(1) hasChildren via precomputed parentSet
+            const hasChildren = graphIndex.parentSet.has(member.id)
             const relationshipLabel = member.relationship
               ? member.relationship.toUpperCase()
               : null
 
+            // COMPACT mode: stripped-down node, avatar + name only
+            if (renderMode === 'compact') {
+              return (
+                <div
+                  key={member.id}
+                  className="absolute"
+                  style={{
+                    left: pos.x - nodeWidth / 2,
+                    top: pos.y - 44,
+                    width: nodeWidth,
+                    opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1,
+                    animation: isExtended || isAffiliated ? `fadeSlideIn 0.35s ease both` : 'none',
+                    animationDelay: staggerDelay,
+                  }}
+                >
+                  <button
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 px-2 py-2 rounded-xl w-full border backdrop-blur-sm transition-all duration-200',
+                      isSelected ? 'shadow-md shadow-amber-500/10' : ''
+                    )}
+                    style={{
+                      background: isSelected ? 'var(--tree-node-bg-selected)' : 'var(--tree-node-bg)',
+                      borderColor: isSelected ? 'var(--tree-node-border-selected)'
+                        : isAffiliated ? 'rgba(20,184,166,0.30)'
+                          : isExtended ? 'rgba(139,92,246,0.30)'
+                            : 'var(--tree-node-border)',
+                    }}
+                    onClick={(e) => { e.stopPropagation(); onSelectMember(member.id) }}
+                    onDoubleClick={(e) => { e.stopPropagation(); focusNode(member.id); onDoubleClickMember?.(member.id) }}
+                    onMouseEnter={() => setHoveredMemberId(member.id)}
+                    onMouseLeave={() => setHoveredMemberId(null)}
+                  >
+                    <Avatar className={cn('border-2 h-8 w-8',
+                      isSelected ? 'border-amber-400/60' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
+                    )}>
+                      <AvatarFallback className={cn('text-[9px] font-semibold',
+                        isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
+                          : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
+                            : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
+                      )}>{initials}</AvatarFallback>
+                    </Avatar>
+                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: 'var(--tree-node-name)' }}>
+                      {member.name.split(' ')[0]}
+                    </p>
+                  </button>
+                </div>
+              )
+            }
+
+            // FULL mode: complete interactive card
             return (
               <div
                 key={member.id}
@@ -702,6 +896,8 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   top: pos.y - 60,
                   width: nodeWidth,
                   opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1,
+                  animation: isExtended || isAffiliated ? `fadeSlideIn 0.35s ease both` : 'none',
+                  animationDelay: staggerDelay,
                 }}
               >
                 {/* Relationship label above node */}
@@ -850,53 +1046,110 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
         </TooltipProvider>
       </div>
 
-      {/* ── Affiliated cluster collapse buttons (per cluster) ────────────── */}
+      {/*  Affiliated cluster collapse buttons (per cluster)  */}
       {affiliatedClusters.map(cluster => {
         if (!cluster.junctionPos) return null
         const isCollapsed = collapsedClusters.has(cluster.id)
-        // Position the button at the right edge of the cluster bounds (or stub if collapsed)
-        const btnX = (cluster.bounds.x + cluster.bounds.w + dimensions.width / 2) * zoom + pan.x + 8
-        const btnY = (cluster.bounds.y + 4 + dimensions.height / 2) * zoom + pan.y
 
         if (isCollapsed) {
-          // Show a pill/badge with count + expand button
+          // Compelling "discover" pill — pulsing ring + family name + member count + avatar initials
+          const previewMembers = cluster.nodeIds
+            .slice(0, 3)
+            .map(id => graphIndex.memberMap.get(id))
+            .filter(Boolean) as FamilyMember[]
+
+          const pillX = (cluster.junctionPos.x + 80 + dimensions.width / 2) * zoom + pan.x
+          const pillY = (cluster.junctionPos.y - 20 + dimensions.height / 2) * zoom + pan.y
+
           return (
-            <div key={`collapse-btn-${cluster.id}`}
-              className="absolute z-[4] flex items-center gap-1.5 rounded-full px-2.5 py-1 border text-[10px] font-semibold backdrop-blur-md cursor-pointer"
-              style={{
-                left: (cluster.junctionPos.x + 75 + dimensions.width / 2) * zoom + pan.x + 8,
-                top: (cluster.junctionPos.y - 14 + dimensions.height / 2) * zoom + pan.y,
-                background: 'rgba(20,184,166,0.12)',
-                borderColor: 'rgba(20,184,166,0.35)',
-                color: 'rgba(20,184,166,0.9)',
+            <div
+              key={`collapse-btn-${cluster.id}`}
+              className="absolute z-[4] cursor-pointer select-none"
+              style={{ left: pillX, top: pillY }}
+              onClick={() => {
+                setCollapsedClusters(prev => { const n = new Set(prev); n.delete(cluster.id); return n })
+                setExpandedClusters(prev => new Set([...prev, cluster.id]))
               }}
-              onClick={() => setCollapsedClusters(prev => { const n = new Set(prev); n.delete(cluster.id); return n })}
             >
-              <span>{cluster.name} ({cluster.memberCount})</span>
-              <ChevronLeft className="h-3 w-3" />
+              {/* Pulsing outer ring */}
+              <div className="relative">
+                <div className="absolute inset-0 -m-1.5 rounded-2xl animate-pulse" style={{ background: 'rgba(20,184,166,0.12)', border: '1px solid rgba(20,184,166,0.3)' }} />
+                <div
+                  className="relative flex items-center gap-2 rounded-2xl px-3 py-2 border backdrop-blur-md transition-all hover:scale-105"
+                  style={{
+                    background: 'rgba(15,23,42,0.85)',
+                    borderColor: 'rgba(20,184,166,0.45)',
+                  }}
+                >
+                  {/* Preview avatars */}
+                  <div className="flex -space-x-2">
+                    {previewMembers.map(m => (
+                      <div
+                        key={m.id}
+                        className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[9px] font-bold"
+                        style={{
+                          borderColor: 'rgba(20,184,166,0.5)',
+                          background: 'rgba(20,184,166,0.2)',
+                          color: 'rgba(20,184,166,0.95)',
+                        }}
+                      >
+                        {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      </div>
+                    ))}
+                    {cluster.memberCount > 3 && (
+                      <div
+                        className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[8px] font-bold"
+                        style={{
+                          borderColor: 'rgba(20,184,166,0.5)',
+                          background: 'rgba(20,184,166,0.15)',
+                          color: 'rgba(20,184,166,0.75)',
+                        }}
+                      >
+                        +{cluster.memberCount - 3}
+                      </div>
+                    )}
+                  </div>
+                  {/* Text */}
+                  <div className="text-left">
+                    <p className="text-[11px] font-semibold leading-tight" style={{ color: 'rgba(20,184,166,0.95)' }}>
+                      {cluster.name}
+                    </p>
+                    <p className="text-[9px] leading-tight" style={{ color: 'rgba(20,184,166,0.55)' }}>
+                      {cluster.memberCount} relatives · tap to explore
+                    </p>
+                  </div>
+                  {/* Expand chevron */}
+                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(20,184,166,0.7)' }} />
+                </div>
+              </div>
             </div>
           )
         }
 
+        // Expanded: show a small collapse button at the right edge
+        const btnX = (cluster.bounds.x + cluster.bounds.w + dimensions.width / 2) * zoom + pan.x + 8
+        const btnY = (cluster.bounds.y + 4 + dimensions.height / 2) * zoom + pan.y
+
         return (
           <button key={`collapse-btn-${cluster.id}`}
-            className="absolute z-[4] h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold backdrop-blur-md border transition-colors hover:opacity-90"
+            className="absolute z-[4] h-6 rounded-full flex items-center gap-1 px-2 text-[9px] font-medium backdrop-blur-md border transition-colors hover:opacity-90"
             style={{
               left: btnX,
               top: btnY,
-              background: 'rgba(20,184,166,0.15)',
-              borderColor: 'rgba(20,184,166,0.4)',
-              color: 'rgba(20,184,166,0.9)',
+              background: 'rgba(20,184,166,0.10)',
+              borderColor: 'rgba(20,184,166,0.35)',
+              color: 'rgba(20,184,166,0.75)',
             }}
             title={`Collapse ${cluster.name}`}
             onClick={() => setCollapsedClusters(prev => new Set([...prev, cluster.id]))}
           >
-            ×
+            <ChevronLeft className="h-3 w-3" />
+            <span>Collapse</span>
           </button>
         )
       })}
 
-      {/* ── Legend ──────────────────────────────────────────────────────────── */}
+      {/*  Legend  */}
       <div className="absolute bottom-16 right-4 z-[3] flex flex-col gap-1.5 rounded-xl px-3 py-2.5 backdrop-blur-md border border-border/30 text-[10px]"
         style={{ background: 'var(--surface-card)' }}
       >

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/lib/supabase/database.types'
 import type { FamilyMember, Story } from '@/lib/types'
@@ -91,40 +91,107 @@ function memberToInsert(
 
 // ─── useMembers hook ──────────────────────────────────────────────────────────
 
+// ─── Fetch limit — safety cap for initial load. loadMore() fetches next page. ─
+const FETCH_LIMIT = 500
+
 export function useMembers(familyId: string | null) {
   const supabase = createClient()
   const [members, setMembers] = useState<FamilyMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [totalCount, setTotalCount] = useState<number>(0)
+  const [hasMore, setHasMore] = useState(false)
+  const offsetRef = useRef(0)
 
+  // ── DB-level COUNT — accurate even when data is paginated ─────────────────
+  const fetchCount = useCallback(async () => {
+    if (!familyId) return
+    const { count } = await supabase
+      .from('family_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('family_id', familyId)
+    setTotalCount(count ?? 0)
+  }, [familyId, supabase])
+
+  // ── Initial fetch with limit — prevents loading thousands of rows at once ──
   const fetchMembers = useCallback(async () => {
     if (!familyId) { setLoading(false); return }
     setLoading(true)
+    offsetRef.current = 0
     const { data, error } = await supabase
       .from('family_members')
       .select('*')
       .eq('family_id', familyId)
       .order('generation', { ascending: true })
+      .order('id', { ascending: true })
+      .range(0, FETCH_LIMIT - 1)
     if (error) { setError(error.message); setLoading(false); return }
-    setMembers((data ?? []).map(dbToMember))
+    const rows = data ?? []
+    setMembers(rows.map(dbToMember))
+    setHasMore(rows.length === FETCH_LIMIT)
+    offsetRef.current = rows.length
     setLoading(false)
-  }, [familyId, supabase])
+    // Fire count query in parallel — doesn't block rendering
+    fetchCount()
+  }, [familyId, supabase, fetchCount])
+
+  // ── Load next page (cursor-based) ─────────────────────────────────────────
+  const loadMore = useCallback(async () => {
+    if (!familyId || !hasMore) return
+    const { data } = await supabase
+      .from('family_members')
+      .select('*')
+      .eq('family_id', familyId)
+      .order('generation', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offsetRef.current, offsetRef.current + FETCH_LIMIT - 1)
+    const rows = data ?? []
+    setMembers(prev => [...prev, ...rows.map(dbToMember)])
+    setHasMore(rows.length === FETCH_LIMIT)
+    offsetRef.current += rows.length
+  }, [familyId, supabase, hasMore])
 
   useEffect(() => { fetchMembers() }, [fetchMembers])
 
-  // Real-time subscription
+  // ── Real-time subscription — patch graph incrementally, no full refetch ────
   useEffect(() => {
     if (!familyId) return
     const channel = supabase
       .channel(`family_members:${familyId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
-        () => fetchMembers()
+        { event: 'INSERT', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const newMember = dbToMember(payload.new as any)
+          setMembers(prev => {
+            if (prev.some(m => m.id === newMember.id)) return prev
+            return [...prev, newMember]
+          })
+          setTotalCount(c => c + 1)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const updated = dbToMember(payload.new as any)
+          setMembers(prev => prev.map(m => m.id === updated.id ? updated : m))
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const deletedId = (payload.old as any)?.id
+          if (deletedId) {
+            setMembers(prev => prev.filter(m => m.id !== deletedId))
+            setTotalCount(c => Math.max(0, c - 1))
+          }
+        }
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [familyId, supabase, fetchMembers])
+  }, [familyId, supabase])
 
   const addMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>, userId: string) => {
     if (!familyId) return null
@@ -209,7 +276,7 @@ export function useMembers(familyId: string | null) {
     if (error) throw new Error(error.message)
   }, [supabase])
 
-  return { members, loading, error, addMember, updateMember, deleteMember, claimMember, setVisibility, refetch: fetchMembers }
+  return { members, loading, error, totalCount, hasMore, loadMore, addMember, updateMember, deleteMember, claimMember, setVisibility, refetch: fetchMembers }
 }
 
 // ─── useStories hook ──────────────────────────────────────────────────────────

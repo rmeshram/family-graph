@@ -335,7 +335,7 @@ function InviteWidget({ onClose }: { onClose: () => void }) {
 
 export default function FamilyGraphApp() {
   const { user, familyId, profile, loading: authLoading } = useAuth()
-  const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
+  const { members: dbMembers, loading: dbLoading, totalCount: dbTotalCount, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
   // Debug: log auth state so we can see what's happening
@@ -605,7 +605,7 @@ export default function FamilyGraphApp() {
                 onSelectMember={handleSelectMember}
                 maxDegree={maxDegree}
                 onMaxDegreeChange={setMaxDegree}
-                totalCount={members.length}
+                totalCount={isDemoMode ? members.length : dbTotalCount}
               />
             </aside>
           )}
