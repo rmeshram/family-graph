@@ -52,7 +52,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange, onExport, onImport }: SettingsDialogProps) {
-  const { user, profile, familyId } = useAuth()
+  const { user, profile, familyId, loading: authLoading } = useAuth()
   const supabase = createClient()
   const isAdmin = (profile as any)?.role === 'admin'
 
@@ -240,7 +240,9 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-0 p-0">
-                {!familyId ? (
+                {!familyId && authLoading ? (
+                  <p className="text-sm text-muted-foreground p-4">Loading…</p>
+                ) : !familyId ? (
                   <p className="text-sm text-muted-foreground p-4">Sign in and create a family to manage members.</p>
                 ) : loadingProfiles ? (
                   <p className="text-sm text-muted-foreground p-4">Loading...</p>

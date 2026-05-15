@@ -85,6 +85,7 @@ export default function InvitePage() {
   const [links, setLinks] = useState<InviteLink[]>(SAMPLE_LINKS)
   const [activeUrl, setActiveUrl] = useState(FAMILY_TREE_URL)
   const [isGenerating, setIsGenerating] = useState(false)
+  const isSharing = useRef(false)
 
   const inviteUrl = activeUrl
   const whatsappMessage = encodeURIComponent(
@@ -280,11 +281,27 @@ export default function InvitePage() {
                 </Button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <button className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors">
+                <button
+                  className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
+                  onClick={() => {
+                    if (navigator.share && !isSharing.current) {
+                      isSharing.current = true
+                      navigator.share({ title: 'Join our family tree', text: decodeURIComponent(whatsappMessage), url: inviteUrl })
+                        .catch(() => {})
+                        .finally(() => { isSharing.current = false })
+                    }
+                  }}
+                >
                   <Smartphone className="h-4 w-4 text-muted-foreground" />
                   Share to any app
                 </button>
-                <button className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors">
+                <button
+                  className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
+                  onClick={() => {
+                    navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => {})
+                    toast({ title: 'Message copied!', description: 'Paste it anywhere.' })
+                  }}
+                >
                   <Copy className="h-4 w-4 text-muted-foreground" />
                   Copy message
                 </button>
@@ -335,8 +352,11 @@ export default function InvitePage() {
                     size="sm"
                     className="gap-1.5"
                     onClick={() => {
-                      if (navigator.share) {
+                      if (navigator.share && !isSharing.current) {
+                        isSharing.current = true
                         navigator.share({ title: 'Join our family tree', url: inviteUrl })
+                          .catch(() => {})
+                          .finally(() => { isSharing.current = false })
                       }
                     }}
                     disabled={!inviteUrl}

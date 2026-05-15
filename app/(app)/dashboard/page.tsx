@@ -484,25 +484,34 @@ export default function FamilyGraphApp() {
   const handleImport = useCallback(() => {
     const input = document.createElement('input')
     input.type = 'file'; input.accept = '.json'
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
       const reader = new FileReader()
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const imported = JSON.parse(event.target?.result as string)
-          if (Array.isArray(imported)) {
-            // Import is a read-only action in DB mode — just notify
-            toast({ title: 'Import note', description: `Found ${imported.length} members. Connect Supabase to import into the database.` })
+          if (!Array.isArray(imported)) { toast({ title: 'Invalid file', description: 'Expected a JSON array of members.', variant: 'destructive' }); return }
+          if (!familyId || !user) {
+            toast({ title: `Found ${imported.length} members`, description: 'Sign in and create a family to import data into the database.' })
+            return
           }
+          let success = 0
+          for (const m of imported) {
+            try {
+              await dbAddMember({ ...m, networkGroup: m.networkGroup ?? 'core' }, user.id)
+              success++
+            } catch { /* skip duplicates/errors */ }
+          }
+          toast({ title: 'Import complete', description: `${success} of ${imported.length} members imported.` })
         } catch {
-          toast({ title: 'Import failed', variant: 'destructive' })
+          toast({ title: 'Import failed', description: 'Could not parse the JSON file.', variant: 'destructive' })
         }
       }
       reader.readAsText(file)
     }
     input.click()
-  }, [toast])
+  }, [familyId, user, dbAddMember, toast])
 
   const VIEW_MODES: { key: TreeViewMode; label: string; icon: React.ElementType }[] = [
     { key: 'graph', label: 'Graph', icon: Network },
