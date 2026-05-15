@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent } from "@/components/ui/card"
 import { sampleFamilyMembers } from "@/lib/sample-data"
 import { FamilyMember, AIMessage } from "@/lib/types"
@@ -392,14 +391,16 @@ export default function AICopilotPage() {
       </header>
 
       {/* Chat Area */}
-      <ScrollArea className="flex-1 px-4 py-6" ref={scrollRef as React.RefObject<HTMLDivElement>}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} members={members} />
           ))}
           {isThinking && <ThinkingIndicator />}
+          {/* Scroll anchor */}
+          <div className="h-1" />
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Suggestion Chips */}
       {messages.length <= 2 && (
