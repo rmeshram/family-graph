@@ -13,6 +13,7 @@ import { MemoryItem, VoiceNote } from "@/lib/types"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
 import { useMemories, useVoiceNotes } from "@/hooks/use-memories"
+import { Textarea } from "@/components/ui/textarea"
 import {
   ArrowLeft,
   Camera,
@@ -35,6 +36,7 @@ import {
   ChevronRight,
   Volume2,
   MessageCircle,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -65,10 +67,12 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryItem['eventType'], year: undefined as number | undefined, photoUrl: '' }
+
 export default function MemoryPage() {
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
-  const { memories: dbMemories, loading: memoriesLoading } = useMemories(familyId)
+  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory } = useMemories(familyId)
   const { voiceNotes: dbVoiceNotes, loading: voiceLoading } = useVoiceNotes(familyId)
 
   const isDemoMode = !authLoading && !user
@@ -80,6 +84,28 @@ export default function MemoryPage() {
   const [filterEvent, setFilterEvent] = useState<string>("all")
   const [playingVoice, setPlayingVoice] = useState<string | null>(null)
   const [selectedMemory, setSelectedMemory] = useState<MemoryItem | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newMemory, setNewMemory] = useState(BLANK_MEMORY)
+  const [addingSaving, setAddingSaving] = useState(false)
+
+  const handleAddMemory = async () => {
+    if (!newMemory.title) return
+    if (!isDemoMode && familyId && user) {
+      try {
+        setAddingSaving(true)
+        await dbAddMemory(familyId, {
+          title: newMemory.title,
+          description: newMemory.description || undefined,
+          photoUrl: newMemory.photoUrl || undefined,
+          eventType: newMemory.eventType,
+          year: newMemory.year,
+          taggedMemberIds: [],
+        }, user.id)
+      } catch { /* refetch will pick it up */ } finally { setAddingSaving(false) }
+    }
+    setShowAddForm(false)
+    setNewMemory(BLANK_MEMORY)
+  }
 
   const filteredMemories = useMemo(() => {
     return allMemories.filter(m => {
@@ -116,7 +142,7 @@ export default function MemoryPage() {
             <p className="text-xs text-muted-foreground">Photos, stories & voice memories of the Sharma-Mishra family</p>
           </div>
           <div className="ml-auto">
-            <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white">
+            <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => setShowAddForm(true)}>
               <Plus className="mr-1.5 h-4 w-4" />
               Add Memory
             </Button>
@@ -153,6 +179,33 @@ export default function MemoryPage() {
             </TabsTrigger>
           </TabsList>
         </div>
+
+        {/* Add Memory inline form */}
+        {showAddForm && (
+          <div className="mx-4 mt-3 rounded-2xl border border-amber-500/30 bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-sm">New Memory</p>
+              <button onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <Input placeholder="Title (required)" value={newMemory.title} onChange={e => setNewMemory(p => ({ ...p, title: e.target.value }))} />
+            <Textarea placeholder="Description (optional)" value={newMemory.description} onChange={e => setNewMemory(p => ({ ...p, description: e.target.value }))} rows={2} className="resize-none" />
+            <div className="grid grid-cols-2 gap-2">
+              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={newMemory.eventType} onChange={e => setNewMemory(p => ({ ...p, eventType: e.target.value as MemoryItem['eventType'] }))}>
+                {['wedding','birth','festival','graduation','travel','family-gathering','other'].map(t => (
+                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
+                ))}
+              </select>
+              <Input type="number" placeholder="Year (e.g. 2010)" value={newMemory.year ?? ''} onChange={e => setNewMemory(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
+            </div>
+            <Input placeholder="Photo URL (optional)" value={newMemory.photoUrl} onChange={e => setNewMemory(p => ({ ...p, photoUrl: e.target.value }))} />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
+              <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!newMemory.title || addingSaving} onClick={handleAddMemory}>
+                {addingSaving ? 'Saving…' : 'Save Memory'}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Photos Tab */}
         <TabsContent value="photos" className="flex-1 overflow-hidden mt-0">
@@ -203,7 +256,7 @@ export default function MemoryPage() {
                     />
                   ))}
                   {/* Add Memory Card */}
-                  <button className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/50 p-8 text-muted-foreground transition-colors hover:border-amber-500/50 hover:text-amber-400 min-h-[200px]">
+                  <button onClick={() => setShowAddForm(true)} className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/50 p-8 text-muted-foreground transition-colors hover:border-amber-500/50 hover:text-amber-400 min-h-[200px]">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 group-hover:bg-amber-500/10 transition-colors">
                       <Plus className="h-6 w-6" />
                     </div>

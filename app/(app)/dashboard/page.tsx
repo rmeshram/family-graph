@@ -338,14 +338,13 @@ export default function FamilyGraphApp() {
   const { members: dbMembers, loading: dbLoading, totalCount: dbTotalCount, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
-  // Debug: log auth state so we can see what's happening
-  if (typeof window !== 'undefined') {
-    console.log('[FamilyGraph] user:', user?.email, '| familyId:', familyId, '| dbLoading:', dbLoading, '| dbMembers:', dbMembers.length)
-  }
+  const isDemoMode = !authLoading && !user
 
-  // All useState BEFORE any useMemo (avoids Turbopack TDZ in dev mode)
   const [maxDegree, setMaxDegree] = useState(10)
   const [showExtended, setShowExtended] = useState(true)
+  useEffect(() => {
+    if (window.innerWidth < 768) setShowExtended(false)
+  }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
@@ -361,10 +360,6 @@ export default function FamilyGraphApp() {
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
 
-  // Use real DB data — show sample data ONLY in demo mode (not logged in)
-  // For logged-in users: show loading state or real data, never sample data
-  // Merge DB stories into member objects so member-detail Stories tab works
-  const isDemoMode = !authLoading && !user
   const members = useMemo(() => {
     if (isDemoMode) return sampleFamilyMembers
     if (authLoading || dbLoading) return []
@@ -612,6 +607,15 @@ export default function FamilyGraphApp() {
 
           {/* Main canvas */}
           <main className="flex-1 overflow-hidden relative">
+            {/* Skeleton while loading for authenticated users */}
+            {!isDemoMode && (dbLoading || authLoading) && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+                  <p className="text-sm text-muted-foreground">Loading your family tree…</p>
+                </div>
+              </div>
+            )}
             {viewMode === 'graph' && (
               <FamilyTree
                 members={filteredMembers}

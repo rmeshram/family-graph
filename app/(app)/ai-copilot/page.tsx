@@ -293,10 +293,21 @@ export default function AICopilotPage() {
     {
       id: 'welcome',
       role: 'ai',
-      content: `🙏 **Namaste! I'm your Family AI Copilot.**\n\nI know your entire family tree — **${members.length} members** loaded.\n\nAsk me anything in plain language:\n• "How am I related to Karan?"\n• "Show all members in Bengaluru"\n• "Tell me Dada's story"\n• "Who is my maternal uncle?"\n\nI speak your family's language. 🌳`,
+      content: `🙏 **Namaste! I'm your Family AI Copilot.**\n\nAsk me anything in plain language:\n• "How am I related to Karan?"\n• "Show all members in Bengaluru"\n• "Tell me Dada's story"\n• "Who is my maternal uncle?"\n\nI speak your family's language. 🌳`,
       timestamp: new Date().toISOString(),
     }
   ])
+
+  // Update welcome message count once members finish loading
+  useEffect(() => {
+    if (members.length > 0) {
+      setMessages(prev => prev.map(m =>
+        m.id === 'welcome'
+          ? { ...m, content: `🙏 **Namaste! I'm your Family AI Copilot.**\n\nI know your entire family tree — **${members.length} members** loaded.\n\nAsk me anything in plain language:\n• "How am I related to Karan?"\n• "Show all members in Bengaluru"\n• "Tell me Dada's story"\n• "Who is my maternal uncle?"\n\nI speak your family's language. 🌳` }
+          : m
+      ))
+    }
+  }, [members.length])
   const [inputValue, setInputValue] = useState("")
   const [isThinking, setIsThinking] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -334,7 +345,7 @@ export default function AICopilotPage() {
     }
     setMessages(prev => [...prev, aiMsg])
     setIsThinking(false)
-  }, [isThinking])
+  }, [isThinking, members])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

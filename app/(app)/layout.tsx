@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/components/app-sidebar'
+import { ErrorBoundary } from '@/components/error-boundary'
 import { useAuth } from '@/hooks/use-auth'
 import { DEMO_SESSION_KEY } from '@/hooks/use-demo-mode'
 
@@ -56,7 +57,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-background">
       <AppSidebar />
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </div>
     </div>
   )

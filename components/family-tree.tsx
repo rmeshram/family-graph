@@ -444,8 +444,9 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
 
     const scaleX = dimensions.width / contentWidth
     const scaleY = dimensions.height / contentHeight
-    // Clamp minimum zoom to 0.4 (compact mode) so the tree is always readable
-    const newZoom = Math.max(Math.min(scaleX, scaleY, 1) * 0.9, 0.4)
+    // Let fitToView find the natural zoom — no artificial floor.
+    // Compact mode (zoom > 0.15) shows readable cards; dot mode is the extreme fallback.
+    const newZoom = Math.min(scaleX, scaleY, 1) * 0.9
 
     setZoom(newZoom)
     setPan({
@@ -470,10 +471,15 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     })
   }, [nodePositions, dimensions])
 
-  // Auto-fit on first load — wait for real container dimensions before fitting
+  // Auto-fit on first load and whenever member count changes significantly
+  // (e.g. when mobile hides extended members after hydration — member count drops)
+  const prevMemberCount = useRef(0)
   useEffect(() => {
-    if (nodePositions.length > 0 && hasMeasuredDimensions.current && !hasAutoFit.current) {
+    if (nodePositions.length === 0 || !hasMeasuredDimensions.current) return
+    const memberCountChanged = Math.abs(nodePositions.length - prevMemberCount.current) > 5
+    if (!hasAutoFit.current || memberCountChanged) {
       hasAutoFit.current = true
+      prevMemberCount.current = nodePositions.length
       fitToView()
     }
   }, [nodePositions, dimensions, fitToView])
