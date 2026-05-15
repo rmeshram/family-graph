@@ -8,62 +8,28 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Mail, Loader2, ArrowRight, RefreshCw } from "lucide-react"
-import { cn } from "@/lib/utils"
-
-type Step = 'email' | 'otp'
+import { Mail, Lock, Loader2, ArrowRight, Eye, EyeOff } from "lucide-react"
 
 export default function SignInPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
-  const [otp, setOtp] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [resendCooldown, setResendCooldown] = useState(0)
 
-  const startCooldown = () => {
-    setResendCooldown(60)
-    const timer = setInterval(() => setResendCooldown(v => {
-      if (v <= 1) { clearInterval(timer); return 0 }
-      return v - 1
-    }), 1000)
-  }
-
-  const sendOTP = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    setError('')
-    setIsLoading(true)
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-        // Magic-link fallback (if user clicks link instead of entering code)
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-    setIsLoading(false)
-    if (error) { setError(error.message); return }
-    setStep('otp')
-    startCooldown()
-  }
-
-  const verifyOTP = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setIsLoading(true)
-    // Try 'email' type first (works for most cases), fall back to 'magiclink'
-    let result = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' })
-    if (result.error) {
-      result = await supabase.auth.verifyOtp({ email, token: otp, type: 'magiclink' })
-    }
-    const { data, error } = result
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     setIsLoading(false)
     if (error) { setError(error.message); return }
     if (!data.user) { setError('Sign in failed — please try again.'); return }
-    // If user has no family yet, send to onboarding
+
+    // Route based on whether user has completed onboarding
     const { data: profile } = await supabase
       .from('profiles')
       .select('family_id')
@@ -86,101 +52,64 @@ export default function SignInPage() {
     <div>
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold text-foreground mb-2">Welcome back 🙏</h1>
-        <p className="text-muted-foreground">
-          {step === 'email' ? 'Sign in with your email — no password needed' : `Check your inbox at ${email}`}
-        </p>
+        <p className="text-muted-foreground">Sign in to your family tree</p>
       </div>
 
-      {/* ── Email step ─────────────────────────────────────────── */}
-      {step === 'email' && (
-        <form onSubmit={sendOTP} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-              {error}
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email address</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="pl-10 h-11 bg-muted/50 border-border"
-                required
-                autoFocus
-              />
-            </div>
-            <p className="text-[11px] text-muted-foreground">We'll email you a sign-in link and a 6-digit code — no password needed</p>
+      <form onSubmit={handleSignIn} className="space-y-4">
+        {error && (
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+            {error}
           </div>
-
-          <Button type="submit" className="w-full h-11" disabled={isLoading || !email.includes('@')}>
-            {isLoading
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending code...</>
-              : <>Send code <ArrowRight className="w-4 h-4 ml-2" /></>}
-          </Button>
-        </form>
-      )}
-
-      {/* ── OTP step ───────────────────────────────────────────── */}
-      {step === 'otp' && (
-        <form onSubmit={verifyOTP} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-              {error}
-            </div>
-          )}
-
-          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm text-center space-y-1">
-            <div>Code sent to <strong>{email}</strong> ✓</div>
-            <div className="text-[11px] text-primary/70">Enter the 6-digit code below, or click the magic link in the email.</div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="otp">Enter 6-digit code</Label>
+        )}
+        <div className="space-y-2">
+          <Label htmlFor="email">Email address</Label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              id="otp"
-              type="text"
-              inputMode="numeric"
-              placeholder="• • • • • •"
-              value={otp}
-              onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="h-14 text-center text-2xl tracking-[0.5em] bg-muted/50 border-border font-mono"
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="pl-10 h-11 bg-muted/50 border-border"
               required
               autoFocus
-              maxLength={6}
             />
           </div>
-
-          <Button type="submit" className="w-full h-11" disabled={isLoading || otp.length < 6}>
-            {isLoading
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Verifying...</>
-              : 'Verify & Sign In'}
-          </Button>
-
-          <div className="flex items-center justify-between text-sm">
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link href="/auth/forgot-password" className="text-xs text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Your password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="pl-10 pr-10 h-11 bg-muted/50 border-border"
+              required
+            />
             <button
               type="button"
-              onClick={() => { setStep('email'); setOtp(''); setError('') }}
-              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setShowPassword(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
-              ← Change email
-            </button>
-            <button
-              type="button"
-              onClick={() => sendOTP()}
-              disabled={resendCooldown > 0}
-              className={cn('flex items-center gap-1 text-primary hover:text-primary/80', resendCooldown > 0 && 'opacity-50 cursor-not-allowed')}
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-        </form>
-      )}
+        </div>
+        <Button type="submit" className="w-full h-11" disabled={isLoading || !email.includes('@') || !password}>
+          {isLoading
+            ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Signing in...</>
+            : <>Sign in <ArrowRight className="w-4 h-4 ml-2" /></>}
+        </Button>
+      </form>
 
       <div className="relative my-6">
         <Separator />
@@ -222,4 +151,3 @@ export default function SignInPage() {
     </div>
   )
 }
-

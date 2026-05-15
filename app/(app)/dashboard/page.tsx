@@ -338,6 +338,11 @@ export default function FamilyGraphApp() {
   const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
+  // Debug: log auth state so we can see what's happening
+  if (typeof window !== 'undefined') {
+    console.log('[FamilyGraph] user:', user?.email, '| familyId:', familyId, '| dbLoading:', dbLoading, '| dbMembers:', dbMembers.length)
+  }
+
   // All useState BEFORE any useMemo (avoids Turbopack TDZ in dev mode)
   const [maxDegree, setMaxDegree] = useState(10)
   const [showExtended, setShowExtended] = useState(false)
