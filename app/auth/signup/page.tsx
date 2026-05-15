@@ -34,6 +34,13 @@ export default function SignUpPage() {
     if (error) { setError(error.message); return }
     if (!data.user) { setError('Sign up failed — please try again.'); return }
 
+    // Supabase returns a user but NO session if the email already exists (security obfuscation).
+    // Detect this: if identities is empty or session is null, the user already existed.
+    if (!data.session || data.user.identities?.length === 0) {
+      setError('An account with this email already exists. Please sign in instead, or use "Forgot Password" to set a new password.')
+      return
+    }
+
     // Check if profile has family_id set (new user detection)
     const { data: profile } = await supabase
       .from('profiles')
