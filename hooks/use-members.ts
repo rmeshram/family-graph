@@ -36,6 +36,7 @@ function dbToMember(row: DBMember): FamilyMember {
     religion: row.religion ?? undefined,
     phone: row.phone ?? undefined,
     email: row.email ?? undefined,
+    instagramHandle: (row as any).instagram_handle ?? undefined,
     addedAt: row.added_at,
     // Migration 002
     claimedByUserId: (row as any).claimed_by_user_id ?? undefined,
@@ -80,6 +81,7 @@ function memberToInsert(
     religion: member.religion ?? null,
     phone: member.phone ?? null,
     email: member.email ?? null,
+    ...(member.instagramHandle ? { instagram_handle: member.instagramHandle } : {}),
     added_by: userId,
     // Migration 003
     ...(member.networkGroup && member.networkGroup !== 'core' ? { network_group: member.networkGroup } : {}),

@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3,
+  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
@@ -62,6 +62,24 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
   const [birthdayNotifs, setBirthdayNotifs] = usePref('birthdayNotifs', true)
   const [anniversaryNotifs, setAnniversaryNotifs] = usePref('anniversaryNotifs', false)
 
+  // Privacy mode
+  const [privacyMode, setPrivacyMode] = useState<'open' | 'protected' | 'closed'>('protected')
+  const [savingPrivacy, setSavingPrivacy] = useState(false)
+
+  const fetchPrivacyMode = useCallback(async () => {
+    if (!familyId) return
+    const { data } = await supabase.from('families').select('privacy_mode').eq('id', familyId).single()
+    if ((data as any)?.privacy_mode) setPrivacyMode((data as any).privacy_mode as 'open' | 'protected' | 'closed')
+  }, [familyId, supabase])
+
+  const savePrivacyMode = async (mode: 'open' | 'protected' | 'closed') => {
+    if (!familyId || !isAdmin) return
+    setSavingPrivacy(true)
+    setPrivacyMode(mode)
+    await supabase.from('families').update({ privacy_mode: mode } as any).eq('id', familyId)
+    setSavingPrivacy(false)
+  }
+
   // Family members management
   const [familyProfiles, setFamilyProfiles] = useState<FamilyProfile[]>([])
   const [loadingProfiles, setLoadingProfiles] = useState(false)
@@ -80,6 +98,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
   useEffect(() => {
     if (open) fetchFamilyProfiles()
   }, [open, fetchFamilyProfiles])
+
+  useEffect(() => {
+    if (open) fetchPrivacyMode()
+  }, [open, fetchPrivacyMode])
 
   const updateRole = async (userId: string, role: string) => {
     await supabase.from('profiles').update({ role }).eq('id', userId)
@@ -121,6 +143,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                 <Badge variant="secondary" className="ml-1.5 h-4 text-[10px] px-1">{familyProfiles.length}</Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="privacy" className="flex-1">Privacy</TabsTrigger>
             <TabsTrigger value="data" className="flex-1">Data</TabsTrigger>
           </TabsList>
 
@@ -299,6 +322,78 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── Privacy ───────────────────────────────────────────── */}
+          <TabsContent value="privacy" className="space-y-4 mt-0">
+            <Card className="bg-muted/30 border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-muted-foreground" />
+                  Family Visibility
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!isAdmin && (
+                  <p className="text-xs text-muted-foreground">Only admins can change family visibility.</p>
+                )}
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    {
+                      key: 'open' as const,
+                      label: 'Open',
+                      icon: Globe,
+                      color: 'border-green-500/40 bg-green-500/10 text-green-400',
+                    },
+                    {
+                      key: 'protected' as const,
+                      label: 'Protected',
+                      icon: Shield,
+                      color: 'border-primary/40 bg-primary/10 text-primary',
+                    },
+                    {
+                      key: 'closed' as const,
+                      label: 'Closed',
+                      icon: Lock,
+                      color: 'border-red-500/40 bg-red-500/10 text-red-400',
+                    },
+                  ]).map(({ key, label, icon: Icon, color }) => {
+                    const active = privacyMode === key
+                    return (
+                      <button
+                        key={key}
+                        disabled={!isAdmin || savingPrivacy}
+                        onClick={() => savePrivacyMode(key)}
+                        className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition-all disabled:opacity-50 ${active ? color : 'border-border/40 text-muted-foreground hover:border-border/60'
+                          }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-2.5">
+                  {privacyMode === 'open' && '🌍 Open — Anyone with the invite link can view the family tree and request to join.'}
+                  {privacyMode === 'protected' && '🔒 Protected — The tree is only visible to joined members. New joiners need admin approval.'}
+                  {privacyMode === 'closed' && '🚫 Closed — Fully invite-only. The public bio-link (/family/code) shows no member data.'}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-muted/30 border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  Individual Member Privacy
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">
+                  Set per-member visibility (Public / Family / Private) by selecting a member in the tree and using the Privacy panel in the detail view.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

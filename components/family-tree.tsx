@@ -831,6 +831,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
               .slice(0, 2)
 
             const isDeceased = !!member.deathYear
+            const isUnclaimed = !member.isClaimed && member.relationship !== 'self'
             const lifespan = member.deathYear
               ? `${member.birthYear}–${member.deathYear}`
               : member.birthYear
@@ -861,14 +862,17 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   <button
                     className={cn(
                       'flex flex-col items-center gap-1.5 px-2 py-2 rounded-xl w-full border backdrop-blur-sm transition-all duration-200',
-                      isSelected ? 'shadow-md shadow-amber-500/10' : ''
+                      isSelected ? 'shadow-md shadow-amber-500/10' : '',
+                      isUnclaimed ? 'opacity-60' : ''
                     )}
                     style={{
                       background: isSelected ? 'var(--tree-node-bg-selected)' : 'var(--tree-node-bg)',
+                      borderStyle: isUnclaimed ? 'dashed' : 'solid',
                       borderColor: isSelected ? 'var(--tree-node-border-selected)'
-                        : isAffiliated ? 'rgba(20,184,166,0.30)'
-                          : isExtended ? 'rgba(139,92,246,0.30)'
-                            : 'var(--tree-node-border)',
+                        : isUnclaimed ? 'rgba(148,163,184,0.40)'
+                          : isAffiliated ? 'rgba(20,184,166,0.30)'
+                            : isExtended ? 'rgba(139,92,246,0.30)'
+                              : 'var(--tree-node-border)',
                     }}
                     onClick={(e) => { e.stopPropagation(); onSelectMember(member.id) }}
                     onDoubleClick={(e) => { e.stopPropagation(); focusNode(member.id); onDoubleClickMember?.(member.id) }}
@@ -876,15 +880,16 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                     onMouseLeave={() => setHoveredMemberId(null)}
                   >
                     <Avatar className={cn('border-2 h-8 w-8',
-                      isSelected ? 'border-amber-400/60' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
+                      isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
                     )}>
                       <AvatarFallback className={cn('text-[9px] font-semibold',
-                        isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
-                          : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
-                            : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
+                        isUnclaimed ? 'bg-slate-700/40 text-slate-400'
+                          : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
+                            : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
+                              : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
                       )}>{initials}</AvatarFallback>
                     </Avatar>
-                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: 'var(--tree-node-name)' }}>
+                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: isUnclaimed ? 'rgba(148,163,184,0.7)' : 'var(--tree-node-name)' }}>
                       {member.name.split(' ')[0]}
                     </p>
                   </button>
@@ -925,16 +930,19 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                         'flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-200 w-full',
                         'border backdrop-blur-md',
                         isSelected ? 'shadow-lg shadow-amber-500/10'
-                          : isHovered ? 'shadow-lg shadow-indigo-500/10' : ''
+                          : isHovered ? 'shadow-lg shadow-indigo-500/10' : '',
+                        isUnclaimed ? 'opacity-65' : ''
                       )}
                       style={{
                         background: isSelected ? 'var(--tree-node-bg-selected)'
                           : isHovered ? 'var(--tree-node-bg-hover)'
                             : 'var(--tree-node-bg)',
+                        borderStyle: isUnclaimed ? 'dashed' : 'solid',
                         borderColor: isSelected ? 'var(--tree-node-border-selected)'
-                          : isHovered
-                            ? (isAffiliated ? 'rgba(20,184,166,0.55)' : isExtended ? 'rgba(139,92,246,0.55)' : 'var(--tree-node-border-hover)')
-                            : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
+                          : isUnclaimed ? 'rgba(148,163,184,0.35)'
+                            : isHovered
+                              ? (isAffiliated ? 'rgba(20,184,166,0.55)' : isExtended ? 'rgba(139,92,246,0.55)' : 'var(--tree-node-border-hover)')
+                              : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -955,13 +963,15 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                             isAffiliated ? 'h-12 w-12' : isExtended ? 'h-12 w-12' : 'h-14 w-14',
                             isSelected
                               ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
-                              : isHovered
-                                ? (isAffiliated
-                                  ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                  : isExtended
-                                    ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                    : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
-                                : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
+                              : isUnclaimed
+                                ? 'border-slate-500/35'
+                                : isHovered
+                                  ? (isAffiliated
+                                    ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                    : isExtended
+                                      ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                      : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
+                                  : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
                           )}
                         >
                           <AvatarFallback
@@ -992,6 +1002,11 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                             <ShieldCheck className="h-2.5 w-2.5 text-white" />
                           </div>
                         )}
+                        {isUnclaimed && (
+                          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex h-4 items-center rounded-full border border-orange-500/50 bg-orange-500/20 px-1.5">
+                            <span className="text-[7px] font-bold text-orange-400 whitespace-nowrap">Not joined</span>
+                          </div>
+                        )}
                         {member.visibility === 'private' && (
                           <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-orange-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
                             <Lock className="h-2.5 w-2.5 text-white" />
@@ -1019,7 +1034,10 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   <TooltipContent side="top" className="max-w-xs border-border">
                     <div className="space-y-1">
                       <p className="font-semibold text-foreground">{member.name}</p>
-                      {member.relationship && (
+                      {isUnclaimed && (
+                        <p className="text-xs text-orange-400">Not joined yet — tap to invite</p>
+                      )}
+                      {!isUnclaimed && member.relationship && (
                         <p className="text-xs text-amber-600 dark:text-amber-400/80">{member.relationship}</p>
                       )}
                       {member.occupation && (

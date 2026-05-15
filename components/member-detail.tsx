@@ -33,6 +33,7 @@ import {
   Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { findRelationshipPath, computeRelationLabel } from '@/lib/relation-engine'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,34 +51,6 @@ function computeProfileCompleteness(member: FamilyMember): { score: number; miss
   const done = checks.filter(c => c.has)
   const missing = checks.filter(c => !c.has).map(c => c.label)
   return { score: Math.round((done.length / checks.length) * 100), missing }
-}
-
-function findRelationshipPath(
-  fromId: string,
-  toId: string,
-  members: FamilyMember[]
-): FamilyMember[] | null {
-  if (fromId === toId) return []
-  const memberMap = new Map(members.map(m => [m.id, m]))
-  const visited = new Set<string>()
-  const queue: { id: string; path: string[] }[] = [{ id: fromId, path: [fromId] }]
-  while (queue.length > 0) {
-    const { id, path } = queue.shift()!
-    if (visited.has(id)) continue
-    visited.add(id)
-    if (id === toId) return path.map(i => memberMap.get(i)!).filter(Boolean)
-    const m = memberMap.get(id)
-    if (!m) continue
-    const neighbors = [
-      ...m.parentIds,
-      ...m.spouseIds,
-      ...members.filter(x => x.parentIds.includes(id)).map(x => x.id),
-    ]
-    for (const nId of neighbors) {
-      if (!visited.has(nId)) queue.push({ id: nId, path: [...path, nId] })
-    }
-  }
-  return null
 }
 
 interface MemberDetailProps {
@@ -150,6 +123,9 @@ export function MemberDetail({
   const completeness = computeProfileCompleteness(member)
   const relationPath = selfMember && member.id !== selfMember.id
     ? findRelationshipPath(selfMember.id, member.id, allMembers)
+    : null
+  const relationLabel = selfMember && member.id !== selfMember.id
+    ? computeRelationLabel(selfMember.id, member.id, allMembers)
     : null
 
   return (
@@ -242,6 +218,22 @@ export function MemberDetail({
                     </div>
                   </div>
                 )}
+                {member.instagramHandle && (
+                  <div className="col-span-2 flex items-center gap-2 p-3 rounded-xl bg-muted/30 border border-border/40">
+                    <span className="text-pink-400 shrink-0 text-sm font-bold">IG</span>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Instagram</p>
+                      <a
+                        href={`https://instagram.com/${member.instagramHandle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-pink-400 hover:text-pink-300 transition-colors"
+                      >
+                        @{member.instagramHandle}
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {member.bio && (
@@ -290,7 +282,7 @@ export function MemberDetail({
                 <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3 space-y-2">
                   <h3 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
                     <GitBranch className="h-3.5 w-3.5" />
-                    Your Connection · {relationPath.length - 1} step{relationPath.length !== 2 ? 's' : ''}
+                    {relationLabel ? relationLabel : `Your Connection · ${relationPath.length - 1} step${relationPath.length !== 2 ? 's' : ''}`}
                   </h3>
                   <div className="flex items-center gap-1 flex-wrap">
                     {relationPath.map((m, i) => (

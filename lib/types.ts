@@ -56,6 +56,7 @@ export interface FamilyMember {
   voiceNotes?: VoiceNote[]
   phone?: string
   email?: string
+  instagramHandle?: string
   addedBy?: string
   addedAt?: string
   // Claiming & privacy

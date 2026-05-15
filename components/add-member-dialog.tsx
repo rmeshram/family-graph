@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram } from 'lucide-react'
 
 interface AddMemberDialogProps {
   open: boolean
@@ -50,6 +50,7 @@ export function AddMemberDialog({
   const [deathYear, setDeathYear] = useState('')
   const [birthPlace, setBirthPlace] = useState('')
   const [occupation, setOccupation] = useState('')
+  const [instagramHandle, setInstagramHandle] = useState('')
   const [relationship, setRelationship] = useState('')
   const [bio, setBio] = useState('')
   const [parentId, setParentId] = useState<string>('')
@@ -91,6 +92,7 @@ export function AddMemberDialog({
       deathYear: deathYear ? parseInt(deathYear) : undefined,
       birthPlace: birthPlace || undefined,
       occupation: occupation || undefined,
+      instagramHandle: instagramHandle ? instagramHandle.replace(/^@/, '') : undefined,
       relationship,
       bio,
       parentIds,
@@ -113,6 +115,7 @@ export function AddMemberDialog({
     setDeathYear('')
     setBirthPlace('')
     setOccupation('')
+    setInstagramHandle('')
     setRelationship('')
     setBio('')
     setParentId('')
@@ -267,6 +270,19 @@ export function AddMemberDialog({
                     value={occupation}
                     onChange={(e) => setOccupation(e.target.value)}
                     placeholder="e.g., Teacher"
+                    className="bg-muted/30 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="instagram" className="flex items-center gap-1">
+                    <Instagram className="h-3 w-3" />
+                    Instagram
+                  </Label>
+                  <Input
+                    id="instagram"
+                    value={instagramHandle}
+                    onChange={(e) => setInstagramHandle(e.target.value)}
+                    placeholder="@username"
                     className="bg-muted/30 border-border/50"
                   />
                 </div>
