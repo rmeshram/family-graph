@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Loader2, CheckCircle2, XCircle, TreePine, ArrowRight, Share2, Heart, Users, User, GitBranch, UserPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Status = 'loading' | 'preview' | 'relate' | 'joining' | 'success' | 'error'
+type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'joining' | 'success' | 'error'
 type RelType = 'spouse' | 'child' | 'parent' | 'sibling' | 'relative' | 'skip'
 
 interface FamilyPreview {
@@ -46,6 +46,10 @@ export default function JoinPage() {
   // Relationship step state
   const [selectedRel, setSelectedRel] = useState<RelType | null>(null)
   const [displayName, setDisplayName] = useState('')
+
+  // Claim step state
+  const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
+  const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null) // null = create new
 
   useEffect(() => {
     const init = async () => {
@@ -98,7 +102,43 @@ export default function JoinPage() {
     setStatus('relate')
   }
 
-  const handleJoin = async () => {
+  // After picking their relationship, fetch unclaimed nodes that might be them
+  const handleContinueToClaim = async () => {
+    if (!selectedRel || (selectedRel !== 'skip' && !displayName.trim())) return
+    setStatus('joining') // brief spinner while fetching
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push(`/auth/signin?next=/join/${code}`); return }
+
+      // Load unclaimed members of this family whose name fuzzy-matches displayName
+      const { data: invite } = await supabase
+        .from('invite_links').select('family_id').eq('code', code.toUpperCase()).single()
+
+      if (invite?.family_id) {
+        const { data: nodes } = await supabase
+          .from('family_members')
+          .select('id, name, relationship, generation')
+          .eq('family_id', invite.family_id)
+          .eq('is_claimed', false)
+          .order('generation', { ascending: true })
+          .limit(20)
+
+        const candidates = (nodes ?? []) as { id: string; name: string; relationship: string; generation: number }[]
+
+        if (candidates.length > 0) {
+          setUnclaimedNodes(candidates)
+          setStatus('claim')
+          return
+        }
+      }
+    } catch { /* fall through to join */ }
+
+    // No unclaimed nodes — go straight to join
+    handleJoin()
+  }
+
+  const handleJoin = async (claimId?: string | null) => {
     if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
     setStatus('joining')
     try {
@@ -107,6 +147,7 @@ export default function JoinPage() {
       await joinWithCode(code, user.id, {
         displayName: displayName.trim() || undefined,
         relationshipToInviter: selectedRel ?? 'skip',
+        claimMemberId: claimId ?? undefined,
       })
       setStatus('success')
       setTimeout(() => router.push('/dashboard'), 2000)
@@ -252,11 +293,82 @@ export default function JoinPage() {
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setStatus('preview')} className="flex-1 h-11">Back</Button>
                 <Button
-                  onClick={handleJoin}
+                  onClick={handleContinueToClaim}
                   disabled={!selectedRel || (selectedRel !== 'skip' && !displayName.trim())}
                   className="flex-1 h-11 bg-primary hover:bg-primary/90"
                 >
-                  Join Tree
+                  Continue
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Claim Step ───────────────────────────────────── */}
+          {status === 'claim' && (
+            <div className="p-6 space-y-5">
+              <div className="text-center">
+                <h2 className="text-lg font-bold">Are you already in the tree?</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Someone may have added you before you signed up. Pick your node to link your account — or create a new one.
+                </p>
+              </div>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {unclaimedNodes.map(node => (
+                  <button
+                    key={node.id}
+                    onClick={() => setSelectedClaimId(node.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                      selectedClaimId === node.id
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/50 bg-muted/20 hover:border-border/70'
+                    )}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
+                      {node.name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{node.name}</p>
+                      <p className="text-[11px] text-muted-foreground capitalize">{node.relationship} · Gen {node.generation}</p>
+                    </div>
+                    {selectedClaimId === node.id && (
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    )}
+                  </button>
+                ))}
+
+                {/* None of these option */}
+                <button
+                  onClick={() => setSelectedClaimId(null)}
+                  className={cn(
+                    'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                    selectedClaimId === null
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border/50 bg-muted/20 hover:border-border/70'
+                  )}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <UserPlus className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">None of these — create my node</p>
+                    <p className="text-[11px] text-muted-foreground">A new entry will be added to the tree</p>
+                  </div>
+                  {selectedClaimId === null && (
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0 ml-auto" />
+                  )}
+                </button>
+              </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setStatus('relate')} className="flex-1 h-11">Back</Button>
+                <Button
+                  onClick={() => handleJoin(selectedClaimId)}
+                  className="flex-1 h-11 bg-primary hover:bg-primary/90"
+                >
+                  {selectedClaimId ? 'Claim & Join' : 'Create & Join'}
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </div>

@@ -53,6 +53,8 @@ interface JoinOpts {
   displayName?: string
   relationshipToInviter?: RelToInviter
   gender?: 'male' | 'female' | 'other'
+  /** If set, claim this existing node instead of creating a new one */
+  claimMemberId?: string
 }
 
 export function useJoinFamily() {
@@ -77,7 +79,24 @@ export function useJoinFamily() {
     }).eq('id', userId)
     if (profileErr) throw new Error(profileErr.message)
 
-    // 3. Auto-create + auto-link family_member record if relationship provided
+    // 3. If user picked an existing node to claim, link it and skip new-member creation
+    if (opts?.claimMemberId) {
+      const { error: claimErr } = await supabase.from('family_members')
+        .update({ claimed_by_user_id: userId, is_claimed: true } as any)
+        .eq('id', opts.claimMemberId)
+        .eq('is_claimed', false)
+      if (claimErr) throw new Error(claimErr.message)
+
+      await supabase.from('profiles').update({
+        member_id: opts.claimMemberId,
+        display_name: opts.displayName || undefined,
+      }).eq('id', userId)
+
+      await supabase.from('invite_links').update({ used_count: invite.used_count + 1 }).eq('id', invite.id)
+      return invite.family_id
+    }
+
+    // 4. Auto-create + auto-link family_member record if relationship provided
     if (opts?.displayName && opts.relationshipToInviter && opts.relationshipToInviter !== 'skip') {
       // Get inviter's member record
       const { data: inviterProfile } = await supabase
@@ -183,7 +202,7 @@ export function useJoinFamily() {
       }
     }
 
-    // 4. Increment used_count
+    // 5. Increment used_count
     await supabase.from('invite_links').update({ used_count: invite.used_count + 1 }).eq('id', invite.id)
 
     return invite.family_id

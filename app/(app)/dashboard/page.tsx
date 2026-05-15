@@ -7,6 +7,7 @@ import { sampleFamilyMembers, familyFeed } from '@/lib/sample-data'
 import { filterByDegree } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers, useStories } from '@/hooks/use-members'
+import { useInvites } from '@/hooks/use-invites'
 import { FamilyTree } from '@/components/family-tree'
 import { MemberListSidebar } from '@/components/member-list-sidebar'
 import { MemberDetail } from '@/components/member-detail'
@@ -278,11 +279,30 @@ function AIWidget({ members, onClose }: { members: FamilyMember[]; onClose: () =
 
 // ─── Invite Widget ─────────────────────────────────────────────────────────────
 
-function InviteWidget({ onClose }: { onClose: () => void }) {
+function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; familyId: string | null; userId: string | undefined }) {
+  const { createInviteLink } = useInvites(familyId)
+  const [link, setLink] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
   const [copied, setCopied] = useState(false)
-  const LINK = 'https://familygraph.app/join/SHARMA-X7K2P'
-  const copy = () => { setCopied(true); setTimeout(() => setCopied(false), 2000) }
-  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`🌳 *Join our Family Tree!*\n\nNamaste! I'm building our family's digital history on Family Graph.\n\nJoin here: ${LINK}\n\nNo app download needed — just click and add yourself! 🙏`)}`
+
+  // Generate a real invite link on mount (for authenticated users with a family)
+  useEffect(() => {
+    if (!familyId || !userId) return
+    setGenerating(true)
+    createInviteLink('contributor', 72, userId)
+      .then(result => setLink(result.link))
+      .catch(() => {/* silently fall back to placeholder */})
+      .finally(() => setGenerating(false))
+  }, [familyId, userId, createInviteLink])
+
+  const displayLink = link ?? (familyId ? '' : 'https://familygraph.app/join/DEMO')
+  const copy = () => {
+    if (!displayLink) return
+    navigator.clipboard.writeText(displayLink).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`🌳 *Join our Family Tree!*\n\nNamaste! I'm building our family's digital history on Family Graph.\n\nJoin here: ${displayLink}\n\nNo app download needed — just click and add yourself! 🙏`)}`
 
   return (
     <div className="flex flex-col h-full">
@@ -300,8 +320,12 @@ function InviteWidget({ onClose }: { onClose: () => void }) {
         <div className="rounded-xl border border-border/50 bg-muted/30 p-3 space-y-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Invite Link</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[10px] truncate text-foreground/80">{LINK}</code>
-            <button onClick={copy} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted hover:bg-muted/80 transition-colors">
+            {generating ? (
+              <span className="flex-1 text-[10px] text-muted-foreground animate-pulse">Generating link…</span>
+            ) : (
+              <code className="flex-1 text-[10px] truncate text-foreground/80">{displayLink}</code>
+            )}
+            <button onClick={copy} disabled={!displayLink || generating} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted hover:bg-muted/80 transition-colors disabled:opacity-40">
               {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
             </button>
           </div>
@@ -340,7 +364,7 @@ export default function FamilyGraphApp() {
 
   const isDemoMode = !authLoading && !user
 
-  const [maxDegree, setMaxDegree] = useState(10)
+  const [maxDegree, setMaxDegree] = useState(2)
   const [showExtended, setShowExtended] = useState(true)
   useEffect(() => {
     if (window.innerWidth < 768) setShowExtended(false)
@@ -659,7 +683,7 @@ export default function FamilyGraphApp() {
           {/* Invite Widget */}
           {showInviteWidget && (
             <aside className="w-72 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
-              <InviteWidget onClose={() => setShowInviteWidget(false)} />
+              <InviteWidget onClose={() => setShowInviteWidget(false)} familyId={familyId} userId={user?.id} />
             </aside>
           )}
 
