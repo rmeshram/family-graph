@@ -151,7 +151,7 @@ export default function SignUpPage() {
       </div>
 
       <Link
-        href="/dashboard"
+        href="/dashboard?demo=1"
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] py-2.5 text-sm font-medium text-amber-400 hover:bg-amber-500/15 transition-colors"
       >
         🌳 Explore demo — no sign in needed

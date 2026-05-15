@@ -15,7 +15,9 @@ interface Star {
 
 const STAR_COLORS_DARK = ['#ffffff', '#e0e7ff', '#c7d2fe', '#a5b4fc', '#93c5fd']
 const STAR_COLORS_LIGHT = ['#94a3b8', '#64748b', '#6366f1', '#818cf8', '#475569']
-const STAR_COUNT = 130
+const STAR_COUNT = 60
+const TARGET_FPS = 30
+const FRAME_INTERVAL = 1000 / TARGET_FPS
 
 function createStars(w: number, h: number, isLight: boolean): Star[] {
   const colors = isLight ? STAR_COLORS_LIGHT : STAR_COLORS_DARK
@@ -105,9 +107,15 @@ function ParticleBackgroundInner({ className }: ParticleBackgroundProps) {
     window.addEventListener('resize', resize)
     canvas.addEventListener('mousemove', handleMouseMove)
 
+    let lastFrameTime = 0
     const draw = (timestamp: number) => {
-      const dt = timestamp - timeRef.current
-      timeRef.current = timestamp
+      // Throttle to target FPS
+      const elapsed = timestamp - lastFrameTime
+      if (elapsed < FRAME_INTERVAL) {
+        rafRef.current = requestAnimationFrame(draw)
+        return
+      }
+      lastFrameTime = timestamp - (elapsed % FRAME_INTERVAL)
 
       const w = canvas.width
       const h = canvas.height

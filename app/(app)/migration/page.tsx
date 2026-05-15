@@ -1,11 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { sampleFamilyMembers } from "@/lib/sample-data"
+import { useAuth } from "@/hooks/use-auth"
+import { useMembers } from "@/hooks/use-members"
+import { DemoBanner } from "@/components/demo-banner"
 import { ArrowLeft, MapPin, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -33,27 +36,32 @@ function parseCityFromPlace(place?: string): string | null {
 type ViewMode = "both" | "birthplace" | "current"
 
 export default function MigrationPage() {
+  const { user, familyId, loading: authLoading } = useAuth()
+  const { members: dbMembers, loading } = useMembers(familyId)
+  const isDemoMode = !authLoading && !user
+  const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
+
   const [selectedCity, setSelectedCity] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>("both")
   const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null)
 
   // Build city data
-  const cityData = Object.keys(CITY_COORDS).map(city => {
-    const bornHere = sampleFamilyMembers.filter(m => parseCityFromPlace(m.birthPlace) === city)
-    const liveHere = sampleFamilyMembers.filter(m => parseCityFromPlace(m.currentPlace) === city)
+  const cityData = useMemo(() => Object.keys(CITY_COORDS).map(city => {
+    const bornHere = allMembers.filter(m => parseCityFromPlace(m.birthPlace) === city)
+    const liveHere = allMembers.filter(m => parseCityFromPlace(m.currentPlace) === city)
     const total = new Set([...bornHere.map(m => m.id), ...liveHere.map(m => m.id)]).size
     return { city, bornHere, liveHere, total }
-  }).filter(d => d.total > 0)
+  }).filter(d => d.total > 0), [allMembers])
 
-  const filteredMembers = selectedCity
-    ? sampleFamilyMembers.filter(m =>
+  const filteredMembers = useMemo(() => selectedCity
+    ? allMembers.filter(m =>
       parseCityFromPlace(m.currentPlace) === selectedCity ||
       parseCityFromPlace(m.birthPlace) === selectedCity
     )
-    : []
+    : [], [allMembers, selectedCity])
 
   // Migration arrows
-  const migrations = sampleFamilyMembers
+  const migrations = useMemo(() => allMembers
     .filter(m => {
       const birth = parseCityFromPlace(m.birthPlace)
       const current = parseCityFromPlace(m.currentPlace)
@@ -63,14 +71,15 @@ export default function MigrationPage() {
       member: m,
       from: CITY_COORDS[parseCityFromPlace(m.birthPlace)!],
       to: CITY_COORDS[parseCityFromPlace(m.currentPlace)!],
-    }))
+    })), [allMembers])
 
-  const cities = cityData
+  const cities = useMemo(() => cityData
     .map(d => ({ ...d, coords: CITY_COORDS[d.city] }))
-    .filter(d => d.coords)
+    .filter(d => d.coords), [cityData])
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <DemoBanner />
       <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border/50 bg-card/95 backdrop-blur px-4 sm:px-6">
         <Link href="/dashboard">
           <Button variant="ghost" size="icon" className="h-8 w-8">

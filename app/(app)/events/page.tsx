@@ -15,6 +15,7 @@ import {
   PartyPopper, Church, Home, Coffee, ChevronRight, Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DemoBanner } from "@/components/demo-banner"
 
 type EventType = "reunion" | "wedding" | "puja" | "birthday" | "funeral" | "other"
 type RSVPStatus = "going" | "not-going" | "maybe" | "pending"
@@ -105,10 +106,11 @@ function getDaysUntil(dateStr: string) {
 }
 
 export default function EventsPage() {
-  const { familyId, user } = useAuth()
+  const { familyId, user, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
   const { events: dbEvents, loading: eventsLoading, createEvent: dbCreateEvent, updateRSVP } = useEvents(familyId)
-  const allMembers = familyId && !membersLoading ? dbMembers : sampleFamilyMembers
+  const isDemoMode = !authLoading && !user
+  const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !membersLoading ? dbMembers : [])
 
   // Map DB events to the local FamilyEventItem shape for unified rendering
   const dbMappedEvents: FamilyEventItem[] = dbEvents.map(e => ({
@@ -125,7 +127,7 @@ export default function EventsPage() {
   }))
 
   const [localEvents, setLocalEvents] = useState<FamilyEventItem[]>(SAMPLE_EVENTS)
-  const events = familyId && !eventsLoading ? dbMappedEvents : localEvents
+  const events = isDemoMode ? localEvents : (familyId && !eventsLoading ? dbMappedEvents : [])
   const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>({
     "e1": "going",
     "e2": "going",
@@ -162,6 +164,7 @@ export default function EventsPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border/50 bg-card/95 backdrop-blur px-4 sm:px-6">
         <Link href="/dashboard">

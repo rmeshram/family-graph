@@ -37,6 +37,7 @@ import {
   MessageCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DemoBanner } from "@/components/demo-banner"
 
 const EVENT_ICONS: Record<string, React.ElementType> = {
   wedding: Heart,
@@ -65,14 +66,15 @@ function formatDuration(seconds: number) {
 }
 
 export default function MemoryPage() {
-  const { familyId } = useAuth()
+  const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
   const { memories: dbMemories, loading: memoriesLoading } = useMemories(familyId)
   const { voiceNotes: dbVoiceNotes, loading: voiceLoading } = useVoiceNotes(familyId)
 
-  const allMembers = familyId && !membersLoading ? dbMembers : sampleFamilyMembers
-  const allMemories = familyId && !memoriesLoading ? dbMemories : sampleMemories
-  const allVoiceNotes = familyId && !voiceLoading ? dbVoiceNotes : sampleVoiceNotes
+  const isDemoMode = !authLoading && !user
+  const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !membersLoading ? dbMembers : [])
+  const allMemories = isDemoMode ? sampleMemories : (familyId && !memoriesLoading ? dbMemories : [])
+  const allVoiceNotes = isDemoMode ? sampleVoiceNotes : (familyId && !voiceLoading ? dbVoiceNotes : [])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [filterEvent, setFilterEvent] = useState<string>("all")
@@ -97,6 +99,7 @@ export default function MemoryPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
+      <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-card/95 backdrop-blur-md">
         <div className="flex h-16 items-center gap-3 px-4">

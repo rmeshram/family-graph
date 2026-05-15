@@ -16,6 +16,7 @@ import { sampleFamilyMembers } from "@/lib/sample-data"
 import { FamilyMember, Milestone } from "@/lib/types"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
+import { DemoBanner } from "@/components/demo-banner"
 import {
   ArrowLeft,
   Search,
@@ -62,9 +63,10 @@ interface TimelineEvent {
 }
 
 export default function TimelinePage() {
-  const { familyId } = useAuth()
+  const { familyId, user, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
-  const allMembers = familyId && !loading ? dbMembers : sampleFamilyMembers
+  const isDemoMode = !authLoading && !user
+  const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<string>("all")
@@ -180,6 +182,7 @@ export default function TimelinePage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">

@@ -10,13 +10,15 @@ import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
 import { ArrowLeft, Download, Share2, Printer, Check, MessageCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DemoBanner } from "@/components/demo-banner"
 
 const CURRENT_YEAR = 2026
 
 export default function BiodataPage() {
-  const { familyId } = useAuth()
+  const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
-  const allMembers = familyId && !loading ? dbMembers : sampleFamilyMembers
+  const isDemoMode = !authLoading && !user
+  const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
   const eligible = allMembers.filter(m => {
     if (m.isAlive === false || !m.birthYear) return false
@@ -61,6 +63,7 @@ export default function BiodataPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <DemoBanner />
       <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border/50 bg-card/95 backdrop-blur px-4 sm:px-6">
         <Link href="/dashboard">
           <Button variant="ghost" size="icon" className="h-8 w-8">

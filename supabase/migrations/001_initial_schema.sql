@@ -170,8 +170,10 @@ $$;
 -- families — only family members can see/edit their family
 drop policy if exists "families: members can read"   on public.families;
 drop policy if exists "families: creator can update" on public.families;
+drop policy if exists "families: creator can insert" on public.families;
 create policy "families: members can read"   on public.families for select using (id = public.my_family_id());
 create policy "families: creator can update" on public.families for update using (created_by = auth.uid());
+create policy "families: creator can insert" on public.families for insert with check (created_by = auth.uid());
 
 -- profiles — own row only
 drop policy if exists "profiles: own row"     on public.profiles;

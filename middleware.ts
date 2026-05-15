@@ -31,23 +31,6 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Public routes that don't need auth
-  const isPublic =
-    pathname === '/' ||
-    pathname === '/dashboard' ||   // demo mode — shows sample data when not logged in
-    pathname.startsWith('/auth/') ||
-    pathname.startsWith('/onboarding') ||
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/') ||
-    pathname.includes('.')
-
-  if (!isPublic && !user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/auth/signin'
-    url.searchParams.set('next', pathname)
-    return NextResponse.redirect(url)
-  }
-
   // If signed in and hitting auth pages, redirect to dashboard
   if (user && (pathname === '/auth/signin' || pathname === '/auth/signup')) {
     return NextResponse.redirect(new URL('/dashboard', request.url))

@@ -4,12 +4,20 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  const error = searchParams.get('error')
+  const errorDescription = searchParams.get('error_description')
   const next = searchParams.get('next') ?? '/dashboard'
+
+  // Handle OAuth errors (e.g., provider not configured, user denied access)
+  if (error) {
+    const msg = encodeURIComponent(errorDescription || error)
+    return NextResponse.redirect(`${origin}/auth/signin?error=${msg}`)
+  }
 
   if (code) {
     const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+    if (!exchangeError) {
       // After OAuth (Google), detect new vs returning user
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {

@@ -7,8 +7,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { sampleFamilyMembers, familyFeed } from '@/lib/sample-data'
+import { sampleFamilyMembers } from '@/lib/sample-data'
 import { useAuth } from '@/hooks/use-auth'
+import { useMembers } from '@/hooks/use-members'
 import {
   GitBranch, Camera, UserPlus, Clock, Sparkles,
   Users, Globe, Star, BarChart3, Activity,
@@ -45,7 +46,10 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, familyId, loading: authLoading, signOut } = useAuth()
+  const { members: dbMembers } = useMembers(familyId)
+  const isDemoMode = !authLoading && !user
+  const sidebarMembers = useMemo(() => isDemoMode ? sampleFamilyMembers : dbMembers, [isDemoMode, dbMembers])
 
   const handleSignOut = async () => {
     await signOut()
@@ -61,11 +65,11 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   const stats = useMemo(() => {
-    const living = sampleFamilyMembers.filter(m => m.isAlive !== false).length
-    const generations = new Set(sampleFamilyMembers.map(m => m.generation)).size
-    const cities = new Set(sampleFamilyMembers.map(m => m.currentPlace || m.birthPlace).filter(Boolean)).size
-    return { total: sampleFamilyMembers.length, living, generations, cities }
-  }, [])
+    const living = sidebarMembers.filter(m => m.isAlive !== false).length
+    const generations = new Set(sidebarMembers.map(m => m.generation)).size
+    const cities = new Set(sidebarMembers.map(m => m.currentPlace || m.birthPlace).filter(Boolean)).size
+    return { total: sidebarMembers.length, living, generations, cities }
+  }, [sidebarMembers])
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
@@ -81,7 +85,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="font-bold tracking-tight text-foreground">Family Graph</h1>
-          <p className="text-[10px] text-muted-foreground">Sharma-Mishra Family</p>
+          <p className="text-[10px] text-muted-foreground">{profile?.display_name ? `${profile.display_name.split(' ').pop() || ''} Family` : 'My Family'}</p>
         </div>
         <button onClick={() => setOpen(false)} className="lg:hidden text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />

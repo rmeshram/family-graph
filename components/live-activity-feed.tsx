@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { MoreHorizontal, X } from 'lucide-react'
+import { MoreHorizontal, X, Activity } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { useAuth } from '@/hooks/use-auth'
 
 interface ActivityItem {
   id: string
@@ -41,24 +43,52 @@ const SAMPLE_ACTIVITY: ActivityItem[] = [
   },
 ]
 
-const PRESENCE_AVATARS = [
+const PRESENCE_AVATARS_DEMO = [
   { id: '1', name: 'Marcus', color: '#6366F1', textColor: 'text-indigo-200' },
   { id: '2', name: 'Sarah', color: '#10B981', textColor: 'text-emerald-200' },
   { id: '3', name: 'David', color: '#8B5CF6', textColor: 'text-violet-200' },
 ]
 
-export function PresenceAvatars() {
+interface PresenceAvatarsProps {
+  isDemoMode?: boolean
+}
+
+export function PresenceAvatars({ isDemoMode }: PresenceAvatarsProps) {
+  const { user } = useAuth()
+
+  if (!isDemoMode && !user) return null
+
+  // For logged-in users: show just the current user avatar
+  if (!isDemoMode && user) {
+    const initials = (user.email ?? 'U').slice(0, 1).toUpperCase()
+    return (
+      <div className="flex items-center -space-x-2">
+        <div
+          title="You"
+          className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[9px] font-bold bg-primary/20"
+          style={{ borderColor: 'var(--background)' }}
+        >
+          <span className="text-primary">{initials}</span>
+        </div>
+        <div className="h-7 w-7 rounded-full border-2 bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground ml-1" style={{ borderColor: 'var(--background)' }}>
+          1
+        </div>
+      </div>
+    )
+  }
+
+  // Demo mode: show fake presence
   return (
     <div className="flex items-center -space-x-2">
-      {PRESENCE_AVATARS.map((user) => (
+      {PRESENCE_AVATARS_DEMO.map((u) => (
         <div
-          key={user.id}
-          title={user.name}
+          key={u.id}
+          title={u.name}
           className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[9px] font-bold"
-          style={{ backgroundColor: user.color + '33', borderColor: 'var(--background)' }}
+          style={{ backgroundColor: u.color + '33', borderColor: 'var(--background)' }}
         >
-          <span style={{ color: user.color }}>
-            {user.name.slice(0, 1)}
+          <span style={{ color: u.color }}>
+            {u.name.slice(0, 1)}
           </span>
         </div>
       ))}
@@ -69,7 +99,12 @@ export function PresenceAvatars() {
   )
 }
 
-export function LiveActivityFeed() {
+interface LiveActivityFeedProps {
+  isDemoMode?: boolean
+}
+
+export function LiveActivityFeed({ isDemoMode }: LiveActivityFeedProps) {
+  const { user } = useAuth()
   const [visible, setVisible] = useState(true)
 
   if (!visible) {
@@ -85,6 +120,32 @@ export function LiveActivityFeed() {
     )
   }
 
+  // Logged-in users see an empty/real state (no fake activity from demo users)
+  if (!isDemoMode && user) {
+    return (
+      <div className="w-56 rounded-2xl backdrop-blur-lg border border-border/50 overflow-hidden shadow-xl shadow-black/10" style={{ background: 'var(--surface-card)' }}>
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/50">
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-[11px] font-semibold text-foreground">Live Activity</span>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setVisible(false) }}
+            className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="flex flex-col items-center gap-2 py-6 px-3 text-center">
+          <Activity className="h-6 w-6 text-muted-foreground/40" />
+          <p className="text-[11px] text-muted-foreground">No recent activity</p>
+          <p className="text-[10px] text-muted-foreground/60">Invite family members to see live updates here</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Demo mode: show sample activity
   return (
     <div className="w-56 rounded-2xl backdrop-blur-lg border border-border/50 overflow-hidden shadow-xl shadow-black/10" style={{ background: 'var(--surface-card)' }}>
       {/* Header */}
@@ -92,16 +153,17 @@ export function LiveActivityFeed() {
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
           <span className="text-[11px] font-semibold text-foreground">Live Activity</span>
+          <span className="text-[9px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-1">Demo</span>
         </div>
         <div className="flex items-center gap-1">
           <button className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors">
             <MoreHorizontal className="h-3 w-3" />
           </button>
           <button
-            onClick={() => setVisible(false)}
-            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => { e.stopPropagation(); setVisible(false) }}
+            className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
-            <X className="h-3 w-3" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -132,3 +194,4 @@ export function LiveActivityFeed() {
     </div>
   )
 }
+

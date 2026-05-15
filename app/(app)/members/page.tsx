@@ -14,6 +14,7 @@ import {
   Filter, ChevronRight, Baby, Crown, Heart,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DemoBanner } from "@/components/demo-banner"
 import type { FamilyMember } from "@/lib/types"
 
 const SIDE_COLORS: Record<string, string> = {
@@ -30,9 +31,10 @@ const GENDER_ICONS: Record<string, string> = {
 }
 
 export default function MembersPage() {
-  const { familyId } = useAuth()
+  const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
-  const allMembers = familyId && !loading ? dbMembers : sampleFamilyMembers
+  const isDemoMode = !authLoading && !user
+  const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
   const [search, setSearch] = useState("")
   const [filterGen, setFilterGen] = useState<number | "all">("all")
@@ -64,6 +66,7 @@ export default function MembersPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border/50 bg-card/95 backdrop-blur px-4 sm:px-6">
         <Link href="/dashboard">

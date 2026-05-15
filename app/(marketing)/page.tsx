@@ -95,7 +95,7 @@ const PRICING = [
       "Mobile PWA",
     ],
     cta: "Start Free",
-    href: "/onboarding",
+    href: "/auth/signup",
     highlighted: false,
   },
   {
@@ -112,7 +112,7 @@ const PRICING = [
       "Priority support",
     ],
     cta: "Start 14-day Trial",
-    href: "/onboarding",
+    href: "/auth/signup",
     highlighted: true,
   },
   {
@@ -129,7 +129,7 @@ const PRICING = [
       "Dedicated family admin",
     ],
     cta: "Contact Us",
-    href: "/onboarding",
+    href: "/auth/signup",
     highlighted: false,
   },
 ]
@@ -202,7 +202,7 @@ export default function MarketingPage() {
               <Link href="/auth/signin">
                 <Button variant="ghost" size="sm">Sign In</Button>
               </Link>
-              <Link href="/onboarding">
+              <Link href="/auth/signup">
                 <Button size="sm" className="bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-lg shadow-primary/20">
                   Start Free
                   <ChevronRight className="ml-1 h-4 w-4" />
@@ -227,7 +227,7 @@ export default function MarketingPage() {
                 <Link href="/auth/signin" className="flex-1">
                   <Button variant="outline" className="w-full">Sign In</Button>
                 </Link>
-                <Link href="/onboarding" className="flex-1">
+                <Link href="/auth/signup" className="flex-1">
                   <Button className="w-full">Start Free</Button>
                 </Link>
               </div>
@@ -273,13 +273,13 @@ export default function MarketingPage() {
           </div>
 
           <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Link href="/onboarding">
+            <Link href="/auth/signup">
               <Button size="lg" className="h-14 px-8 text-base bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all">
                 Start Building Free
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Link href="/dashboard">
+            <Link href="/dashboard?demo=1">
               <Button variant="outline" size="lg" className="h-14 px-8 text-base border-border/60 hover:border-primary/50">
                 <GitBranch className="mr-2 h-5 w-5" />
                 See Live Demo
@@ -610,7 +610,7 @@ export default function MarketingPage() {
             Start today. Invite one family member this weekend. By next month, your entire clan's history will be alive, searchable, and growing.
           </p>
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Link href="/onboarding">
+            <Link href="/auth/signup">
               <Button size="lg" className="h-14 px-8 text-base bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-xl shadow-primary/20">
                 Build Your Family Tree — Free
                 <ArrowRight className="ml-2 h-5 w-5" />

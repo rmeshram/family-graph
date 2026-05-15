@@ -12,6 +12,7 @@ import { sampleFamilyMembers } from "@/lib/sample-data"
 import { FamilyMember, AIMessage } from "@/lib/types"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
+import { DemoBanner } from "@/components/demo-banner"
 import {
   ArrowLeft,
   Send,
@@ -283,9 +284,10 @@ const MEMORY_PROMPTS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AICopilotPage() {
-  const { familyId } = useAuth()
+  const { familyId, user, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
-  const members = familyId && !loading ? dbMembers : sampleFamilyMembers
+  const isDemoMode = !authLoading && !user
+  const members = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
   const [messages, setMessages] = useState<AIMessage[]>([
     {
@@ -350,6 +352,7 @@ export default function AICopilotPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
+      <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-card/95 backdrop-blur-md">
         <div className="flex h-16 items-center gap-3 px-4">

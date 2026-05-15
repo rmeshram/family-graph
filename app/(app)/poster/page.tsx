@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { sampleFamilyMembers } from '@/lib/sample-data'
 import { FamilyMember } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { DemoBanner } from '@/components/demo-banner'
 import { useToast } from '@/components/ui/use-toast'
 import { Toaster } from '@/components/ui/toaster'
 
@@ -57,9 +58,10 @@ function PosterCard({ member }: { member: FamilyMember }) {
 }
 
 export default function PosterPage() {
-  const { user, familyId } = useAuth()
+  const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
-  const members = familyId && !loading ? dbMembers : sampleFamilyMembers
+  const isDemoMode = !authLoading && !user
+  const members = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
   const generations = groupByGeneration(members)
 
   const posterRef = useRef<HTMLDivElement>(null)
@@ -102,6 +104,7 @@ export default function PosterPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <DemoBanner />
       {/* Controls */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-md px-6 py-3">
         <div className="flex items-center gap-2">

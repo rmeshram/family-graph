@@ -334,7 +334,7 @@ function InviteWidget({ onClose }: { onClose: () => void }) {
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function FamilyGraphApp() {
-  const { user, familyId, profile } = useAuth()
+  const { user, familyId, profile, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: dbLoading, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
@@ -345,7 +345,7 @@ export default function FamilyGraphApp() {
 
   // All useState BEFORE any useMemo (avoids Turbopack TDZ in dev mode)
   const [maxDegree, setMaxDegree] = useState(10)
-  const [showExtended, setShowExtended] = useState(false)
+  const [showExtended, setShowExtended] = useState(true)
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
@@ -361,15 +361,19 @@ export default function FamilyGraphApp() {
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
 
-  // Use real DB data when available, fall back to sample data for demo
+  // Use real DB data — show sample data ONLY in demo mode (not logged in)
+  // For logged-in users: show loading state or real data, never sample data
   // Merge DB stories into member objects so member-detail Stories tab works
+  const isDemoMode = !authLoading && !user
   const members = useMemo(() => {
-    if (!familyId || dbLoading) return sampleFamilyMembers
+    if (isDemoMode) return sampleFamilyMembers
+    if (authLoading || dbLoading) return []
+    if (!familyId) return []
     return dbMembers.map(m => ({
       ...m,
       stories: storiesByMember[m.id] ?? [],
     }))
-  }, [familyId, dbLoading, dbMembers, storiesByMember])
+  }, [isDemoMode, authLoading, familyId, dbLoading, dbMembers, storiesByMember])
 
   // The "self" member is the root for degree calculations
   const selfMember = members.find(m => m.relationship === 'self') ?? members[0] ?? null
@@ -391,15 +395,29 @@ export default function FamilyGraphApp() {
   }, [])
 
   const handleAddMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>) => {
-    if (familyId && user) {
-      try {
-        await dbAddMember(memberData, user.id)
-        toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
-      } catch (e: unknown) {
-        toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
-      }
-    } else {
-      toast({ title: 'Demo mode', description: 'Sign in to save members permanently.' })
+    if (!user) {
+      // Not signed in — prompt to create account
+      toast({
+        title: 'Sign in to save',
+        description: 'Create a free account to permanently save members to your family tree.',
+        action: <Link href="/auth/signup" className="underline text-primary">Create account</Link>,
+      })
+      return
+    }
+    if (!familyId) {
+      // Signed in but onboarding not complete
+      toast({
+        title: 'Complete setup first',
+        description: 'Finish setting up your family to start adding members.',
+        action: <Link href="/onboarding" className="underline text-primary">Go to setup</Link>,
+      })
+      return
+    }
+    try {
+      await dbAddMember(memberData, user.id)
+      toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
+    } catch (e: unknown) {
+      toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
     }
   }, [familyId, user, dbAddMember, toast])
 
@@ -615,14 +633,14 @@ export default function FamilyGraphApp() {
             {/* Presence avatars — top right of canvas */}
             {viewMode === 'graph' && (
               <div className="absolute top-3 right-3 z-20">
-                <PresenceAvatars />
+                <PresenceAvatars isDemoMode={isDemoMode} />
               </div>
             )}
 
             {/* Live activity feed — bottom left of canvas (visible when no member selected) */}
             {viewMode === 'graph' && (
               <div className="absolute bottom-4 left-4 z-20">
-                <LiveActivityFeed />
+                <LiveActivityFeed isDemoMode={isDemoMode} />
               </div>
             )}
           </main>
@@ -712,6 +730,8 @@ export default function FamilyGraphApp() {
 // ─── Family Feed Panel ─────────────────────────────────────────────────────────
 
 function FamilyFeedPanel({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth()
+  const feedItems = !user ? familyFeed : []
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center justify-between border-b border-border/50 px-4">
@@ -725,7 +745,14 @@ function FamilyFeedPanel({ onClose }: { onClose: () => void }) {
       </div>
       <ScrollArea className="flex-1">
         <div className="p-3 space-y-0">
-          {familyFeed.map(event => (
+          {feedItems.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Activity className="h-8 w-8 text-muted-foreground/40 mb-2" />
+              <p className="text-sm text-muted-foreground">No activity yet</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Activity from your family will appear here</p>
+            </div>
+          )}
+          {feedItems.map(event => (
             <div key={event.id} className="flex gap-3 py-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted/60 text-base">{event.emoji}</div>
               <div className="flex-1 min-w-0">

@@ -1,23 +1,27 @@
 'use client'
 
 import { useMemo } from 'react'
+import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers } from '@/hooks/use-members'
 import { sampleFamilyMembers } from '@/lib/sample-data'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Printer, Download, TreePine, MapPin, Users, BookOpen, Sparkles } from 'lucide-react'
+import { DemoBanner } from '@/components/demo-banner'
+import { Printer, Download, TreePine, MapPin, Users, BookOpen, Sparkles, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function KulgathaPage() {
-  const { user, familyId, profile } = useAuth()
+  const { user, familyId, profile, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
+  const isDemoMode = !authLoading && !user
 
   const members = useMemo(() => {
-    if (!familyId || loading) return sampleFamilyMembers
+    if (isDemoMode) return sampleFamilyMembers
+    if (!familyId || loading) return []
     return dbMembers
-  }, [familyId, loading, dbMembers])
+  }, [isDemoMode, familyId, loading, dbMembers])
 
   const familyName = (profile as any)?.families?.name ?? 'The Family'
 

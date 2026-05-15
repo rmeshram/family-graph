@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,16 @@ import { Separator } from "@/components/ui/separator"
 import { Mail, Lock, Loader2, ArrowRight, Eye, EyeOff } from "lucide-react"
 
 export default function SignInPage() {
+  return (
+    <Suspense>
+      <SignInContent />
+    </Suspense>
+  )
+}
+
+function SignInContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [email, setEmail] = useState('')
@@ -19,6 +28,12 @@ export default function SignInPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Show error from URL params (e.g. OAuth callback failures)
+  useEffect(() => {
+    const urlError = searchParams.get('error')
+    if (urlError) setError(decodeURIComponent(urlError))
+  }, [searchParams])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,6 +43,14 @@ export default function SignInPage() {
     setIsLoading(false)
     if (error) { setError(error.message); return }
     if (!data.user) { setError('Sign in failed — please try again.'); return }
+
+    // After sign-in, redirect to ?next param, then check onboarding state
+    const nextPath = searchParams.get('next')
+    if (nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')) {
+      router.push(nextPath)
+      router.refresh()
+      return
+    }
 
     // Route based on whether user has completed onboarding
     const { data: profile } = await supabase
@@ -143,7 +166,7 @@ export default function SignInPage() {
       </div>
 
       <Link
-        href="/dashboard"
+        href="/dashboard?demo=1"
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] py-2.5 text-sm font-medium text-amber-400 hover:bg-amber-500/15 transition-colors"
       >
         🌳 Explore demo — no sign in needed

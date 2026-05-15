@@ -125,7 +125,16 @@ export default function OnboardingPage() {
         .single()
       if (familyErr) throw familyErr
 
-      // 2. Create parent members (generation 2) — insert first so self can reference them
+      // 2. Update profile with family_id FIRST so RLS policies work for member inserts
+      // (family_members INSERT policy checks family_id = my_family_id(), which reads from profiles)
+      const { error: profileErr } = await supabase.from("profiles").update({
+        family_id: family.id,
+        display_name: userData.name.trim(),
+        role: "admin",
+      }).eq("id", user.id)
+      if (profileErr) throw profileErr
+
+      // 3. Create parent members (generation 2)
       const parentIds: string[] = []
       for (const parent of [parent1, parent2]) {
         if (!parent.name.trim()) continue
@@ -147,7 +156,7 @@ export default function OnboardingPage() {
         if (pm) parentIds.push(pm.id)
       }
 
-      // 3. Create self (generation 3) with parent references
+      // 4. Create self (generation 3) with parent references
       const { data: member, error: memberErr } = await supabase
         .from("family_members")
         .insert({
@@ -168,21 +177,21 @@ export default function OnboardingPage() {
         .single()
       if (memberErr) throw memberErr
 
-      // 4. Update parent records to point to self as child (bidirectional)
-      // (children are computed from parent_ids so no update needed)
-
-      // 5. Update profile
+      // 5. Update profile with member_id now that self member exists
       await supabase.from("profiles").update({
-        family_id: family.id,
         member_id: member.id,
-        display_name: userData.name.trim(),
-        role: "admin",
       }).eq("id", user.id)
 
-      router.push("/dashboard?welcome=1")
+      // Hard navigation so AuthProvider re-fetches the updated profile (with family_id)
+      window.location.href = "/dashboard?welcome=1"
     } catch (e) {
       console.error("Onboarding error:", e)
-      router.push("/dashboard")
+      setIsLoading(false)
+      // Supabase errors are plain objects with a `message` field, not Error instances
+      const msg = e instanceof Error
+        ? e.message
+        : (e as any)?.message ?? (e as any)?.error_description ?? JSON.stringify(e)
+      alert("Setup failed: " + msg + "\n\nPlease try again or contact support.")
     }
   }
 

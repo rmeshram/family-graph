@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useCallback, useMemo, useRef, useState, useEffect, memo } from 'react'
 import { FamilyMember } from '@/lib/types'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
@@ -199,7 +198,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   }, [members, nodePositions])
 
   const connections = useMemo(() => {
-    const lines: { from: NodePosition; to: NodePosition; type: 'parent' | 'spouse' }[] = []
+    const lines: { from: NodePosition; to: NodePosition; type: 'parent' | 'spouse'; fromId: string; toId: string }[] = []
     const posMap = new Map(nodePositions.map((p) => [p.id, p]))
 
     members.forEach((member) => {
@@ -209,7 +208,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       member.parentIds.forEach((parentId) => {
         const parentPos = posMap.get(parentId)
         if (parentPos) {
-          lines.push({ from: parentPos, to: memberPos, type: 'parent' })
+          lines.push({ from: parentPos, to: memberPos, type: 'parent', fromId: parentId, toId: member.id })
         }
       })
 
@@ -217,7 +216,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
         if (member.id < spouseId) {
           const spousePos = posMap.get(spouseId)
           if (spousePos) {
-            lines.push({ from: memberPos, to: spousePos, type: 'spouse' })
+            lines.push({ from: memberPos, to: spousePos, type: 'spouse', fromId: member.id, toId: spouseId })
           }
         }
       })
@@ -225,6 +224,9 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
 
     return lines
   }, [members, nodePositions])
+
+  // Pre-compute member map for O(1) lookups
+  const memberMap = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
@@ -249,7 +251,20 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setZoom((z) => Math.min(Math.max(z * delta, 0.3), 2.5))
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    // Cursor position relative to container
+    const cursorX = e.clientX - rect.left
+    const cursorY = e.clientY - rect.top
+    setZoom(prevZoom => {
+      const newZoom = Math.min(Math.max(prevZoom * delta, 0.2), 4)
+      // Adjust pan so the point under the cursor stays fixed
+      setPan(prevPan => ({
+        x: cursorX - (cursorX - prevPan.x) * (newZoom / prevZoom),
+        y: cursorY - (cursorY - prevPan.y) * (newZoom / prevZoom),
+      }))
+      return newZoom
+    })
   }, [])
 
   // ── Touch handlers (pinch-zoom + single-finger pan) ────────────────────────
@@ -276,7 +291,19 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       const dy = e.touches[1].clientY - e.touches[0].clientY
       const newDist = Math.hypot(dx, dy)
       const scale = newDist / touchRef.current.dist
-      setZoom(z => Math.min(Math.max(z * scale, 0.3), 2.5))
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      const rect = containerRef.current?.getBoundingClientRect()
+      const cx = rect ? midX - rect.left : midX
+      const cy = rect ? midY - rect.top : midY
+      setZoom(prevZoom => {
+        const newZoom = Math.min(Math.max(prevZoom * scale, 0.2), 4)
+        setPan(prevPan => ({
+          x: cx - (cx - prevPan.x) * (newZoom / prevZoom),
+          y: cy - (cy - prevPan.y) * (newZoom / prevZoom),
+        }))
+        return newZoom
+      })
       touchRef.current = { ...touchRef.current, dist: newDist }
     } else if (e.touches.length === 1 && touchPanRef.current) {
       setPan({
@@ -327,6 +354,55 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       y: (dimensions.height - contentHeight * newZoom) / 2 - minY * newZoom,
     })
   }, [nodePositions, dimensions])
+
+  // Focus on a specific node — center it in the viewport at a readable zoom
+  const focusNode = useCallback((nodeId: string) => {
+    const pos = nodePositions.find(p => p.id === nodeId)
+    if (!pos) return
+    setZoom(prevZoom => {
+      const targetZoom = Math.max(prevZoom, 1.2)
+      const cx = dimensions.width / 2
+      const cy = dimensions.height / 2
+      setPan({
+        x: cx - pos.x * targetZoom,
+        y: cy - pos.y * targetZoom,
+      })
+      return targetZoom
+    })
+  }, [nodePositions, dimensions])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      const rect = containerRef.current?.getBoundingClientRect()
+      const cx = rect ? rect.width / 2 : dimensions.width / 2
+      const cy = rect ? rect.height / 2 : dimensions.height / 2
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault()
+        setZoom(z => {
+          const nz = Math.min(z * 1.25, 4)
+          setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) }))
+          return nz
+        })
+      } else if (e.key === '-') {
+        e.preventDefault()
+        setZoom(z => {
+          const nz = Math.max(z * 0.8, 0.2)
+          setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) }))
+          return nz
+        })
+      } else if (e.key === '0') {
+        e.preventDefault()
+        setZoom(1); setPan({ x: 0, y: 0 })
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        fitToView()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [dimensions, fitToView])
 
   return (
     <div
@@ -525,14 +601,12 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
           {connections.map((conn, i) => {
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
-            const fromMember = members.find(m => nodePositions.find(p => p.id === m.id)?.x === conn.from.x && nodePositions.find(p => p.id === m.id)?.y === conn.from.y)
-            const toMember = members.find(m => nodePositions.find(p => p.id === m.id)?.x === conn.to.x && nodePositions.find(p => p.id === m.id)?.y === conn.to.y)
+            const fromMember = memberMap.get(conn.fromId)
+            const toMember = memberMap.get(conn.toId)
             const bothExtended = fromMember?.networkGroup === 'extended' && toMember?.networkGroup === 'extended'
 
             if (conn.type === 'spouse') {
-              const isHighlighted =
-                hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id)?.x === conn.from.x)?.id ||
-                hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id)?.x === conn.to.x)?.id
+              const isHighlighted = hoveredMemberId === conn.fromId || hoveredMemberId === conn.toId
 
               const x1 = conn.from.x + offsetX
               const y1 = conn.from.y + offsetY
@@ -564,9 +638,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             }
 
             const midY = (conn.from.y + conn.to.y) / 2
-            const isHighlighted =
-              hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id && p.y === conn.from.y)?.id === m.id)?.id ||
-              hoveredMemberId === members.find(m => nodePositions.find(p => p.id === m.id && p.y === conn.to.y)?.id === m.id)?.id
+            const isHighlighted = hoveredMemberId === conn.fromId || hoveredMemberId === conn.toId
 
             const d = `M ${conn.from.x + offsetX} ${conn.from.y + 40 + offsetY}
                         C ${conn.from.x + offsetX} ${midY + offsetY},
@@ -586,212 +658,195 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   stroke={edgeColor}
                   strokeWidth={isHighlighted ? 2.5 : 1.8}
                   opacity={isHighlighted ? 1 : 0.75}
-                  strokeDasharray="200"
                   filter={isHighlighted ? 'url(#glowGold)' : undefined}
-                >
-                  <animate
-                    attributeName="stroke-dashoffset"
-                    from="200" to="0"
-                    dur={`${2.5 + (i % 3) * 0.5}s`}
-                    repeatCount="indefinite"
-                  />
-                </path>
+                />
               </g>
             )
           })}
         </svg>
 
         <TooltipProvider>
-          <AnimatePresence mode="popLayout">
-            {nodePositions.map((pos, index) => {
-              const member = members.find((m) => m.id === pos.id)!
-              const isSelected = selectedMemberId === member.id
-              const isHovered = hoveredMemberId === member.id
-              const networkGroup = member.networkGroup ?? 'core'
-              const isExtended = networkGroup === 'extended'
-              const isAffiliated = networkGroup === 'affiliated'
-              const nodeWidth = isAffiliated ? 120 : isExtended ? 130 : 150
-              const initials = member.name
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .slice(0, 2)
+          {nodePositions.map((pos) => {
+            const member = memberMap.get(pos.id)!
+            if (!member) return null
+            const isSelected = selectedMemberId === member.id
+            const isHovered = hoveredMemberId === member.id
+            const networkGroup = member.networkGroup ?? 'core'
+            const isExtended = networkGroup === 'extended'
+            const isAffiliated = networkGroup === 'affiliated'
+            const nodeWidth = isAffiliated ? 120 : isExtended ? 130 : 150
+            const initials = member.name
+              .split(' ')
+              .map((n) => n[0])
+              .join('')
+              .slice(0, 2)
 
-              const isDeceased = !!member.deathYear
-              const lifespan = member.deathYear
-                ? `${member.birthYear}–${member.deathYear}`
-                : member.birthYear
-                  ? `b. ${member.birthYear}`
-                  : ''
-              const isCollapsed = collapsedIds.has(member.id)
-              const hasChildren = members.some(m => m.parentIds.includes(member.id))
-              const relationshipLabel = member.relationship
-                ? member.relationship.toUpperCase()
-                : null
+            const isDeceased = !!member.deathYear
+            const lifespan = member.deathYear
+              ? `${member.birthYear}–${member.deathYear}`
+              : member.birthYear
+                ? `b. ${member.birthYear}`
+                : ''
+            const isCollapsed = collapsedIds.has(member.id)
+            const hasChildren = members.some(m => m.parentIds.includes(member.id))
+            const relationshipLabel = member.relationship
+              ? member.relationship.toUpperCase()
+              : null
 
-              return (
-                <motion.div
-                  key={member.id}
-                  className="absolute"
-                  style={{
-                    left: pos.x - nodeWidth / 2,
-                    top: pos.y - 60,
-                    width: nodeWidth,
-                    opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1,
-                  }}
-                  initial={{ opacity: 0, scale: 0.7 }}
-                  animate={{ opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.6 }}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 280,
-                    damping: 26,
-                    delay: index * 0.028,
-                  }}
-                >
-                  {/* Relationship label above node */}
-                  {relationshipLabel && (
-                    <p
-                      className="text-center text-[8px] font-semibold tracking-[0.04em] uppercase mb-1 leading-tight px-1 text-wrap break-words"
+            return (
+              <div
+                key={member.id}
+                className="absolute transition-opacity duration-200"
+                style={{
+                  left: pos.x - nodeWidth / 2,
+                  top: pos.y - 60,
+                  width: nodeWidth,
+                  opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1,
+                }}
+              >
+                {/* Relationship label above node */}
+                {relationshipLabel && (
+                  <p
+                    className="text-center text-[8px] font-semibold tracking-[0.04em] uppercase mb-1 leading-tight px-1 text-wrap break-words"
+                    style={{
+                      color: isAffiliated ? 'rgba(20,184,166,0.70)' : isExtended ? 'rgba(139,92,246,0.65)' : 'var(--tree-node-label)',
+                    }}
+                  >
+                    {relationshipLabel}
+                  </p>
+                )}
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      className={cn(
+                        'flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-200 w-full',
+                        'border backdrop-blur-md',
+                        isSelected ? 'shadow-lg shadow-amber-500/10'
+                          : isHovered ? 'shadow-lg shadow-indigo-500/10' : ''
+                      )}
                       style={{
-                        color: isAffiliated ? 'rgba(20,184,166,0.70)' : isExtended ? 'rgba(139,92,246,0.65)' : 'var(--tree-node-label)',
+                        background: isSelected ? 'var(--tree-node-bg-selected)'
+                          : isHovered ? 'var(--tree-node-bg-hover)'
+                            : 'var(--tree-node-bg)',
+                        borderColor: isSelected ? 'var(--tree-node-border-selected)'
+                          : isHovered
+                            ? (isAffiliated ? 'rgba(20,184,166,0.55)' : isExtended ? 'rgba(139,92,246,0.55)' : 'var(--tree-node-border-hover)')
+                            : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
                       }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectMember(member.id)
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        focusNode(member.id)
+                        onDoubleClickMember?.(member.id)
+                      }}
+                      onMouseEnter={() => setHoveredMemberId(member.id)}
+                      onMouseLeave={() => setHoveredMemberId(null)}
                     >
-                      {relationshipLabel}
-                    </p>
-                  )}
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className={cn(
-                          'flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-200 w-full',
-                          'border backdrop-blur-md',
-                          isSelected ? 'shadow-lg shadow-amber-500/10'
-                            : isHovered ? 'shadow-lg shadow-indigo-500/10' : ''
-                        )}
-                        style={{
-                          background: isSelected ? 'var(--tree-node-bg-selected)'
-                            : isHovered ? 'var(--tree-node-bg-hover)'
-                              : 'var(--tree-node-bg)',
-                          borderColor: isSelected ? 'var(--tree-node-border-selected)'
-                            : isHovered
-                              ? (isAffiliated ? 'rgba(20,184,166,0.55)' : isExtended ? 'rgba(139,92,246,0.55)' : 'var(--tree-node-border-hover)')
-                              : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onSelectMember(member.id)
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation()
-                          onDoubleClickMember?.(member.id)
-                        }}
-                        onMouseEnter={() => setHoveredMemberId(member.id)}
-                        onMouseLeave={() => setHoveredMemberId(null)}
-                      >
-                        <div className="relative">
-                          <Avatar
+                      <div className="relative">
+                        <Avatar
+                          className={cn(
+                            'border-2 transition-all duration-200',
+                            isAffiliated ? 'h-12 w-12' : isExtended ? 'h-12 w-12' : 'h-14 w-14',
+                            isSelected
+                              ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
+                              : isHovered
+                                ? (isAffiliated
+                                  ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                  : isExtended
+                                    ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                    : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
+                                : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
+                          )}
+                        >
+                          <AvatarFallback
                             className={cn(
-                              'border-2 transition-all duration-200',
-                              isAffiliated ? 'h-12 w-12' : isExtended ? 'h-12 w-12' : 'h-14 w-14',
+                              'font-bold text-lg transition-colors',
                               isSelected
-                                ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
                                 : isHovered
-                                  ? (isAffiliated
-                                    ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                    : isExtended
-                                      ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                      : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
-                                  : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
+                                  ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
+                                    : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
+                                      : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
+                                  : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
+                                    : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
+                                      : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
                             )}
+                            style={{ color: 'var(--tree-node-text)' }}
                           >
-                            <AvatarFallback
-                              className={cn(
-                                'font-bold text-lg transition-colors',
-                                isSelected
-                                  ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30 text-amber-200'
-                                  : isHovered
-                                    ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-200'
-                                      : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-200'
-                                        : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25 text-indigo-200')
-                                    : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
-                                      : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
-                                        : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
-                              )}
-                              style={(!isSelected && !isHovered) ? { color: 'var(--tree-node-text)' } : undefined}
-                            >
-                              {initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          {isDeceased && (
-                            <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-slate-600 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                              <span className="text-[8px] text-slate-300">†</span>
-                            </div>
-                          )}
-                          {member.isClaimed && (
-                            <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                              <ShieldCheck className="h-2.5 w-2.5 text-white" />
-                            </div>
-                          )}
-                          {member.visibility === 'private' && (
-                            <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-orange-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                              <Lock className="h-2.5 w-2.5 text-white" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-center w-full">
-                          <p
-                            className={cn(
-                              'text-[11px] font-semibold truncate w-full',
-                              isSelected ? 'text-amber-200' : isHovered ? 'text-slate-100' : ''
-                            )}
-                            style={(!isSelected && !isHovered) ? { color: 'var(--tree-node-text)' } : undefined}
-                          >
-                            {member.name.split(' ')[0]}
-                          </p>
-                          {lifespan && (
-                            <p className="text-[9px] mt-0.5" style={{ color: 'var(--tree-node-subtext)' }}>
-                              {lifespan}
-                            </p>
-                          )}
-                        </div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs border-slate-700/50" style={{ background: 'var(--surface-panel)' }}>
-                      <div className="space-y-1">
-                        <p className="font-semibold text-slate-100">{member.name}</p>
-                        {member.relationship && (
-                          <p className="text-xs text-amber-400/80">{member.relationship}</p>
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        {isDeceased && (
+                          <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-slate-600 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                            <span className="text-[8px] text-slate-300">†</span>
+                          </div>
                         )}
-                        {member.occupation && (
-                          <p className="text-xs text-slate-400">{member.occupation}</p>
+                        {member.isClaimed && (
+                          <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                            <ShieldCheck className="h-2.5 w-2.5 text-white" />
+                          </div>
+                        )}
+                        {member.visibility === 'private' && (
+                          <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-orange-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                            <Lock className="h-2.5 w-2.5 text-white" />
+                          </div>
                         )}
                       </div>
-                    </TooltipContent>
-                  </Tooltip>
-                  {/* Collapse/expand toggle — sibling of Tooltip, NOT nested inside it */}
-                  {hasChildren && isHovered && (
-                    <button
-                      onClick={(e) => toggleCollapse(member.id, e)}
-                      className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 border border-indigo-400/30 shadow-sm hover:bg-indigo-500 transition-colors z-10"
-                      title={isCollapsed ? 'Expand branch' : 'Collapse branch'}
-                    >
-                      {isCollapsed
-                        ? <ChevronRight className="h-3 w-3 text-white" />
-                        : <ChevronDown className="h-3 w-3 text-white" />
-                      }
+                      <div className="text-center w-full">
+                        <p
+                          className={cn(
+                            'text-[11px] font-semibold truncate w-full',
+                            isSelected ? '' : isHovered ? '' : ''
+                          )}
+                          style={{ color: 'var(--tree-node-text)' }}
+                        >
+                          {member.name.split(' ')[0]}
+                        </p>
+                        {lifespan && (
+                          <p className="text-[9px] mt-0.5" style={{ color: 'var(--tree-node-subtext)' }}>
+                            {lifespan}
+                          </p>
+                        )}
+                      </div>
                     </button>
-                  )}
-                  {isCollapsed && (
-                    <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 flex h-5 items-center gap-0.5 rounded-full bg-muted/90 border border-border/50 px-1.5 pointer-events-none">
-                      <span className="text-[8px] text-slate-500">+branch</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs border-border">
+                    <div className="space-y-1">
+                      <p className="font-semibold text-foreground">{member.name}</p>
+                      {member.relationship && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400/80">{member.relationship}</p>
+                      )}
+                      {member.occupation && (
+                        <p className="text-xs text-muted-foreground">{member.occupation}</p>
+                      )}
                     </div>
-                  )}
-                </motion.div>
-              )
-            })}
-          </AnimatePresence>
+                  </TooltipContent>
+                </Tooltip>
+                {/* Collapse/expand toggle — sibling of Tooltip, NOT nested inside it */}
+                {hasChildren && isHovered && (
+                  <button
+                    onClick={(e) => toggleCollapse(member.id, e)}
+                    className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 border border-indigo-400/30 shadow-sm hover:bg-indigo-500 transition-colors z-10"
+                    title={isCollapsed ? 'Expand branch' : 'Collapse branch'}
+                  >
+                    {isCollapsed
+                      ? <ChevronRight className="h-3 w-3 text-white" />
+                      : <ChevronDown className="h-3 w-3 text-white" />
+                    }
+                  </button>
+                )}
+                {isCollapsed && (
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 flex h-5 items-center gap-0.5 rounded-full bg-muted/90 border border-border/50 px-1.5 pointer-events-none">
+                    <span className="text-[8px] text-slate-500">+branch</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </TooltipProvider>
       </div>
 
@@ -864,18 +919,26 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
         <Button
           variant="secondary"
           size="icon"
-          onClick={() => setZoom((z) => Math.min(z * 1.2, 2.5))}
+          onClick={() => {
+            const cx = dimensions.width / 2; const cy = dimensions.height / 2
+            setZoom(z => { const nz = Math.min(z * 1.25, 4); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz })
+          }}
           className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
           style={{ background: 'var(--surface-card)' }}
+          title="Zoom in (+)"
         >
           <ZoomIn className="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="secondary"
           size="icon"
-          onClick={() => setZoom((z) => Math.max(z * 0.8, 0.3))}
+          onClick={() => {
+            const cx = dimensions.width / 2; const cy = dimensions.height / 2
+            setZoom(z => { const nz = Math.max(z * 0.8, 0.2); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz })
+          }}
           className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
           style={{ background: 'var(--surface-card)' }}
+          title="Zoom out (-)"
         >
           <ZoomOut className="h-3.5 w-3.5" />
         </Button>
@@ -885,6 +948,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
           onClick={fitToView}
           className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
           style={{ background: 'var(--surface-card)' }}
+          title="Fit all to view (F)"
         >
           <Grid3X3 className="h-3.5 w-3.5" />
         </Button>
@@ -894,14 +958,20 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
           onClick={centerView}
           className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
           style={{ background: 'var(--surface-card)' }}
+          title="Reset view (0)"
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      {/* Zoom indicator */}
-      <div className="absolute bottom-4 left-4 px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-700/40 text-[11px] text-muted-foreground z-[3]" style={{ background: 'var(--surface-card)' }}>
-        {Math.round(zoom * 100)}%
+      {/* Zoom indicator + hint */}
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 z-[3]">
+        <div className="px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-700/40 text-[11px] text-muted-foreground" style={{ background: 'var(--surface-card)' }}>
+          {Math.round(zoom * 100)}%
+        </div>
+        <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-700/40 text-[10px] text-muted-foreground/60" style={{ background: 'var(--surface-card)' }}>
+          Scroll to zoom · Drag to pan · Double-click node to focus · F to fit
+        </div>
       </div>
     </div>
   )
