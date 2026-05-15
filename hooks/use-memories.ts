@@ -47,6 +47,15 @@ export function useMemories(familyId: string | null) {
     return () => { supabase.removeChannel(ch) }
   }, [familyId, supabase, fetch])
 
+  const uploadPhoto = useCallback(async (file: File, familyId: string): Promise<string> => {
+    const ext = file.name.split('.').pop()
+    const path = `${familyId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('memories').upload(path, file, { upsert: false })
+    if (error) throw new Error(error.message)
+    const { data } = supabase.storage.from('memories').getPublicUrl(path)
+    return data.publicUrl
+  }, [supabase])
+
   const addMemory = useCallback(async (
     familyId: string,
     memory: Omit<MemoryItem, 'id' | 'uploadedAt'>,
@@ -67,7 +76,7 @@ export function useMemories(familyId: string | null) {
     return data
   }, [supabase])
 
-  return { memories, loading, addMemory, refetch: fetch }
+  return { memories, loading, addMemory, uploadPhoto, refetch: fetch }
 }
 
 // ─── useVoiceNotes ────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
 import { useMemories, useVoiceNotes } from "@/hooks/use-memories"
 import { Textarea } from "@/components/ui/textarea"
+import { useRef } from "react"
 import {
   ArrowLeft,
   Camera,
@@ -37,6 +38,8 @@ import {
   Volume2,
   MessageCircle,
   X,
+  Upload,
+  ImageIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -67,12 +70,12 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryItem['eventType'], year: undefined as number | undefined, photoUrl: '' }
+const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryItem['eventType'], year: undefined as number | undefined, photoUrl: '', photoFile: null as File | null }
 
 export default function MemoryPage() {
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
-  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory } = useMemories(familyId)
+  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory, uploadPhoto } = useMemories(familyId)
   const { voiceNotes: dbVoiceNotes, loading: voiceLoading } = useVoiceNotes(familyId)
 
   const isDemoMode = !authLoading && !user
@@ -87,16 +90,29 @@ export default function MemoryPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newMemory, setNewMemory] = useState(BLANK_MEMORY)
   const [addingSaving, setAddingSaving] = useState(false)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setNewMemory(p => ({ ...p, photoFile: file, photoUrl: '' }))
+    setPhotoPreview(URL.createObjectURL(file))
+  }
 
   const handleAddMemory = async () => {
     if (!newMemory.title) return
     if (!isDemoMode && familyId && user) {
       try {
         setAddingSaving(true)
+        let resolvedPhotoUrl = newMemory.photoUrl || undefined
+        if (newMemory.photoFile) {
+          resolvedPhotoUrl = await uploadPhoto(newMemory.photoFile, familyId)
+        }
         await dbAddMemory(familyId, {
           title: newMemory.title,
           description: newMemory.description || undefined,
-          photoUrl: newMemory.photoUrl || undefined,
+          photoUrl: resolvedPhotoUrl,
           eventType: newMemory.eventType,
           year: newMemory.year,
           taggedMemberIds: [],
@@ -105,6 +121,7 @@ export default function MemoryPage() {
     }
     setShowAddForm(false)
     setNewMemory(BLANK_MEMORY)
+    setPhotoPreview(null)
   }
 
   const filteredMemories = useMemo(() => {
@@ -197,7 +214,21 @@ export default function MemoryPage() {
               </select>
               <Input type="number" placeholder="Year (e.g. 2010)" value={newMemory.year ?? ''} onChange={e => setNewMemory(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
             </div>
-            <Input placeholder="Photo URL (optional)" value={newMemory.photoUrl} onChange={e => setNewMemory(p => ({ ...p, photoUrl: e.target.value }))} />
+            {/* Photo upload */}
+            <div>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+              {photoPreview ? (
+                <div className="relative rounded-xl overflow-hidden border border-border/50">
+                  <img src={photoPreview} alt="preview" className="w-full h-40 object-cover" />
+                  <button onClick={() => { setPhotoPreview(null); setNewMemory(p => ({ ...p, photoFile: null, photoUrl: '' })) }} className="absolute top-2 right-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-border/50 p-3 text-muted-foreground hover:border-amber-500/50 hover:text-amber-400 transition-colors">
+                  <ImageIcon className="h-5 w-5" />
+                  <span className="text-sm">Tap to upload photo (optional)</span>
+                </button>
+              )}
+            </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
               <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!newMemory.title || addingSaving} onClick={handleAddMemory}>

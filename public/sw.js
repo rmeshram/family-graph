@@ -79,6 +79,41 @@ self.addEventListener('fetch', (event) => {
   }
 })
 
+// ── Push Notifications ──────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+  if (!event.data) return
+  let payload
+  try { payload = event.data.json() } catch { payload = { title: 'Family Graph', body: event.data.text() } }
+
+  const { title = 'Family Graph', body = '', icon = '/icons/icon-192.png', url = '/dashboard' } = payload
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      badge: '/icons/icon-192.png',
+      data: { url },
+      vibrate: [200, 100, 200],
+    })
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url ?? '/dashboard'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(url)
+    })
+  )
+})
+
 // Push notifications: birthday / anniversary reminders
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {}

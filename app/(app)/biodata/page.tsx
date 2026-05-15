@@ -1,16 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { sampleFamilyMembers } from "@/lib/sample-data"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
-import { ArrowLeft, Download, Share2, Printer, Check, MessageCircle } from "lucide-react"
+import { ArrowLeft, Download, Share2, Printer, Check, MessageCircle, Heart, MapPin, Briefcase, Users, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
+import type { FamilyMember } from "@/lib/types"
 
 const CURRENT_YEAR = 2026
 
@@ -61,6 +63,61 @@ export default function BiodataPage() {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
 
+  // ── Matrimonial matching ──────────────────────────────────────────────────
+  const matches = useMemo<FamilyMember[]>(() => {
+    if (!member) return []
+    const memberGotra = member.gotra?.toLowerCase()
+    const memberGender = member.gender
+    const memberAge = age ?? 0
+
+    // Get all IDs that are direct family (self + relatives within 2 degrees)
+    const directIds = new Set<string>([
+      member.id,
+      ...member.parentIds,
+      ...member.spouseIds,
+      ...allMembers.filter(m =>
+        m.parentIds.some(pid => member.parentIds.includes(pid)) // siblings
+      ).map(m => m.id),
+    ])
+
+    return allMembers.filter(m => {
+      if (directIds.has(m.id)) return false
+      if (m.isAlive === false) return false
+      if (!m.birthYear) return false
+      const mAge = CURRENT_YEAR - m.birthYear
+      if (mAge < 18 || mAge > 45) return false
+      // Opposite gender (simple binary match for now)
+      if (memberGender === 'male' && m.gender !== 'female') return false
+      if (memberGender === 'female' && m.gender !== 'male') return false
+      // Different gotra (if both have gotra)
+      if (memberGotra && m.gotra && m.gotra.toLowerCase() === memberGotra) return false
+      return true
+    }).sort((a, b) => {
+      // Rank: closer age range first, same religion/caste first
+      const aAge = CURRENT_YEAR - (a.birthYear ?? 0)
+      const bAge = CURRENT_YEAR - (b.birthYear ?? 0)
+      const aDiff = Math.abs(aAge - memberAge)
+      const bDiff = Math.abs(bAge - memberAge)
+      const aReligionMatch = a.religion === member.religion ? -1 : 0
+      const bReligionMatch = b.religion === member.religion ? -1 : 0
+      return (aReligionMatch - bReligionMatch) || (aDiff - bDiff)
+    })
+  }, [member, allMembers, age])
+
+  // Find mutual connection (first common relative)
+  function getMutualConnection(m: FamilyMember): string {
+    for (const parentId of member?.parentIds ?? []) {
+      const parent = allMembers.find(p => p.id === parentId)
+      if (!parent) continue
+      // Check if matched member has a relative connecting through this parent's family
+      const link = allMembers.find(rel =>
+        rel.parentIds.includes(parentId) && (m.parentIds.some(pid => allMembers.find(x => x.id === pid)?.parentIds.includes(parentId)))
+      )
+      if (link) return `Via ${parent.name}`
+    }
+    return 'Extended network'
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <DemoBanner />
@@ -71,223 +128,343 @@ export default function BiodataPage() {
           </Button>
         </Link>
         <div className="flex-1">
-          <h1 className="font-bold text-lg">Biodata Generator</h1>
-          <p className="text-xs text-muted-foreground">Marriage biodata for family members</p>
+          <h1 className="font-bold text-lg">Biodata & Matching</h1>
+          <p className="text-xs text-muted-foreground">Marriage biodata & matrimonial matching</p>
         </div>
       </header>
 
       <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-6">
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+        <Tabs defaultValue="biodata">
+          <TabsList className="mb-6 bg-muted/50">
+            <TabsTrigger value="biodata" className="gap-1.5">
+              <Printer className="h-3.5 w-3.5" />
+              Generate Biodata
+            </TabsTrigger>
+            <TabsTrigger value="matches" className="gap-1.5">
+              <Heart className="h-3.5 w-3.5" />
+              Find Matches
+              {matches.length > 0 && (
+                <Badge className="ml-1 h-4 bg-pink-500/15 text-pink-400 border-pink-500/20 text-[10px] px-1">{matches.length}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-          {/* Member selector */}
-          <div className="space-y-3">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-              Select Member
-            </h2>
-            <div className="space-y-2">
-              {eligible.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedId(m.id)}
-                  className={cn(
-                    "w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
-                    selectedId === m.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border bg-card hover:bg-muted/50"
-                  )}
-                >
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback
+          {/* ── Biodata Tab ── */}
+          <TabsContent value="biodata">
+            <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+
+              {/* Member selector */}
+              <div className="space-y-3">
+                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                  Select Member
+                </h2>
+                <div className="space-y-2">
+                  {eligible.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedId(m.id)}
                       className={cn(
-                        "text-xs font-bold",
+                        "w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
                         selectedId === m.id
-                          ? "bg-primary/20 text-primary"
-                          : "bg-muted text-muted-foreground"
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-card hover:bg-muted/50"
                       )}
                     >
-                      {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className={cn("font-medium text-sm truncate", selectedId === m.id && "text-primary")}>
-                      {m.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {m.birthYear ? `Age ${CURRENT_YEAR - m.birthYear}` : ""}
-                      {" · "}
-                      {m.gender === "male" ? "Male" : "Female"}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Biodata Preview */}
-          {member && (
-            <div className="space-y-4">
-              {/* Action buttons */}
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => window.print()}
-                >
-                  <Printer className="h-4 w-4" />
-                  Print
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <Download className="h-4 w-4" />
-                  Save PDF
-                </Button>
-                <Button size="sm" className="gap-1.5" onClick={handleCopy}>
-                  {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-                  {copied ? "Copied!" : "Share Link"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 border-green-500/40 text-green-600 hover:bg-green-500/10"
-                  onClick={handleWhatsAppShare}
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  WhatsApp
-                </Button>
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback
+                          className={cn(
+                            "text-xs font-bold",
+                            selectedId === m.id
+                              ? "bg-primary/20 text-primary"
+                              : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className={cn("font-medium text-sm truncate", selectedId === m.id && "text-primary")}>
+                          {m.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {m.birthYear ? `Age ${CURRENT_YEAR - m.birthYear}` : ""}
+                          {" · "}
+                          {m.gender === "male" ? "Male" : "Female"}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Biodata Card */}
-              <div className="rounded-2xl border-2 border-amber-200 bg-white shadow-xl overflow-hidden print:shadow-none">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white text-center">
-                  <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/30 bg-white/20 text-3xl font-bold text-white">
-                    {member.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+              {/* Biodata Preview */}
+              {member && (
+                <div className="space-y-4">
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => window.print()}
+                    >
+                      <Printer className="h-4 w-4" />
+                      Print
+                    </Button>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Download className="h-4 w-4" />
+                      Save PDF
+                    </Button>
+                    <Button size="sm" className="gap-1.5" onClick={handleCopy}>
+                      {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+                      {copied ? "Copied!" : "Share Link"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 border-green-500/40 text-green-600 hover:bg-green-500/10"
+                      onClick={handleWhatsAppShare}
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      WhatsApp
+                    </Button>
                   </div>
-                  <h2 className="text-2xl font-bold">{member.name}</h2>
-                  <p className="text-amber-100 text-sm mt-1">Marriage Biodata</p>
-                  <div className="flex justify-center gap-3 mt-3 flex-wrap">
-                    {member.gotra && (
-                      <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
-                        Gotra: {member.gotra}
-                      </Badge>
-                    )}
-                    {member.religion && (
-                      <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
-                        {member.religion}
-                      </Badge>
-                    )}
-                    {member.caste && (
-                      <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
-                        {member.caste}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
 
-                <div className="p-6 grid gap-6 sm:grid-cols-2">
-                  {/* Personal Details */}
-                  <section>
-                    <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
-                      Personal Details
-                    </h3>
-                    <dl className="space-y-2">
-                      {[
-                        ["Full Name", member.name],
-                        ["Year of Birth", member.birthYear ? String(member.birthYear) : "–"],
-                        ["Age", age ? `${age} years` : "–"],
-                        ["Gender", member.gender === "male" ? "Male" : "Female"],
-                        ["Birthplace", member.birthPlace ?? "–"],
-                        ["Current City", member.currentPlace ?? "–"],
-                        ["Mother Tongue", member.nativeLanguage ?? "–"],
-                      ].map(([label, value]) => (
-                        <div key={label} className="flex gap-2 text-sm">
-                          <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
-                          <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                  {/* Biodata Card */}
+                  <div className="rounded-2xl border-2 border-amber-200 bg-white shadow-xl overflow-hidden print:shadow-none">
+                    {/* Header */}
+                    <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white text-center">
+                      <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/30 bg-white/20 text-3xl font-bold text-white">
+                        {member.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                      </div>
+                      <h2 className="text-2xl font-bold">{member.name}</h2>
+                      <p className="text-amber-100 text-sm mt-1">Marriage Biodata</p>
+                      <div className="flex justify-center gap-3 mt-3 flex-wrap">
+                        {member.gotra && (
+                          <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
+                            Gotra: {member.gotra}
+                          </Badge>
+                        )}
+                        {member.religion && (
+                          <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
+                            {member.religion}
+                          </Badge>
+                        )}
+                        {member.caste && (
+                          <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
+                            {member.caste}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-6 grid gap-6 sm:grid-cols-2">
+                      {/* Personal Details */}
+                      <section>
+                        <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                          Personal Details
+                        </h3>
+                        <dl className="space-y-2">
+                          {[
+                            ["Full Name", member.name],
+                            ["Year of Birth", member.birthYear ? String(member.birthYear) : "–"],
+                            ["Age", age ? `${age} years` : "–"],
+                            ["Gender", member.gender === "male" ? "Male" : "Female"],
+                            ["Birthplace", member.birthPlace ?? "–"],
+                            ["Current City", member.currentPlace ?? "–"],
+                            ["Mother Tongue", member.nativeLanguage ?? "–"],
+                          ].map(([label, value]) => (
+                            <div key={label} className="flex gap-2 text-sm">
+                              <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
+                              <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
+
+                      {/* Professional + Family Details */}
+                      <section className="space-y-5">
+                        <div>
+                          <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                            Professional
+                          </h3>
+                          <dl className="space-y-2">
+                            {[
+                              ["Occupation", member.occupation ?? "–"],
+                              [
+                                "Education",
+                                member.milestones?.find(ms => ms.type === "education")?.title ?? "–",
+                              ],
+                            ].map(([label, value]) => (
+                              <div key={label} className="flex gap-2 text-sm">
+                                <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
+                                <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
                         </div>
-                      ))}
-                    </dl>
-                  </section>
 
-                  {/* Professional + Family Details */}
-                  <section className="space-y-5">
-                    <div>
-                      <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
-                        Professional
-                      </h3>
-                      <dl className="space-y-2">
-                        {[
-                          ["Occupation", member.occupation ?? "–"],
-                          [
-                            "Education",
-                            member.milestones?.find(ms => ms.type === "education")?.title ?? "–",
-                          ],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex gap-2 text-sm">
-                            <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
-                            <dd className="font-medium flex-1 text-foreground">{value}</dd>
-                          </div>
-                        ))}
-                      </dl>
+                        <div>
+                          <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                            Family Details
+                          </h3>
+                          <dl className="space-y-2">
+                            {[
+                              ["Father", father?.name ?? "–"],
+                              ["Father's Occ.", father?.occupation ?? "–"],
+                              ["Mother", mother?.name ?? "–"],
+                              [
+                                "Siblings",
+                                siblings.length > 0
+                                  ? siblings.map(s => s.name.split(" ")[0]).join(", ")
+                                  : "None",
+                              ],
+                              ["Family Type", "Joint Family"],
+                              [
+                                "Native Place",
+                                member.hometown ?? member.birthPlace?.split(",")[0] ?? "–",
+                              ],
+                            ].map(([label, value]) => (
+                              <div key={label} className="flex gap-2 text-sm">
+                                <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
+                                <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      </section>
+
+                      {/* About */}
+                      {member.bio && (
+                        <div className="sm:col-span-2">
+                          <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                            About
+                          </h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed">{member.bio}</p>
+                        </div>
+                      )}
+
+                      {/* Contact footer */}
+                      <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-100 p-4 text-center">
+                        <p className="text-xs text-amber-700 font-medium">Contact via Family Admin</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Generated by Family Graph · familygraph.app
+                        </p>
+                      </div>
                     </div>
-
-                    <div>
-                      <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
-                        Family Details
-                      </h3>
-                      <dl className="space-y-2">
-                        {[
-                          ["Father", father?.name ?? "–"],
-                          ["Father's Occ.", father?.occupation ?? "–"],
-                          ["Mother", mother?.name ?? "–"],
-                          [
-                            "Siblings",
-                            siblings.length > 0
-                              ? siblings.map(s => s.name.split(" ")[0]).join(", ")
-                              : "None",
-                          ],
-                          ["Family Type", "Joint Family"],
-                          [
-                            "Native Place",
-                            member.hometown ?? member.birthPlace?.split(",")[0] ?? "–",
-                          ],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex gap-2 text-sm">
-                            <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
-                            <dd className="font-medium flex-1 text-foreground">{value}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </div>
-                  </section>
-
-                  {/* About */}
-                  {member.bio && (
-                    <div className="sm:col-span-2">
-                      <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
-                        About
-                      </h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">{member.bio}</p>
-                    </div>
-                  )}
-
-                  {/* Contact footer */}
-                  <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-100 p-4 text-center">
-                    <p className="text-xs text-amber-700 font-medium">Contact via Family Admin</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Generated by Family Graph · familygraph.app
-                    </p>
                   </div>
                 </div>
+              )}
+
+              {!member && (
+                <div className="flex items-center justify-center rounded-2xl border border-dashed border-border h-60 text-muted-foreground text-sm">
+                  Select a member to generate biodata
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* ── Matches Tab ── */}
+          <TabsContent value="matches">
+            <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+              {/* Member selector */}
+              <div className="space-y-3">
+                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Looking for matches for</h2>
+                <div className="space-y-2">
+                  {eligible.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedId(m.id)}
+                      className={cn(
+                        "w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                        selectedId === m.id
+                          ? "border-pink-500/50 bg-pink-500/5"
+                          : "border-border bg-card hover:bg-muted/50"
+                      )}
+                    >
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback className={cn("text-xs font-bold", selectedId === m.id ? "bg-pink-500/20 text-pink-400" : "bg-muted text-muted-foreground")}>
+                          {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{m.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {m.birthYear ? `Age ${CURRENT_YEAR - m.birthYear}` : ""}
+                          {" · "}{m.gender === "male" ? "Male" : "Female"}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Match results */}
+              <div>
+                {!member ? (
+                  <div className="flex items-center justify-center rounded-2xl border border-dashed border-border h-60 text-muted-foreground text-sm">
+                    Select a member to find matches
+                  </div>
+                ) : matches.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/50 h-60 justify-center text-muted-foreground">
+                    <Heart className="h-8 w-8 opacity-30" />
+                    <div className="text-center">
+                      <p className="font-medium">No matches yet</p>
+                      <p className="text-xs mt-1">Invite more family members to grow the network</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-pink-400" />
+                      <p className="text-sm font-medium">{matches.length} potential matches for {member.name}</p>
+                      <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400">Within network</Badge>
+                    </div>
+                    <div className="space-y-3">
+                      {matches.map(m => {
+                        const mAge = m.birthYear ? CURRENT_YEAR - m.birthYear : null
+                        const mutualConn = getMutualConnection(m)
+                        return (
+                          <div key={m.id} className="flex items-center gap-4 rounded-2xl border border-border/50 bg-card p-4 hover:border-pink-500/30 transition-colors">
+                            <Avatar className="h-12 w-12">
+                              <AvatarFallback className="bg-pink-500/10 text-pink-400 font-bold">
+                                {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-sm">{m.name}</p>
+                                {m.gotra && <Badge variant="outline" className="text-[10px] h-4 px-1.5">{m.gotra} gotra</Badge>}
+                              </div>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground">
+                                {mAge && <span className="flex items-center gap-1"><Users className="h-3 w-3" /> Age {mAge}</span>}
+                                {m.occupation && <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {m.occupation}</span>}
+                                {(m.currentPlace || m.hometown) && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {m.currentPlace ?? m.hometown}</span>}
+                              </div>
+                              <p className="mt-1 text-[10px] text-pink-400/80 font-medium">🔗 {mutualConn}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0 border-green-500/40 text-green-600 hover:bg-green-500/10 gap-1.5"
+                              onClick={() => {
+                                const text = `*Potential match for ${member.name}*\n\n${m.name}, Age ${mAge ?? '–'}\nOccupation: ${m.occupation ?? '–'}\nCity: ${m.currentPlace ?? m.hometown ?? '–'}\nGotra: ${m.gotra ?? '–'}\n\nConnection: ${mutualConn}\n\nGenerated by Family Graph`
+                                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+                              }}
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              Share
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-
-          {!member && (
-            <div className="flex items-center justify-center rounded-2xl border border-dashed border-border h-60 text-muted-foreground text-sm">
-              Select a member to generate biodata
-            </div>
-          )}
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

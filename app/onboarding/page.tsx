@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ import {
   Bell,
   TreePine,
   Share2,
+  Camera,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -72,6 +73,9 @@ export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [pushGranted, setPushGranted] = useState(false)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   const [userData, setUserData] = useState({
     name: "",
@@ -157,6 +161,18 @@ export default function OnboardingPage() {
       }
 
       // 4. Create self (generation 3) with parent references
+      // Upload profile photo if provided
+      let photoUrl: string | null = null
+      if (photoFile) {
+        const ext = photoFile.name.split('.').pop()
+        const path = `${user.id}/avatar.${ext}`
+        const { error: uploadErr } = await supabase.storage.from('avatars').upload(path, photoFile, { upsert: true })
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+          photoUrl = urlData.publicUrl
+        }
+      }
+
       const { data: member, error: memberErr } = await supabase
         .from("family_members")
         .insert({
@@ -166,6 +182,7 @@ export default function OnboardingPage() {
           birth_place: userData.birthPlace || null,
           occupation: userData.occupation || null,
           bio: userData.bio || null,
+          photo_url: photoUrl,
           relationship: "self",
           generation: 3,
           is_alive: true,
@@ -246,6 +263,29 @@ export default function OnboardingPage() {
       case "yourself":
         return (
           <div className="space-y-5 py-2">
+            {/* Profile photo */}
+            <div className="flex items-center gap-4">
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                setPhotoFile(f)
+                setPhotoPreview(URL.createObjectURL(f))
+              }} />
+              <div
+                onClick={() => photoInputRef.current?.click()}
+                className="relative flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-dashed border-border hover:border-primary/60 bg-muted/50 overflow-hidden transition-colors"
+              >
+                {photoPreview
+                  ? <img src={photoPreview} alt="you" className="h-full w-full object-cover" />
+                  : <Camera className="h-7 w-7 text-muted-foreground/50" />
+                }
+              </div>
+              <div>
+                <p className="text-sm font-medium">Your photo</p>
+                <p className="text-xs text-muted-foreground">Tap to upload (optional)<br />Helps family recognise you</p>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="name">Full Name *</Label>
               <Input

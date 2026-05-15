@@ -729,7 +729,7 @@ export default function FamilyGraphApp() {
       </div>
 
       {/* ── Dialogs ─────────────────────────────────────────────────── */}
-      <AddMemberDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} existingMembers={members} onAdd={handleAddMember} />
+      <AddMemberDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} existingMembers={members} onAdd={handleAddMember} familyId={familyId ?? undefined} />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />

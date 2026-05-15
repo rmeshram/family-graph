@@ -7,9 +7,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { sampleFamilyMembers } from '@/lib/sample-data'
+import { sampleFamilyMembers, sampleMemories } from '@/lib/sample-data'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers } from '@/hooks/use-members'
+import { useMemories } from '@/hooks/use-memories'
+import { useNotifications } from '@/hooks/use-notifications'
+import { NotificationBell } from '@/components/notification-bell'
 import {
   GitBranch, Camera, UserPlus, Clock, Sparkles,
   Users, Globe, Star, BarChart3, Activity,
@@ -48,8 +51,11 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const [open, setOpen] = useState(false)
   const { user, profile, familyId, loading: authLoading, signOut } = useAuth()
   const { members: dbMembers } = useMembers(familyId)
+  const { memories: dbMemories } = useMemories(familyId)
   const isDemoMode = !authLoading && !user
   const sidebarMembers = useMemo(() => isDemoMode ? sampleFamilyMembers : dbMembers, [isDemoMode, dbMembers])
+  const memoriesCount = isDemoMode ? sampleMemories.length : dbMemories.length
+  const { notifications, unreadCount } = useNotifications(sidebarMembers, memoriesCount)
 
   const handleSignOut = async () => {
     await signOut()
@@ -87,6 +93,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
           <h1 className="font-bold tracking-tight text-foreground">Family Graph</h1>
           <p className="text-[10px] text-muted-foreground">{profile?.display_name ? `${profile.display_name.split(' ').pop() || ''} Family` : 'My Family'}</p>
         </div>
+        <NotificationBell notifications={notifications} unreadCount={unreadCount} />
         <button onClick={() => setOpen(false)} className="lg:hidden text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>

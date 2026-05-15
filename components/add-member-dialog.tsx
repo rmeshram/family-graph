@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { FamilyMember } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,13 +24,14 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X } from 'lucide-react'
 
 interface AddMemberDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   existingMembers: FamilyMember[]
   onAdd: (member: Omit<FamilyMember, 'id'>) => void
+  familyId?: string
 }
 
 export function AddMemberDialog({
@@ -37,7 +39,12 @@ export function AddMemberDialog({
   onOpenChange,
   existingMembers,
   onAdd,
+  familyId,
 }: AddMemberDialogProps) {
+  const supabase = createClient()
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [birthYear, setBirthYear] = useState('')
   const [deathYear, setDeathYear] = useState('')
@@ -51,7 +58,14 @@ export function AddMemberDialog({
   const [affiliatedFamilyName, setAffiliatedFamilyName] = useState('')
   const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPhotoFile(file)
+    setPhotoPreview(URL.createObjectURL(file))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const parentIds = parentId && parentId !== 'none' ? [parentId] : []
@@ -59,6 +73,17 @@ export function AddMemberDialog({
 
     const parentMember = existingMembers.find((m) => m.id === parentId)
     const generation = parentMember ? parentMember.generation + 1 : 0
+
+    let uploadedPhotoUrl: string | undefined
+    if (photoFile && familyId) {
+      const ext = photoFile.name.split('.').pop()
+      const path = `${familyId}/members/${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('members').upload(path, photoFile, { upsert: false })
+      if (!error) {
+        const { data } = supabase.storage.from('members').getPublicUrl(path)
+        uploadedPhotoUrl = data.publicUrl
+      }
+    }
 
     onAdd({
       name,
@@ -71,6 +96,7 @@ export function AddMemberDialog({
       parentIds,
       spouseIds,
       generation,
+      photoUrl: uploadedPhotoUrl,
       networkGroup: networkGroup !== 'core' ? networkGroup : undefined,
       affiliatedFamilyName: networkGroup === 'affiliated' && affiliatedFamilyName ? affiliatedFamilyName : undefined,
       affiliatedFamilyId: networkGroup === 'affiliated' && affiliatedFamilyName ? affiliatedFamilyName.toLowerCase().replace(/\s+/g, '-') : undefined,
@@ -94,6 +120,8 @@ export function AddMemberDialog({
     setNetworkGroup('core')
     setAffiliatedFamilyName('')
     setAffiliatedJunctionId('')
+    setPhotoFile(null)
+    setPhotoPreview(null)
   }
 
   return (
@@ -116,6 +144,30 @@ export function AddMemberDialog({
 
         <ScrollArea className="max-h-[calc(90vh-180px)]">
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Photo Upload */}
+            <div className="flex items-center gap-4">
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+              <div
+                onClick={() => photoInputRef.current?.click()}
+                className="relative flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-border/50 bg-muted/30 hover:border-primary/50 transition-colors overflow-hidden"
+              >
+                {photoPreview ? (
+                  <img src={photoPreview} alt="preview" className="h-full w-full object-cover" />
+                ) : (
+                  <ImageIcon className="h-7 w-7 text-muted-foreground/50" />
+                )}
+                {photoPreview && (
+                  <button type="button" onClick={e => { e.stopPropagation(); setPhotoFile(null); setPhotoPreview(null) }} className="absolute top-1 right-1 rounded-full bg-black/60 p-0.5 text-white">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">Profile Photo</p>
+                <p className="text-xs">Tap to upload (optional)</p>
+              </div>
+            </div>
+
             {/* Basic Info */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
