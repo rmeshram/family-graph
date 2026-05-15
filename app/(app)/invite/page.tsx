@@ -287,7 +287,7 @@ export default function InvitePage() {
                     if (navigator.share && !isSharing.current) {
                       isSharing.current = true
                       navigator.share({ title: 'Join our family tree', text: decodeURIComponent(whatsappMessage), url: inviteUrl })
-                        .catch(() => {})
+                        .catch(() => { })
                         .finally(() => { isSharing.current = false })
                     }
                   }}
@@ -298,7 +298,7 @@ export default function InvitePage() {
                 <button
                   className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
                   onClick={() => {
-                    navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => {})
+                    navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => { })
                     toast({ title: 'Message copied!', description: 'Paste it anywhere.' })
                   }}
                 >
@@ -355,7 +355,7 @@ export default function InvitePage() {
                       if (navigator.share && !isSharing.current) {
                         isSharing.current = true
                         navigator.share({ title: 'Join our family tree', url: inviteUrl })
-                          .catch(() => {})
+                          .catch(() => { })
                           .finally(() => { isSharing.current = false })
                       }
                     }}

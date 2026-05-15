@@ -291,14 +291,14 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
     setGenerating(true)
     createInviteLink('contributor', 72, userId)
       .then(result => setLink(result.link))
-      .catch(() => {/* silently fall back to placeholder */})
+      .catch(() => {/* silently fall back to placeholder */ })
       .finally(() => setGenerating(false))
   }, [familyId, userId, createInviteLink])
 
   const displayLink = link ?? (familyId ? '' : 'https://familygraph.app/join/DEMO')
   const copy = () => {
     if (!displayLink) return
-    navigator.clipboard.writeText(displayLink).catch(() => {})
+    navigator.clipboard.writeText(displayLink).catch(() => { })
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

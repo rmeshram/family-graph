@@ -191,7 +191,7 @@ export default function MemoryPage() {
             <Textarea placeholder="Description (optional)" value={newMemory.description} onChange={e => setNewMemory(p => ({ ...p, description: e.target.value }))} rows={2} className="resize-none" />
             <div className="grid grid-cols-2 gap-2">
               <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={newMemory.eventType} onChange={e => setNewMemory(p => ({ ...p, eventType: e.target.value as MemoryItem['eventType'] }))}>
-                {['wedding','birth','festival','graduation','travel','family-gathering','other'].map(t => (
+                {['wedding', 'birth', 'festival', 'graduation', 'travel', 'family-gathering', 'other'].map(t => (
                   <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
                 ))}
               </select>
