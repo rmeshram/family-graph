@@ -1,5 +1,10 @@
 import { FamilyMember, FamilyEvent, MemoryItem, VoiceNote } from './types'
 
+// Dynamic today — used so birthday notification always fires in demo mode
+const _today = new Date()
+const _todayMonth = _today.getMonth() + 1
+const _todayDay = _today.getDate()
+
 export const sampleFamilyMembers: FamilyMember[] = [
   // Generation 0 — Great Grandparents (Paternal)
   {
@@ -431,6 +436,8 @@ export const sampleFamilyMembers: FamilyMember[] = [
     id: 'g3-1',
     name: 'Rahul Sharma',
     birthYear: 2000,
+    birthMonth: _todayMonth,
+    birthDay: _todayDay,
     birthPlace: 'Pune, Maharashtra',
     currentPlace: 'Pune, Maharashtra',
     occupation: 'Software Developer & Family Historian',

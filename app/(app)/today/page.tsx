@@ -11,31 +11,43 @@ import { DemoBanner } from "@/components/demo-banner"
 import type { FamilyMember } from "@/lib/types"
 import { ArrowLeft, Cake, Heart, Clock, ExternalLink } from "lucide-react"
 
-// Fixed date for demo so birthdays/anniversaries show predictably
-const DEMO_DATE = new Date("2026-05-11")
+/** Days until the next occurrence of month/day from today (0 = today, 1 = tomorrow …) */
+function daysUntilDate(month: number, day: number, today: Date): number {
+  const y = today.getFullYear()
+  const t = new Date(today); t.setHours(0, 0, 0, 0)
+  let next = new Date(y, month - 1, day)
+  next.setHours(0, 0, 0, 0)
+  if (next < t) next = new Date(y + 1, month - 1, day)
+  return Math.round((next.getTime() - t.getTime()) / 86_400_000)
+}
 
 function getBirthdays(members: FamilyMember[], today: Date) {
   return members
-    .filter(m => m.birthYear && m.isAlive !== false)
-    .map((m, i) => {
-      const age = today.getFullYear() - m.birthYear!
-      const daysUntil = (i * 3) % 15
-      return { member: m, age, daysUntil }
-    })
+    .filter(m => m.isAlive !== false && m.birthMonth != null && m.birthDay != null)
+    .map(m => ({
+      member: m,
+      age: m.birthYear ? today.getFullYear() - m.birthYear : null,
+      daysUntil: daysUntilDate(m.birthMonth!, m.birthDay!, today),
+    }))
+    .filter(b => b.daysUntil <= 30)
     .sort((a, b) => a.daysUntil - b.daysUntil)
-    .slice(0, 4)
+    .slice(0, 6)
 }
 
 function getAnniversaries(members: FamilyMember[], today: Date) {
-  return members
-    .filter(m => m.milestones?.some(ms => ms.type === "marriage"))
-    .map((m, i) => {
-      const ms = m.milestones!.find(ms => ms.type === "marriage")!
-      const years = today.getFullYear() - ms.year
-      return { member: m, milestone: ms, years, daysUntil: (i * 7) % 30 }
+  const results: { member: FamilyMember; milestoneTitle: string; years: number; daysUntil: number }[] = []
+  members.forEach(m => {
+    m.milestones?.filter(ms => ms.type === "marriage" && ms.year > 0).forEach(ms => {
+      // Use June 1 as a placeholder month/day when only year is known
+      const annivMonth = (ms as any).month ?? 6
+      const annivDay = (ms as any).day ?? 1
+      const daysUntil = daysUntilDate(annivMonth, annivDay, today)
+      if (daysUntil <= 30) {
+        results.push({ member: m, milestoneTitle: ms.title, years: today.getFullYear() - ms.year, daysUntil })
+      }
     })
-    .sort((a, b) => a.daysUntil - b.daysUntil)
-    .slice(0, 3)
+  })
+  return results.sort((a, b) => a.daysUntil - b.daysUntil).slice(0, 4)
 }
 
 function getHistoricalEvents(members: FamilyMember[], today: Date) {
@@ -61,7 +73,7 @@ export default function TodayPage() {
   const { members: dbMembers, loading } = useMembers(familyId)
   const isDemoMode = !authLoading && !user
 
-  const today = isDemoMode ? DEMO_DATE : new Date()
+  const today = new Date()
   const members = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
   const birthdays = getBirthdays(members, today)
@@ -121,12 +133,18 @@ export default function TodayPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm">{member.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      Turning {age + (daysUntil > 0 ? 1 : 0)} · {String(member.relationship ?? "family").replace(/-/g, " ")}
+                      Turning {(age ?? 0) + (daysUntil > 0 ? 1 : 0)} · {String(member.relationship ?? "family").replace(/-/g, " ")}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <DaysChip days={daysUntil} />
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                    <Button
+                      size="sm" variant="outline" className="h-7 text-xs gap-1"
+                      onClick={() => {
+                        const msg = encodeURIComponent(`🎂 Happy Birthday ${member.name}! Wishing you a wonderful ${age != null ? `${age + (daysUntil > 0 ? 1 : 0)}th ` : ''}birthday! 🌸 — Family Graph`)
+                        window.open(`https://wa.me/?text=${msg}`, '_blank')
+                      }}
+                    >
                       🎂 Wish on WhatsApp
                     </Button>
                   </div>
@@ -144,13 +162,13 @@ export default function TodayPage() {
               <h2 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Anniversaries</h2>
             </div>
             <div className="space-y-3">
-              {anniversaries.map(({ member, milestone, years, daysUntil }) => (
+              {anniversaries.map(({ member, milestoneTitle, years, daysUntil }) => (
                 <div key={member.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
                   <div className="flex h-11 w-11 items-center justify-center rounded-full bg-pink-500/10 text-pink-500 text-xl">
                     💍
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">{milestone.title}</p>
+                    <p className="font-semibold text-sm">{milestoneTitle}</p>
                     <p className="text-xs text-muted-foreground">{years} years · {member.name}</p>
                   </div>
                   <DaysChip days={daysUntil} />

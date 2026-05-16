@@ -25,6 +25,8 @@ export interface FamilyMember {
   id: string
   name: string
   birthYear?: number
+  birthMonth?: number
+  birthDay?: number
   deathYear?: number
   birthPlace?: string
   currentPlace?: string
