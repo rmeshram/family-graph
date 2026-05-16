@@ -12,7 +12,7 @@ import { useMembers } from "@/hooks/use-members"
 import { useEvents } from "@/hooks/use-events"
 import {
   ArrowLeft, Plus, Calendar, MapPin, Users, X,
-  PartyPopper, Church, Home, Coffee, ChevronRight, Clock,
+  PartyPopper, Church, Home, Coffee, Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -96,9 +96,11 @@ function formatDate(dateStr: string) {
 }
 
 function getDaysUntil(dateStr: string) {
-  const today = new Date("2026-05-11")
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
   const event = new Date(dateStr)
-  const diff = Math.ceil((event.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  event.setHours(0, 0, 0, 0)
+  const diff = Math.round((event.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   if (diff === 0) return "Today"
   if (diff === 1) return "Tomorrow"
   if (diff < 0) return `${Math.abs(diff)} days ago`
@@ -128,11 +130,7 @@ export default function EventsPage() {
 
   const [localEvents, setLocalEvents] = useState<FamilyEventItem[]>(SAMPLE_EVENTS)
   const events = isDemoMode ? localEvents : (familyId && !eventsLoading ? dbMappedEvents : [])
-  const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>({
-    "e1": "going",
-    "e2": "going",
-    "e3": "pending",
-  })
+  const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>({})
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newEvent, setNewEvent] = useState({ title: "", type: "reunion" as EventType, date: "", location: "", description: "" })
   const [filter, setFilter] = useState<"all" | "upcoming" | "mine">("upcoming")
@@ -142,28 +140,39 @@ export default function EventsPage() {
     if (familyId && user) updateRSVP(eventId, user.id, status === 'not-going' ? 'cant' : status as 'going' | 'maybe' | 'cant').catch(() => { })
   }
 
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
   const createEvent = async () => {
     if (!newEvent.title || !newEvent.date || !newEvent.location) return
-    if (familyId && user) {
-      try {
+    setCreating(true)
+    setCreateError(null)
+    try {
+      if (familyId && user) {
         await dbCreateEvent(familyId, { title: newEvent.title, description: newEvent.description, eventDate: newEvent.date, location: newEvent.location }, user.id)
-      } catch { /* fall through to local */ }
-    } else {
-      const ev: FamilyEventItem = {
-        id: `e${Date.now()}`,
-        ...newEvent,
-        organizer: "g3-1",
-        invitedMemberIds: allMembers.map(m => m.id),
-        rsvps: { "g3-1": "going" },
+        // real-time subscription will update dbEvents; close form
+      } else {
+        // Demo mode: add to local state
+        const ev: FamilyEventItem = {
+          id: `e${Date.now()}`,
+          ...newEvent,
+          organizer: allMembers[0]?.id ?? 'demo',
+          invitedMemberIds: allMembers.map(m => m.id),
+          rsvps: {},
+        }
+        setLocalEvents(prev => [ev, ...prev])
       }
-      setLocalEvents(prev => [ev, ...prev])
+      setShowCreateForm(false)
+      setNewEvent({ title: "", type: "reunion", date: "", location: "", description: "" })
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create event. Please try again.')
+    } finally {
+      setCreating(false)
     }
-    setShowCreateForm(false)
-    setNewEvent({ title: "", type: "reunion", date: "", location: "", description: "" })
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-background overflow-x-hidden">
       <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border/50 bg-card/95 backdrop-blur px-4 sm:px-6">
@@ -227,9 +236,18 @@ export default function EventsPage() {
                 className="sm:col-span-2"
               />
             </div>
+            {createError && (
+              <p className="text-xs text-destructive">{createError}</p>
+            )}
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setShowCreateForm(false)}>Cancel</Button>
-              <Button size="sm" onClick={createEvent}>Create Event</Button>
+              <Button variant="outline" size="sm" onClick={() => { setShowCreateForm(false); setCreateError(null) }}>Cancel</Button>
+              <Button
+                size="sm"
+                onClick={createEvent}
+                disabled={creating || !newEvent.title || !newEvent.date || !newEvent.location}
+              >
+                {creating ? 'Creating…' : 'Create Event'}
+              </Button>
             </div>
           </div>
         )}
@@ -256,8 +274,14 @@ export default function EventsPage() {
         {events.map(event => {
           const myStatus = myRSVPs[event.id] || "pending"
           const Icon = EVENT_TYPE_ICONS[event.type]
-          const goingCount = Object.values(event.rsvps).filter(s => s === "going").length
+          const goingIds = Object.entries(event.rsvps).filter(([, s]) => s === "going").map(([id]) => id)
+          const maybeIds = Object.entries(event.rsvps).filter(([, s]) => s === "maybe").map(([id]) => id)
+          const cantIds = Object.entries(event.rsvps).filter(([, s]) => s === "not-going").map(([id]) => id)
+          const toName = (id: string) => allMembers.find(m => m.id === id)?.name.split(" ")[0] ?? id
           const invited = allMembers.filter(m => event.invitedMemberIds.includes(m.id))
+          const whatsappText = encodeURIComponent(
+            `📅 *${event.title}*\n🗓️ ${formatDate(event.date)}${event.time ? ` · ${event.time}` : ""}\n📍 ${event.location}${event.description ? `\n\n${event.description}` : ""}\n\nRSVP on Family Graph: ${typeof window !== "undefined" ? window.location.origin : ""}/events`
+          )
 
           return (
             <div key={event.id} className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -287,7 +311,7 @@ export default function EventsPage() {
                   </span>
                   <span className="flex items-center gap-1.5">
                     <Users className="h-3.5 w-3.5" />
-                    {goingCount} going
+                    {goingIds.length} going
                   </span>
                 </div>
 
@@ -310,8 +334,29 @@ export default function EventsPage() {
                   <span className="text-xs text-muted-foreground">{invited.length} invited</span>
                 </div>
 
+                {/* RSVP breakdown pills */}
+                {(goingIds.length > 0 || maybeIds.length > 0 || cantIds.length > 0) && (
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    {goingIds.length > 0 && (
+                      <span className="rounded-full bg-green-500/10 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 px-2 py-0.5">
+                        ✅ {goingIds.length} going{goingIds.length <= 3 ? ` · ${goingIds.map(toName).join(", ")}` : ""}
+                      </span>
+                    )}
+                    {maybeIds.length > 0 && (
+                      <span className="rounded-full bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800 px-2 py-0.5">
+                        🤔 {maybeIds.length} maybe{maybeIds.length <= 3 ? ` · ${maybeIds.map(toName).join(", ")}` : ""}
+                      </span>
+                    )}
+                    {cantIds.length > 0 && (
+                      <span className="rounded-full bg-red-500/10 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 px-2 py-0.5">
+                        ❌ {cantIds.length} can't go{cantIds.length <= 3 ? ` · ${cantIds.map(toName).join(", ")}` : ""}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* RSVP buttons */}
-                <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/50">
                   <span className="text-xs text-muted-foreground mr-1">Your RSVP:</span>
                   {([
                     ["going", "✅ Going"],
@@ -331,9 +376,14 @@ export default function EventsPage() {
                       {label}
                     </button>
                   ))}
-                  <Button variant="ghost" size="sm" className="ml-auto text-xs gap-1">
-                    Share <ChevronRight className="h-3 w-3" />
-                  </Button>
+                  <a
+                    href={`https://wa.me/?text=${whatsappText}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1 transition-colors"
+                  >
+                    💬 Share on WhatsApp
+                  </a>
                 </div>
               </div>
             </div>

@@ -117,22 +117,55 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push("/auth/signin"); return }
 
-      // 1. Create the family
+      // 1. Create the family — try server route first (bypasses RLS), fall back to direct insert
       const nameParts = userData.name.trim().split(" ")
       const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]
       const familyName = `${lastName || "My"} Family`
       const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase()
-      const { data: family, error: familyErr } = await supabase
-        .from("families")
-        .insert({ name: familyName, invite_code: inviteCode, created_by: user.id })
-        .select()
-        .single()
-      if (familyErr) throw familyErr
+
+      let familyId!: string
+      let familyInviteCode!: string
+
+      // Try server-side route first (needs SUPABASE_SERVICE_ROLE_KEY in .env.local)
+      let serverRouteSucceeded = false
+      try {
+        const res = await fetch("/api/create-family", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: familyName, inviteCode, createdBy: user.id }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          familyId = data.family.id
+          familyInviteCode = data.family.invite_code
+          serverRouteSucceeded = true
+        }
+      } catch { /* fall through to direct insert */ }
+
+      if (!serverRouteSucceeded) {
+        // Direct Supabase insert — requires migration 004 (families INSERT policy)
+        const { data: family, error: familyErr } = await supabase
+          .from("families")
+          .insert({ name: familyName, invite_code: inviteCode, created_by: user.id })
+          .select()
+          .single()
+        if (familyErr) {
+          const isRLS = familyErr.code === '42501' || familyErr.message?.includes('row-level security') || familyErr.message?.includes('policy')
+          if (isRLS) {
+            throw new Error(
+              "Permission denied creating family.\n\nFix: Run migration 004 in your Supabase SQL Editor, or add SUPABASE_SERVICE_ROLE_KEY to .env.local."
+            )
+          }
+          throw familyErr
+        }
+        familyId = family.id
+        familyInviteCode = family.invite_code
+      }
 
       // 2. Update profile with family_id FIRST so RLS policies work for member inserts
       // (family_members INSERT policy checks family_id = my_family_id(), which reads from profiles)
       const { error: profileErr } = await supabase.from("profiles").update({
-        family_id: family.id,
+        family_id: familyId,
         display_name: userData.name.trim(),
         role: "admin",
       }).eq("id", user.id)
@@ -145,7 +178,7 @@ export default function OnboardingPage() {
         const { data: pm } = await supabase
           .from("family_members")
           .insert({
-            family_id: family.id,
+            family_id: familyId,
             name: parent.name.trim(),
             birth_year: parent.birthYear ? parseInt(parent.birthYear) : null,
             birth_place: parent.birthPlace || null,
@@ -176,7 +209,7 @@ export default function OnboardingPage() {
       const { data: member, error: memberErr } = await supabase
         .from("family_members")
         .insert({
-          family_id: family.id,
+          family_id: familyId,
           name: userData.name.trim(),
           birth_year: userData.birthYear ? parseInt(userData.birthYear) : null,
           birth_place: userData.birthPlace || null,

@@ -67,13 +67,30 @@ export default function KulgathaPage() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          .print-page { page-break-after: always; }
+          .print-page {
+            page-break-after: always;
+            break-after: page;
+          }
+          .print-page:last-child {
+            page-break-after: avoid;
+            break-after: avoid;
+          }
+          @page { margin: 1.2cm; }
           body { background: white !important; color: black !important; }
-          .print-card { border: 1px solid #e5e7eb !important; background: white !important; }
+          .print-card {
+            border: 1px solid #e5e7eb !important;
+            background: white !important;
+            box-shadow: none !important;
+            break-inside: avoid;
+          }
+          * {
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+          }
         }
       `}</style>
 
-      <div className="flex flex-col min-h-full">
+      <div className="flex flex-col min-h-full overflow-x-hidden">
         {/* Toolbar — hidden on print */}
         <div className="no-print flex shrink-0 items-center justify-between gap-3 border-b border-border/40 px-6 py-3 bg-card/50 backdrop-blur">
           <div className="flex items-center gap-3">

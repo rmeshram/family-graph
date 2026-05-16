@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { QRCodeSVG } from "qrcode.react"
 import { Button } from "@/components/ui/button"
@@ -67,13 +67,6 @@ interface InviteLink {
   expiresIn: string
 }
 
-const SAMPLE_LINKS: InviteLink[] = [
-  { id: '1', role: 'contributor', code: 'SHARMA-X7K2P', createdAt: '2024-05-08', usedCount: 3, expiresIn: '7 days' },
-  { id: '2', role: 'viewer', code: 'SHARMA-B9R4Q', createdAt: '2024-05-05', usedCount: 8, expiresIn: '30 days' },
-]
-
-const FAMILY_TREE_URL = "https://familygraph.app/join/SHARMA-X7K2P"
-
 export default function InvitePage() {
   const { familyId, user } = useAuth()
   const { createInviteLink, getActiveLinks } = useInvites(familyId)
@@ -82,10 +75,31 @@ export default function InvitePage() {
   const [expiresIn, setExpiresIn] = useState('7')
   const [copied, setCopied] = useState(false)
   const [whatsappCopied, setWhatsappCopied] = useState(false)
-  const [links, setLinks] = useState<InviteLink[]>(SAMPLE_LINKS)
-  const [activeUrl, setActiveUrl] = useState(FAMILY_TREE_URL)
+  const [links, setLinks] = useState<InviteLink[]>([])
+  const [activeUrl, setActiveUrl] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const isSharing = useRef(false)
+
+  // Load existing invite links for signed-in users
+  useEffect(() => {
+    if (!familyId || !user) return
+    getActiveLinks().then(dbLinks => {
+      if (dbLinks.length > 0) {
+        setLinks(dbLinks.map(l => ({
+          id: l.id,
+          role: l.role,
+          code: l.code,
+          createdAt: new Date(l.created_at).toLocaleDateString('en-IN'),
+          usedCount: (l as any).used_count ?? 0,
+          expiresIn: l.expires_at
+            ? `${Math.max(0, Math.ceil((new Date(l.expires_at).getTime() - Date.now()) / 86_400_000))} days`
+            : 'Never',
+        })))
+        // Set the most recent link as activeUrl
+        setActiveUrl(`${location.origin}/join/${dbLinks[0].code}`)
+      }
+    }).catch(() => { })
+  }, [familyId, user, getActiveLinks])
 
   const inviteUrl = activeUrl
   const whatsappMessage = encodeURIComponent(
@@ -222,176 +236,183 @@ export default function InvitePage() {
           </div>
 
           {/* Share Methods */}
-          <Tabs defaultValue="link" className="space-y-4">
-            <TabsList className="bg-muted/50 w-full">
-              <TabsTrigger value="link" className="flex-1 gap-1.5">
-                <LinkIcon className="h-3.5 w-3.5" />
-                Link
-              </TabsTrigger>
-              <TabsTrigger value="whatsapp" className="flex-1 gap-1.5">
-                <MessageCircle className="h-3.5 w-3.5" />
-                WhatsApp
-              </TabsTrigger>
-              <TabsTrigger value="qr" className="flex-1 gap-1.5">
-                <QrCode className="h-3.5 w-3.5" />
-                QR Code
-              </TabsTrigger>
-            </TabsList>
+          {!inviteUrl ? (
+            <div className="rounded-2xl border border-dashed border-border/50 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+              <QrCode className="mx-auto mb-2 h-8 w-8 opacity-40" />
+              Generate an invite link above to share it via link, WhatsApp, or QR code.
+            </div>
+          ) : (
+            <Tabs defaultValue="link" className="space-y-4">
+              <TabsList className="bg-muted/50 w-full">
+                <TabsTrigger value="link" className="flex-1 gap-1.5">
+                  <LinkIcon className="h-3.5 w-3.5" />
+                  Link
+                </TabsTrigger>
+                <TabsTrigger value="whatsapp" className="flex-1 gap-1.5">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  WhatsApp
+                </TabsTrigger>
+                <TabsTrigger value="qr" className="flex-1 gap-1.5">
+                  <QrCode className="h-3.5 w-3.5" />
+                  QR Code
+                </TabsTrigger>
+              </TabsList>
 
-            {/* Link Tab */}
-            <TabsContent value="link" className="space-y-3 mt-0">
-              <div className="flex gap-2">
-                <div className="flex-1 rounded-xl border border-border/50 bg-muted/50 px-3 py-2.5 font-mono text-xs text-muted-foreground truncate">
-                  {inviteUrl}
-                </div>
-                <Button onClick={handleCopyLink} size="sm" className="shrink-0 gap-1.5">
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copied ? 'Copied!' : 'Copy'}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Anyone with this link can join as a <strong>{selectedRole}</strong>. Link expires in {expiresIn === 'never' ? 'never' : `${expiresIn} day${expiresIn !== '1' ? 's' : ''}`}.
-              </p>
-            </TabsContent>
-
-            {/* WhatsApp Tab */}
-            <TabsContent value="whatsapp" className="space-y-4 mt-0">
-              <div className="rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/5 to-emerald-500/5 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/20 text-green-400">
-                    <MessageCircle className="h-5 w-5" />
+              {/* Link Tab */}
+              <TabsContent value="link" className="space-y-3 mt-0">
+                <div className="flex gap-2">
+                  <div className="flex-1 rounded-xl border border-border/50 bg-muted/50 px-3 py-2.5 font-mono text-xs text-muted-foreground truncate">
+                    {inviteUrl}
                   </div>
-                  <div>
-                    <p className="font-medium text-sm">WhatsApp Invite</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Share directly to WhatsApp with a pre-written message</p>
-                  </div>
+                  <Button onClick={handleCopyLink} size="sm" className="shrink-0 gap-1.5">
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {copied ? 'Copied!' : 'Copy'}
+                  </Button>
                 </div>
-                <div className="mt-3 rounded-xl bg-card border border-border/50 p-3 text-xs text-muted-foreground">
-                  <p>🌳 <strong>Join our Family Graph!</strong></p>
-                  <p className="mt-1">Hi! I'm building a digital family tree for the Sharma-Mishra family. Join us to view, add memories, and connect with family members.</p>
-                  <p className="mt-1 text-primary">Click to join: {FAMILY_TREE_URL}</p>
-                  <p className="mt-1 text-muted-foreground/60 italic">Sent via Family Graph App</p>
-                </div>
-                <Button
-                  onClick={handleShareWhatsApp}
-                  className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white gap-2"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  {whatsappCopied ? 'Opening WhatsApp...' : 'Share on WhatsApp'}
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
-                  onClick={() => {
-                    if (navigator.share && !isSharing.current) {
-                      isSharing.current = true
-                      navigator.share({ title: 'Join our family tree', text: decodeURIComponent(whatsappMessage), url: inviteUrl })
-                        .catch(() => { })
-                        .finally(() => { isSharing.current = false })
-                    }
-                  }}
-                >
-                  <Smartphone className="h-4 w-4 text-muted-foreground" />
-                  Share to any app
-                </button>
-                <button
-                  className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
-                  onClick={() => {
-                    navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => { })
-                    toast({ title: 'Message copied!', description: 'Paste it anywhere.' })
-                  }}
-                >
-                  <Copy className="h-4 w-4 text-muted-foreground" />
-                  Copy message
-                </button>
-              </div>
-            </TabsContent>
+                <p className="text-xs text-muted-foreground">
+                  Anyone with this link can join as a <strong>{selectedRole}</strong>. Link expires in {expiresIn === 'never' ? 'never' : `${expiresIn} day${expiresIn !== '1' ? 's' : ''}`}.
+                </p>
+              </TabsContent>
 
-            {/* QR Code Tab */}
-            <TabsContent value="qr" className="space-y-4 mt-0">
-              <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/50 bg-card p-6">
-                <div className="relative rounded-2xl bg-white p-3 shadow-inner">
-                  <QRCodeSVG
-                    value={inviteUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/join/DEMO`}
-                    size={176}
-                    bgColor="#ffffff"
-                    fgColor="#111827"
-                    level="H"
-                    imageSettings={{
-                      src: '/manifest.json',
-                      x: undefined,
-                      y: undefined,
-                      height: 36,
-                      width: 36,
-                      opacity: 0,
-                      excavate: true,
-                    }}
-                  />
-                  {/* Center logo overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-md">
-                      <Users className="h-4 w-4 text-primary-foreground" />
+              {/* WhatsApp Tab */}
+              <TabsContent value="whatsapp" className="space-y-4 mt-0">
+                <div className="rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/5 to-emerald-500/5 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/20 text-green-400">
+                      <MessageCircle className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">WhatsApp Invite</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Share directly to WhatsApp with a pre-written message</p>
                     </div>
                   </div>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">
-                    {inviteUrl ? 'Invite QR Code' : 'Generate a link first'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Scan to join the family tree</p>
-                  {inviteUrl && (
-                    <Badge variant="outline" className="mt-2 font-mono text-xs">
-                      {inviteUrl.split('/').pop()?.toUpperCase()}
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex gap-2">
+                  <div className="mt-3 rounded-xl bg-card border border-border/50 p-3 text-xs text-muted-foreground">
+                    <p>🌳 <strong>Join our Family Graph!</strong></p>
+                    <p className="mt-1 text-primary">Click to join: {inviteUrl}</p>
+                    <p className="mt-1 italic">Hi! I'm building a digital family tree. Join us to view memories and connect with family members.</p>
+                    <p className="mt-1 text-muted-foreground/60 italic">Sent via Family Graph App</p>
+                  </div>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
+                    onClick={handleShareWhatsApp}
+                    className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white gap-2"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    {whatsappCopied ? 'Opening WhatsApp...' : 'Share on WhatsApp'}
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
                     onClick={() => {
                       if (navigator.share && !isSharing.current) {
                         isSharing.current = true
-                        navigator.share({ title: 'Join our family tree', url: inviteUrl })
+                        navigator.share({ title: 'Join our family tree', text: decodeURIComponent(whatsappMessage), url: inviteUrl })
                           .catch(() => { })
                           .finally(() => { isSharing.current = false })
                       }
                     }}
-                    disabled={!inviteUrl}
                   >
-                    <Share2 className="h-4 w-4" />
-                    Share QR
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
+                    <Smartphone className="h-4 w-4 text-muted-foreground" />
+                    Share to any app
+                  </button>
+                  <button
+                    className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
                     onClick={() => {
-                      const svg = document.querySelector('.qr-container svg') as SVGElement
-                      if (!svg) return
-                      const svgData = new XMLSerializer().serializeToString(svg)
-                      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-                      const url = URL.createObjectURL(svgBlob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = 'family-invite-qr.svg'
-                      a.click()
-                      URL.revokeObjectURL(url)
+                      navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => { })
+                      toast({ title: 'Message copied!', description: 'Paste it anywhere.' })
                     }}
-                    disabled={!inviteUrl}
                   >
-                    <Copy className="h-4 w-4" />
-                    Download
-                  </Button>
+                    <Copy className="h-4 w-4 text-muted-foreground" />
+                    Copy message
+                  </button>
                 </div>
-              </div>
-              <p className="text-center text-xs text-muted-foreground">
-                Print this QR code for family events, weddings, and reunions 🎉
-              </p>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+
+              {/* QR Code Tab */}
+              <TabsContent value="qr" className="space-y-4 mt-0">
+                <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/50 bg-card p-6">
+                  <div className="relative rounded-2xl bg-white p-3 shadow-inner">
+                    <QRCodeSVG
+                      value={inviteUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/join/DEMO`}
+                      size={176}
+                      bgColor="#ffffff"
+                      fgColor="#111827"
+                      level="H"
+                      imageSettings={{
+                        src: '/manifest.json',
+                        x: undefined,
+                        y: undefined,
+                        height: 36,
+                        width: 36,
+                        opacity: 0,
+                        excavate: true,
+                      }}
+                    />
+                    {/* Center logo overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-md">
+                        <Users className="h-4 w-4 text-primary-foreground" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-semibold">
+                      {inviteUrl ? 'Invite QR Code' : 'Generate a link first'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Scan to join the family tree</p>
+                    {inviteUrl && (
+                      <Badge variant="outline" className="mt-2 font-mono text-xs">
+                        {inviteUrl.split('/').pop()?.toUpperCase()}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => {
+                        if (navigator.share && !isSharing.current) {
+                          isSharing.current = true
+                          navigator.share({ title: 'Join our family tree', url: inviteUrl })
+                            .catch(() => { })
+                            .finally(() => { isSharing.current = false })
+                        }
+                      }}
+                      disabled={!inviteUrl}
+                    >
+                      <Share2 className="h-4 w-4" />
+                      Share QR
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => {
+                        const svg = document.querySelector('.qr-container svg') as SVGElement
+                        if (!svg) return
+                        const svgData = new XMLSerializer().serializeToString(svg)
+                        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+                        const url = URL.createObjectURL(svgBlob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = 'family-invite-qr.svg'
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      }}
+                      disabled={!inviteUrl}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Download
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-center text-xs text-muted-foreground">
+                  Print this QR code for family events, weddings, and reunions 🎉
+                </p>
+              </TabsContent>
+            </Tabs>
+          )} {/* end inviteUrl conditional */}
 
           {/* Guided Flow */}
           <div>

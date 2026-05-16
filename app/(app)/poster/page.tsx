@@ -4,12 +4,10 @@ import { useRef, useState, useCallback } from 'react'
 import { Download, Share2, Users, TreePine, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useMembers } from '@/hooks/use-members'
 import { useAuth } from '@/hooks/use-auth'
 import { sampleFamilyMembers } from '@/lib/sample-data'
 import { FamilyMember } from '@/lib/types'
-import { cn } from '@/lib/utils'
 import { DemoBanner } from '@/components/demo-banner'
 import { useToast } from '@/components/ui/use-toast'
 import { Toaster } from '@/components/ui/toaster'
@@ -36,20 +34,33 @@ function getInitials(name: string) {
 function PosterCard({ member }: { member: FamilyMember }) {
   const isDeceased = !!member.deathYear
   return (
-    <div className={cn(
-      'flex flex-col items-center gap-1 px-2 py-2 rounded-xl border min-w-[80px] max-w-[96px]',
-      isDeceased ? 'bg-muted/30 border-border/30 opacity-70' : 'bg-card/80 border-border/50'
-    )}>
-      <Avatar className="h-10 w-10 border-2 border-primary/30">
-        <AvatarFallback className="text-xs font-bold bg-gradient-to-br from-primary/60 to-secondary/60 text-primary-foreground">
-          {getInitials(member.name)}
-        </AvatarFallback>
-      </Avatar>
-      <p className="text-[10px] font-semibold text-center leading-tight line-clamp-2">
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 4,
+      padding: '8px 8px',
+      borderRadius: 12,
+      border: `1px solid ${isDeceased ? 'rgba(148,163,184,0.2)' : 'rgba(148,163,184,0.4)'}`,
+      background: isDeceased ? 'rgba(30,41,59,0.4)' : 'rgba(30,41,59,0.8)',
+      opacity: isDeceased ? 0.7 : 1,
+      minWidth: 80,
+      maxWidth: 96,
+    }}>
+      <div style={{
+        height: 40, width: 40, borderRadius: '50%',
+        border: '2px solid rgba(99,102,241,0.5)',
+        background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 700, fontSize: 12, color: '#fff', flexShrink: 0,
+      }}>
+        {getInitials(member.name)}
+      </div>
+      <p style={{ fontSize: 10, fontWeight: 600, textAlign: 'center', lineHeight: 1.2, color: '#f1f5f9', margin: 0 }}>
         {member.name.split(' ')[0]}
       </p>
       {member.birthYear && (
-        <p className="text-[8px] text-muted-foreground">
+        <p style={{ fontSize: 8, color: '#94a3b8', margin: 0 }}>
           {member.birthYear}{isDeceased ? `–${member.deathYear}` : ''}
         </p>
       )}
@@ -82,6 +93,9 @@ export default function PosterPage() {
         scale: 2,
         useCORS: true,
         logging: false,
+        imageTimeout: 5000,
+        // allowTaint intentionally omitted — taints canvas and breaks toDataURL
+        ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
       })
       const link = document.createElement('a')
       link.download = `${familyName.replace(/\s+/g, '-')}-family-tree.png`
@@ -103,7 +117,7 @@ export default function PosterPage() {
   }, [familyName])
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-background overflow-x-hidden">
       <DemoBanner />
       {/* Controls */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-md px-6 py-3">
@@ -137,8 +151,8 @@ export default function PosterPage() {
             padding: '48px 40px',
           }}
         >
-          {/* Decorative blobs */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          {/* Decorative blobs — ignored by html2canvas (CSS filter unsupported) */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" data-html2canvas-ignore>
             <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
             <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-secondary/10 blur-3xl" />
           </div>
