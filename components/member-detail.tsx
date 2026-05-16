@@ -491,7 +491,7 @@ export function MemberDetail({
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
-          <Button variant="outline" size="sm" className="flex-1 bg-primary/10 border-primary/30 text-primary hover:bg-primary/20">
+          <Button variant="outline" size="sm" className="flex-1 bg-primary/10 border-primary/30 text-primary hover:bg-primary/20" onClick={onAddStory}>
             <Sparkles className="mr-2 h-4 w-4" />
             AI Story
           </Button>

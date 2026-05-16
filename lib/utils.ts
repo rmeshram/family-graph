@@ -62,8 +62,9 @@ export function filterByDegree(
 ): FamilyMember[] {
   if (!rootId) return members
   const degrees = computeDegrees(members, rootId)
+  // Always include disconnected members so they're never silently hidden
   return members.filter((m) => {
     const d = degrees.get(m.id)
-    return d !== undefined && d <= maxDegree
+    return d === undefined || d <= maxDegree
   })
 }

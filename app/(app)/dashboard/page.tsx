@@ -412,17 +412,18 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 
 export default function FamilyGraphApp() {
   const { user, familyId, profile, loading: authLoading } = useAuth()
-  const { members: dbMembers, loading: dbLoading, totalCount: dbTotalCount, addMember: dbAddMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
+  const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
   const isDemoMode = !authLoading && !user
 
-  const [maxDegree, setMaxDegree] = useState(2)
+  const [maxDegree, setMaxDegree] = useState(10)
   const [showExtended, setShowExtended] = useState(true)
   useEffect(() => {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAIInsightsOpen, setIsAIInsightsOpen] = useState(false)
@@ -492,6 +493,16 @@ export default function FamilyGraphApp() {
       toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
     }
   }, [familyId, user, dbAddMember, toast])
+
+  const handleUpdateMember = useCallback(async (id: string, updates: Partial<FamilyMember>) => {
+    try {
+      await dbUpdateMember(id, updates)
+      setEditingMember(null)
+      toast({ title: 'Member updated' })
+    } catch (e: unknown) {
+      toast({ title: 'Update failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+    }
+  }, [dbUpdateMember, toast])
 
   const handleDeleteMember = useCallback(async () => {
     if (!selectedMemberId) return
@@ -674,12 +685,46 @@ export default function FamilyGraphApp() {
           </div>
         </header>
 
+        {/* ── Profile completeness nudge ───────────────────────────── */}
+        {!isDemoMode && selfMember && (() => {
+          const missing = [
+            !selfMember.photoUrl && 'photo',
+            !selfMember.birthYear && 'birth year',
+            !selfMember.occupation && 'occupation',
+            !selfMember.bio && 'bio',
+          ].filter(Boolean) as string[]
+          if (missing.length === 0) return null
+          const score = Math.round(((4 - missing.length) / 4) * 100)
+          return (
+            <div className="flex items-center gap-3 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="font-medium text-amber-400">{score}% complete</span>
+                <span className="text-muted-foreground hidden sm:inline">— your profile is missing: {missing.join(', ')}</span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10 shrink-0"
+                onClick={() => { setEditingMember(selfMember); handleSelectMember(selfMember.id) }}
+              >
+                Complete Profile
+              </Button>
+            </div>
+          )
+        })()}
+
         {/* ── Content Area ─────────────────────────────────────────── */}
         <div className="flex flex-1 overflow-hidden">
 
           {/* Member list (graph mode, xl+ only) */}
           {viewMode === 'graph' && (
-            <aside className="hidden w-72 shrink-0 border-r border-border/40 backdrop-blur-xl xl:block" style={{ background: 'var(--surface-sidebar)' }}>
+            <aside
+              className={cn(
+                'hidden shrink-0 border-r border-border/40 backdrop-blur-xl xl:block transition-all duration-200',
+                isSidebarCollapsed ? 'w-10' : 'w-72'
+              )}
+              style={{ background: 'var(--surface-sidebar)' }}
+            >
               <MemberListSidebar
                 members={filteredMembers}
                 selectedMemberId={selectedMemberId}
@@ -687,12 +732,22 @@ export default function FamilyGraphApp() {
                 maxDegree={maxDegree}
                 onMaxDegreeChange={setMaxDegree}
                 totalCount={isDemoMode ? members.length : dbTotalCount}
+                isCollapsed={isSidebarCollapsed}
+                onToggleCollapse={() => setIsSidebarCollapsed(v => !v)}
               />
             </aside>
           )}
 
           {/* Main canvas */}
           <main className="flex-1 overflow-hidden relative">
+            {/* RLS / DB error banner */}
+            {!isDemoMode && !dbLoading && dbError && (
+              <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-3 bg-destructive/90 px-4 py-2.5 text-sm text-white backdrop-blur">
+                <span className="font-semibold">Database error:</span>
+                <span className="flex-1 truncate">{dbError}</span>
+                <span className="text-xs opacity-75">Run FULL_RESET.sql in Supabase SQL Editor to fix RLS policies</span>
+              </div>
+            )}
             {/* Progressive skeleton while data loads */}
             {!isDemoMode && (dbLoading || authLoading) && <FamilyTreeSkeleton />}
             {viewMode === 'graph' && (
@@ -775,7 +830,15 @@ export default function FamilyGraphApp() {
       </div>
 
       {/* ── Dialogs ─────────────────────────────────────────────────── */}
-      <AddMemberDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} existingMembers={members} onAdd={handleAddMember} familyId={familyId ?? undefined} />
+      <AddMemberDialog
+        open={isAddDialogOpen || !!editingMember}
+        onOpenChange={(open) => { if (!open) { setIsAddDialogOpen(false); setEditingMember(null) } }}
+        existingMembers={members}
+        onAdd={handleAddMember}
+        onUpdate={handleUpdateMember}
+        editingMember={editingMember}
+        familyId={familyId ?? undefined}
+      />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />

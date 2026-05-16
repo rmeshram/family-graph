@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FamilyMember } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,8 @@ interface AddMemberDialogProps {
   onOpenChange: (open: boolean) => void
   existingMembers: FamilyMember[]
   onAdd: (member: Omit<FamilyMember, 'id'>) => void
+  onUpdate?: (id: string, updates: Partial<FamilyMember>) => Promise<void>
+  editingMember?: FamilyMember | null
   familyId?: string
 }
 
@@ -39,6 +41,8 @@ export function AddMemberDialog({
   onOpenChange,
   existingMembers,
   onAdd,
+  onUpdate,
+  editingMember,
   familyId,
 }: AddMemberDialogProps) {
   const supabase = createClient()
@@ -48,6 +52,26 @@ export function AddMemberDialog({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [name, setName] = useState('')
+
+  // Pre-populate fields when editing an existing member
+  useEffect(() => {
+    if (editingMember && open) {
+      setName(editingMember.name ?? '')
+      setBirthYear(editingMember.birthYear?.toString() ?? '')
+      setDeathYear(editingMember.deathYear?.toString() ?? '')
+      setBirthPlace(editingMember.birthPlace ?? '')
+      setOccupation(editingMember.occupation ?? '')
+      setInstagramHandle(editingMember.instagramHandle ?? '')
+      setRelationship(editingMember.relationship ?? '')
+      setBio(editingMember.bio ?? '')
+      setParentId(editingMember.parentIds?.[0] ?? '')
+      setSpouseId(editingMember.spouseIds?.[0] ?? '')
+      setNetworkGroup((editingMember.networkGroup as 'core' | 'extended' | 'affiliated') ?? 'core')
+      setAffiliatedFamilyName(editingMember.affiliatedFamilyName ?? '')
+      setAffiliatedJunctionId(editingMember.affiliatedJunctionId ?? '')
+      setPhotoPreview(editingMember.photoUrl ?? null)
+    }
+  }, [editingMember, open])
   const [birthYear, setBirthYear] = useState('')
   const [deathYear, setDeathYear] = useState('')
   const [birthPlace, setBirthPlace] = useState('')
@@ -60,6 +84,22 @@ export function AddMemberDialog({
   const [networkGroup, setNetworkGroup] = useState<'core' | 'extended' | 'affiliated'>('core')
   const [affiliatedFamilyName, setAffiliatedFamilyName] = useState('')
   const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const validate = () => {
+    const e: Record<string, string> = {}
+    if (!name.trim()) e.name = 'Name is required'
+    if (birthYear && (isNaN(+birthYear) || +birthYear < 1800 || +birthYear > new Date().getFullYear()))
+      e.birthYear = 'Enter a valid year (1800 – present)'
+    if (deathYear && (isNaN(+deathYear) || +deathYear < 1800 || +deathYear > new Date().getFullYear()))
+      e.deathYear = 'Enter a valid year'
+    if (deathYear && birthYear && +deathYear < +birthYear)
+      e.deathYear = 'Must be after birth year'
+    if (instagramHandle && !/^[a-zA-Z0-9._]{1,30}$/.test(instagramHandle.replace(/^@/, '')))
+      e.instagramHandle = 'Invalid handle (letters, numbers, . _ only)'
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -80,6 +120,7 @@ export function AddMemberDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!validate()) return
     if (isSubmitting) return
     setIsSubmitting(true)
     setUploadError(null)
@@ -103,7 +144,7 @@ export function AddMemberDialog({
       }
     }
 
-    onAdd({
+    const memberData: Omit<FamilyMember, 'id'> = {
       name,
       birthYear: birthYear ? parseInt(birthYear) : undefined,
       deathYear: deathYear ? parseInt(deathYear) : undefined,
@@ -115,12 +156,19 @@ export function AddMemberDialog({
       parentIds,
       spouseIds,
       generation,
-      photoUrl: uploadedPhotoUrl,
+      photoUrl: uploadedPhotoUrl ?? (editingMember?.photoUrl || undefined),
       networkGroup: networkGroup !== 'core' ? networkGroup : undefined,
       affiliatedFamilyName: networkGroup === 'affiliated' && affiliatedFamilyName ? affiliatedFamilyName : undefined,
       affiliatedFamilyId: networkGroup === 'affiliated' && affiliatedFamilyName ? affiliatedFamilyName.toLowerCase().replace(/\s+/g, '-') : undefined,
       affiliatedJunctionId: networkGroup === 'affiliated' && affiliatedJunctionId && affiliatedJunctionId !== 'none' ? affiliatedJunctionId : undefined,
-    })
+      isAlive: !deathYear,
+    }
+
+    if (editingMember && onUpdate) {
+      await onUpdate(editingMember.id, memberData)
+    } else {
+      onAdd(memberData)
+    }
 
     setIsSubmitting(false)
     resetForm()
@@ -140,6 +188,7 @@ export function AddMemberDialog({
     setSpouseId('')
     setNetworkGroup('core')
     setAffiliatedFamilyName('')
+    setErrors({})
     setAffiliatedJunctionId('')
     if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoFile(null)
@@ -159,10 +208,10 @@ export function AddMemberDialog({
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
               <User className="h-4 w-4 text-primary-foreground" />
             </div>
-            Add Family Member
+            {editingMember ? 'Edit Member' : 'Add Family Member'}
           </DialogTitle>
           <DialogDescription>
-            Add a new member to your family tree. Fill in as much information as you have.
+            {editingMember ? 'Update the details for this family member.' : 'Add a new member to your family tree. Fill in as much information as you have.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -204,11 +253,12 @@ export function AddMemberDialog({
                   <Input
                     id="name"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => { setName(e.target.value); if (errors.name) setErrors(p => ({ ...p, name: '' })) }}
                     placeholder="e.g., John Smith"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.name ? 'border-destructive' : ''}`}
                     required
                   />
+                  {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -250,10 +300,11 @@ export function AddMemberDialog({
                     id="birthYear"
                     type="number"
                     value={birthYear}
-                    onChange={(e) => setBirthYear(e.target.value)}
+                    onChange={(e) => { setBirthYear(e.target.value); if (errors.birthYear) setErrors(p => ({ ...p, birthYear: '' })) }}
                     placeholder="e.g., 1950"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.birthYear ? 'border-destructive' : ''}`}
                   />
+                  {errors.birthYear && <p className="text-xs text-destructive">{errors.birthYear}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="deathYear">Death Year</Label>
@@ -261,10 +312,11 @@ export function AddMemberDialog({
                     id="deathYear"
                     type="number"
                     value={deathYear}
-                    onChange={(e) => setDeathYear(e.target.value)}
+                    onChange={(e) => { setDeathYear(e.target.value); if (errors.deathYear) setErrors(p => ({ ...p, deathYear: '' })) }}
                     placeholder="Leave empty if living"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.deathYear ? 'border-destructive' : ''}`}
                   />
+                  {errors.deathYear && <p className="text-xs text-destructive">{errors.deathYear}</p>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -461,8 +513,8 @@ export function AddMemberDialog({
             className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
           >
             {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding...</>
-            ) : 'Add Member'}
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{editingMember ? 'Saving...' : 'Adding...'}</>
+            ) : editingMember ? 'Save Changes' : 'Add Member'}
           </Button>
         </DialogFooter>
       </DialogContent>

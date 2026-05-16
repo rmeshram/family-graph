@@ -16,7 +16,7 @@ function dbToMember(row: DBMember): FamilyMember {
     birthYear: row.birth_year ?? undefined,
     birthMonth: (row as any).birth_month ?? undefined,
     birthDay: (row as any).birth_day ?? undefined,
-    deathYear: row.death_year ?? undefined,
+    deathYear: (row.death_year && row.death_year > 0) ? row.death_year : undefined,
     birthPlace: row.birth_place ?? undefined,
     currentPlace: row.current_place ?? undefined,
     photoUrl: row.photo_url ?? undefined,

@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { useMemo, useState } from 'react'
-import { Search, Users, Layers, Clock, Network } from 'lucide-react'
+import { Search, Users, Layers, Clock, Network, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface MemberListSidebarProps {
@@ -16,6 +16,8 @@ interface MemberListSidebarProps {
   maxDegree?: number
   onMaxDegreeChange?: (d: number) => void
   totalCount?: number
+  isCollapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
 export function MemberListSidebar({
@@ -25,6 +27,8 @@ export function MemberListSidebar({
   maxDegree = 10,
   onMaxDegreeChange,
   totalCount,
+  isCollapsed = false,
+  onToggleCollapse,
 }: MemberListSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -77,16 +81,56 @@ export function MemberListSidebar({
     return { total: members.length, generations, living, withStories }
   }, [members])
 
+  if (isCollapsed) {
+    return (
+      <div className="flex h-full flex-col items-center py-3 gap-2">
+        <button
+          onClick={onToggleCollapse}
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+          title="Expand sidebar"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <div className="mt-2 flex flex-col gap-2 items-center">
+          {members.slice(0, 8).map(m => (
+            <button
+              key={m.id}
+              onClick={() => onSelectMember(m.id)}
+              title={m.name}
+              className={cn(
+                'h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors',
+                selectedMemberId === m.id
+                  ? 'ring-2 ring-primary bg-primary/20 text-primary'
+                  : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              )}
+            >
+              {m.name.charAt(0)}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border/40 p-4">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-semibold text-foreground">Family Members</h2>
-          {totalCount !== undefined && totalCount > members.length && (
-            <span className="text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/30">
-              {members.length}/{totalCount}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {totalCount !== undefined && totalCount > members.length && (
+              <span className="text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/30">
+                {members.length}/{totalCount}
+              </span>
+            )}
+            <button
+              onClick={onToggleCollapse}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+              title="Collapse sidebar"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
