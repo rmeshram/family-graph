@@ -26,6 +26,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Allow authenticated users in the same family to upload to memories/
+DROP POLICY IF EXISTS "Family members can upload memories" ON storage.objects;
 CREATE POLICY "Family members can upload memories"
 ON storage.objects FOR INSERT TO authenticated
 WITH CHECK (
@@ -35,11 +36,13 @@ WITH CHECK (
   )
 );
 
+DROP POLICY IF EXISTS "Anyone can read memories" ON storage.objects;
 CREATE POLICY "Anyone can read memories"
 ON storage.objects FOR SELECT TO public
 USING (bucket_id = 'memories');
 
 -- Allow authenticated users to upload to members/ scoped by their family_id
+DROP POLICY IF EXISTS "Family members can upload member photos" ON storage.objects;
 CREATE POLICY "Family members can upload member photos"
 ON storage.objects FOR INSERT TO authenticated
 WITH CHECK (
@@ -49,11 +52,13 @@ WITH CHECK (
   )
 );
 
+DROP POLICY IF EXISTS "Anyone can read member photos" ON storage.objects;
 CREATE POLICY "Anyone can read member photos"
 ON storage.objects FOR SELECT TO public
 USING (bucket_id = 'members');
 
 -- Allow users to upload their own avatar (path = {user_id}/avatar.ext)
+DROP POLICY IF EXISTS "Users can upload own avatar" ON storage.objects;
 CREATE POLICY "Users can upload own avatar"
 ON storage.objects FOR INSERT TO authenticated
 WITH CHECK (
@@ -61,6 +66,7 @@ WITH CHECK (
   (storage.foldername(name))[1] = auth.uid()::text
 );
 
+DROP POLICY IF EXISTS "Users can update own avatar" ON storage.objects;
 CREATE POLICY "Users can update own avatar"
 ON storage.objects FOR UPDATE TO authenticated
 USING (
@@ -68,6 +74,7 @@ USING (
   (storage.foldername(name))[1] = auth.uid()::text
 );
 
+DROP POLICY IF EXISTS "Anyone can read avatars" ON storage.objects;
 CREATE POLICY "Anyone can read avatars"
 ON storage.objects FOR SELECT TO public
 USING (bucket_id = 'avatars');

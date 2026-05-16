@@ -44,7 +44,7 @@ export function useEvents(familyId: string | null) {
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
-      .channel(`events:${familyId}`)
+      .channel(`events:${familyId}:${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `family_id=eq.${familyId}` }, fetch)
       .subscribe()
     return () => { supabase.removeChannel(ch) }

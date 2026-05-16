@@ -42,7 +42,7 @@ export function useMemories(familyId: string | null) {
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
-      .channel(`memories:${familyId}`)
+      .channel(`memories:${familyId}:${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'memories', filter: `family_id=eq.${familyId}` }, fetch)
       .subscribe()
     return () => { supabase.removeChannel(ch) }
