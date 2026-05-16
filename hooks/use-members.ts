@@ -225,30 +225,30 @@ export function useMembers(familyId: string | null) {
   const updateMember = useCallback(async (id: string, updates: Partial<FamilyMember>) => {
     // Only include fields explicitly present in `updates` to avoid NULLing unrelated columns
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-    if ('name' in updates)          patch.name = updates.name
-    if ('birthYear' in updates)     patch.birth_year = updates.birthYear ?? null
-    if ('birthMonth' in updates)    patch.birth_month = (updates as any).birthMonth ?? null
-    if ('birthDay' in updates)      patch.birth_day = (updates as any).birthDay ?? null
-    if ('deathYear' in updates)     patch.death_year = updates.deathYear ?? null
-    if ('birthPlace' in updates)    patch.birth_place = updates.birthPlace ?? null
-    if ('currentPlace' in updates)  patch.current_place = updates.currentPlace ?? null
-    if ('photoUrl' in updates)      patch.photo_url = updates.photoUrl ?? null
-    if ('bio' in updates)           patch.bio = updates.bio ?? null
-    if ('relationship' in updates)  patch.relationship = updates.relationship ?? null
-    if ('occupation' in updates)    patch.occupation = updates.occupation ?? null
-    if ('parentIds' in updates)     patch.parent_ids = updates.parentIds
-    if ('spouseIds' in updates)     patch.spouse_ids = updates.spouseIds
-    if ('generation' in updates)    patch.generation = updates.generation
-    if ('isAlive' in updates)       patch.is_alive = updates.isAlive
-    if ('gender' in updates)        patch.gender = updates.gender ?? null
-    if ('gotra' in updates)         patch.gotra = updates.gotra ?? null
-    if ('hometown' in updates)      patch.hometown = updates.hometown ?? null
+    if ('name' in updates) patch.name = updates.name
+    if ('birthYear' in updates) patch.birth_year = updates.birthYear ?? null
+    if ('birthMonth' in updates) patch.birth_month = (updates as any).birthMonth ?? null
+    if ('birthDay' in updates) patch.birth_day = (updates as any).birthDay ?? null
+    if ('deathYear' in updates) patch.death_year = updates.deathYear ?? null
+    if ('birthPlace' in updates) patch.birth_place = updates.birthPlace ?? null
+    if ('currentPlace' in updates) patch.current_place = updates.currentPlace ?? null
+    if ('photoUrl' in updates) patch.photo_url = updates.photoUrl ?? null
+    if ('bio' in updates) patch.bio = updates.bio ?? null
+    if ('relationship' in updates) patch.relationship = updates.relationship ?? null
+    if ('occupation' in updates) patch.occupation = updates.occupation ?? null
+    if ('parentIds' in updates) patch.parent_ids = updates.parentIds
+    if ('spouseIds' in updates) patch.spouse_ids = updates.spouseIds
+    if ('generation' in updates) patch.generation = updates.generation
+    if ('isAlive' in updates) patch.is_alive = updates.isAlive
+    if ('gender' in updates) patch.gender = updates.gender ?? null
+    if ('gotra' in updates) patch.gotra = updates.gotra ?? null
+    if ('hometown' in updates) patch.hometown = updates.hometown ?? null
     if ('nativeLanguage' in updates) patch.native_language = updates.nativeLanguage ?? null
-    if ('religion' in updates)      patch.religion = updates.religion ?? null
-    if ('phone' in updates)         patch.phone = updates.phone ?? null
-    if ('email' in updates)         patch.email = updates.email ?? null
+    if ('religion' in updates) patch.religion = updates.religion ?? null
+    if ('phone' in updates) patch.phone = updates.phone ?? null
+    if ('email' in updates) patch.email = updates.email ?? null
     if ('instagramHandle' in updates) patch.instagram_handle = (updates as any).instagramHandle ?? null
-    if ('visibility' in updates)    patch.visibility = updates.visibility
+    if ('visibility' in updates) patch.visibility = updates.visibility
 
     const { error } = await (supabase.from('family_members') as any).update(patch).eq('id', id)
     if (error) throw new Error(error.message)
@@ -298,6 +298,7 @@ export function useMembers(familyId: string | null) {
       .update({ visibility } as any)
       .eq('id', memberId)
     if (error) throw new Error(error.message)
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, visibility } : m))
   }, [supabase])
 
   return { members, loading, error, totalCount, hasMore, loadMore, addMember, updateMember, deleteMember, claimMember, setVisibility, refetch: fetchMembers }
@@ -337,15 +338,18 @@ export function useStories(familyId: string | null) {
 
   useEffect(() => { fetchStories() }, [fetchStories])
 
-  // Real-time subscription so new stories appear instantly
+  // Real-time — use ref to avoid re-subscribe when fetchStories changes
+  const fetchRef = useRef(fetchStories)
+  useEffect(() => { fetchRef.current = fetchStories }, [fetchStories])
+
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
       .channel(`stories:${familyId}:${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stories', filter: `family_id=eq.${familyId}` }, fetchStories)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stories', filter: `family_id=eq.${familyId}` }, () => fetchRef.current())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [familyId, supabase, fetchStories])
+  }, [familyId, supabase])
 
   const addStory = useCallback(async (
     memberId: string,
@@ -363,6 +367,21 @@ export function useStories(familyId: string | null) {
       language: storyData.language ?? 'en',
     }).select().single()
     if (error) throw new Error(error.message)
+    // Optimistically update local storiesByMember so story shows immediately
+    const newStory: Story = {
+      id: data.id,
+      title: data.title,
+      content: data.content,
+      date: data.date ?? undefined,
+      author: data.author ?? undefined,
+      createdAt: data.created_at,
+      aiGenerated: data.ai_generated,
+      language: data.language ?? undefined,
+    }
+    setStoriesByMember(prev => ({
+      ...prev,
+      [memberId]: [newStory, ...(prev[memberId] ?? [])],
+    }))
     return data
   }, [supabase])
 

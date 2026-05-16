@@ -34,7 +34,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Toaster } from '@/components/ui/toaster'
 import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
-  X, Download, Home, Activity,
+  X, Home, Activity,
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -604,24 +604,23 @@ export default function FamilyGraphApp() {
         )}
 
         {/* ── Top Bar ──────────────────────────────────────────────── */}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
-          <div className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
+          <div className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
             <Home className="h-3.5 w-3.5" />
-            <span>/</span>
             <span className="text-foreground font-medium">Family Tree</span>
           </div>
 
           {/* View mode switcher */}
-          <div className="flex items-center rounded-xl border border-border/40 bg-muted/30 p-0.5 gap-0.5 ml-0 lg:ml-3">
+          <div className="flex items-center rounded-lg border border-border/40 bg-muted/30 p-0.5 gap-0.5 lg:ml-3">
             {VIEW_MODES.map(v => (
               <button key={v.key} onClick={() => setViewMode(v.key)}
-                className={cn('flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                className={cn('flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
                   viewMode === v.key
                     ? 'bg-card text-foreground shadow-sm border border-border/50'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >
-                <v.icon className="h-3.5 w-3.5" />
+                <v.icon className="h-3 w-3" />
                 <span className="hidden sm:inline">{v.label}</span>
               </button>
             ))}
@@ -631,23 +630,26 @@ export default function FamilyGraphApp() {
           <button
             onClick={() => setShowExtended(v => !v)}
             className={cn(
-              'flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium border transition-colors',
+              'flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium border transition-colors shrink-0',
               showExtended
                 ? 'bg-teal-500/10 border-teal-500/40 text-teal-400 hover:bg-teal-500/15'
-                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground hover:border-border/60'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
             )}
-            title={showExtended ? 'Hide extended & affiliated family' : 'Show extended & affiliated family'}
+            title={showExtended ? 'Hide extended family' : 'Show extended family'}
           >
-            <Users2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Extended</span>
+            <Users2 className="h-3 w-3" />
+            <span className="hidden md:inline">Extended</span>
           </button>
 
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setIsSearchDialogOpen(true)} className="h-8 gap-1.5 text-xs text-muted-foreground">
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => setIsSearchDialogOpen(true)} className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground">
               <Search className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
               <kbd className="hidden rounded bg-muted px-1 text-[10px] sm:inline">⌘K</kbd>
             </Button>
+
+            <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
+
             <Button variant={showAIWidget ? 'default' : 'ghost'} size="sm"
               onClick={() => { setShowAIWidget(v => !v); setShowInviteWidget(false) }}
               className={cn('h-8 gap-1.5 text-xs', showAIWidget ? 'bg-violet-500 text-white hover:bg-violet-600' : 'text-violet-400 hover:bg-violet-500/10')}
@@ -662,21 +664,16 @@ export default function FamilyGraphApp() {
               <UserPlus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Invite</span>
             </Button>
-            <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs">
+
+            <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
+
+            <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
               <UserPlus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Add</span>
             </Button>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleExport}>
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Export</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSettingsOpen(true)}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setIsSettingsOpen(true)}>
                   <Settings className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>

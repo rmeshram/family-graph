@@ -68,7 +68,12 @@ export function useEvents(familyId: string | null) {
       rsvps: {},
     }).select().single()
     if (error) throw new Error(error.message)
-    return dbToEvent(data)
+    const newEvent = dbToEvent(data)
+    // Optimistically add to local state
+    setEvents(prev => [...prev, newEvent].sort((a, b) =>
+      new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime()
+    ))
+    return newEvent
   }, [supabase])
 
   const updateRSVP = useCallback(async (
@@ -79,6 +84,8 @@ export function useEvents(familyId: string | null) {
     const event = events.find(e => e.id === eventId)
     if (!event) return
     const rsvps = { ...event.rsvps, [userId]: status }
+    // Optimistic update
+    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, rsvps } : e))
     await supabase.from('events').update({ rsvps }).eq('id', eventId)
   }, [supabase, events])
 
