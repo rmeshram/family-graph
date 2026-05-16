@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { FamilyMember } from '@/lib/types'
 
 export type NotifType = 'member_joined' | 'birthday_today' | 'birthday_upcoming' | 'event_upcoming' | 'memory_added'
@@ -42,7 +42,21 @@ interface MinEvent {
   location?: string | null
 }
 
+const STORAGE_KEY = 'fg_read_notif_ids'
+
+function getReadIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? new Set(JSON.parse(raw)) : new Set()
+  } catch { return new Set() }
+}
+
 export function useNotifications(members: FamilyMember[], memoriesCount: number, events: MinEvent[] = []) {
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    return getReadIds()
+  })
+
   const notifications = useMemo<AppNotification[]>(() => {
     const notifs: AppNotification[] = []
 
@@ -167,8 +181,25 @@ export function useNotifications(members: FamilyMember[], memoriesCount: number,
     return notifs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
   }, [members, memoriesCount, events])
 
-  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications])
+  // Mark notifications as read based on readIds
+  const notificationsWithRead = useMemo(
+    () => notifications.map(n => ({ ...n, read: readIds.has(n.id) })),
+    [notifications, readIds]
+  )
 
-  return { notifications, unreadCount }
+  const unreadCount = useMemo(
+    () => notificationsWithRead.filter(n => !n.read).length,
+    [notificationsWithRead]
+  )
+
+  const markAllRead = useCallback(() => {
+    setReadIds(prev => {
+      const allIds = new Set([...prev, ...notifications.map(n => n.id)])
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...allIds])) } catch { /* ignore */ }
+      return allIds
+    })
+  }, [notifications])
+
+  return { notifications: notificationsWithRead, unreadCount, markAllRead }
 }
 

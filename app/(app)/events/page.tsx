@@ -144,13 +144,19 @@ export default function EventsPage() {
   const [createError, setCreateError] = useState<string | null>(null)
 
   const createEvent = async () => {
-    if (!newEvent.title || !newEvent.date || !newEvent.location) return
+    const missing = []
+    if (!newEvent.title.trim()) missing.push('title')
+    if (!newEvent.date) missing.push('date')
+    if (!newEvent.location.trim()) missing.push('location')
+    if (missing.length > 0) {
+      setCreateError(`Please fill in: ${missing.join(', ')}`)
+      return
+    }
     setCreating(true)
     setCreateError(null)
     try {
       if (familyId && user) {
         await dbCreateEvent(familyId, { title: newEvent.title, description: newEvent.description, eventDate: newEvent.date, location: newEvent.location }, user.id)
-        // real-time subscription will update dbEvents; close form
       } else {
         // Demo mode: add to local state
         const ev: FamilyEventItem = {
@@ -204,10 +210,10 @@ export default function EventsPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Input
-                placeholder="Event title"
+                placeholder="Event title *"
                 value={newEvent.title}
                 onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))}
-                className="sm:col-span-2"
+                className={`sm:col-span-2 ${!newEvent.title && createError ? 'border-destructive' : ''}`}
               />
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -222,12 +228,13 @@ export default function EventsPage() {
                 type="date"
                 value={newEvent.date}
                 onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))}
+                className={!newEvent.date && createError ? 'border-destructive' : ''}
               />
               <Input
-                placeholder="Location"
+                placeholder="Location *"
                 value={newEvent.location}
                 onChange={e => setNewEvent(p => ({ ...p, location: e.target.value }))}
-                className="sm:col-span-2"
+                className={`sm:col-span-2 ${!newEvent.location && createError ? 'border-destructive' : ''}`}
               />
               <Input
                 placeholder="Description (optional)"

@@ -40,15 +40,18 @@ export function useEvents(familyId: string | null) {
 
   useEffect(() => { fetch() }, [fetch])
 
-  // Real-time
+  // Real-time — use ref so fetch ref change never triggers re-subscribe
+  const fetchRef = useRef(fetch)
+  useEffect(() => { fetchRef.current = fetch }, [fetch])
+
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
       .channel(`events:${familyId}:${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `family_id=eq.${familyId}` }, fetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `family_id=eq.${familyId}` }, () => fetchRef.current())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [familyId, supabase, fetch])
+  }, [familyId, supabase])
 
   const createEvent = useCallback(async (
     familyId: string,

@@ -58,7 +58,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const sidebarMembers = useMemo(() => isDemoMode ? sampleFamilyMembers : dbMembers, [isDemoMode, dbMembers])
   const memoriesCount = isDemoMode ? sampleMemories.length : dbMemories.length
   const sidebarEvents = useMemo(() => isDemoMode ? [] : dbEvents, [isDemoMode, dbEvents])
-  const { notifications, unreadCount } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents)
+  const { notifications, unreadCount, markAllRead } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents)
 
   const handleSignOut = async () => {
     await signOut()
@@ -96,7 +96,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
           <h1 className="font-bold tracking-tight text-foreground">Family Graph</h1>
           <p className="text-[10px] text-muted-foreground">{profile?.display_name ? `${profile.display_name.split(' ').pop() || ''} Family` : 'My Family'}</p>
         </div>
-        <NotificationBell notifications={notifications} unreadCount={unreadCount} />
+        <NotificationBell notifications={notifications} unreadCount={unreadCount} onOpen={markAllRead} />
         <button onClick={() => setOpen(false)} className="lg:hidden text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>

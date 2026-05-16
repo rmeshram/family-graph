@@ -34,9 +34,10 @@ const TYPE_COLOR: Record<string, string> = {
 interface NotificationBellProps {
   notifications: AppNotification[]
   unreadCount: number
+  onOpen?: () => void
 }
 
-export function NotificationBell({ notifications, unreadCount }: NotificationBellProps) {
+export function NotificationBell({ notifications, unreadCount, onOpen }: NotificationBellProps) {
   const [open, setOpen] = useState(false)
   const [pushState, setPushState] = useState<'default' | 'granted' | 'denied'>('default')
 
@@ -46,6 +47,11 @@ export function NotificationBell({ notifications, unreadCount }: NotificationBel
     }
   }, [])
 
+  const handleOpenChange = (v: boolean) => {
+    setOpen(v)
+    if (v && onOpen) onOpen()
+  }
+
   const handleEnablePush = () => {
     if (!('Notification' in window)) return
     Notification.requestPermission().then(perm => {
@@ -54,7 +60,7 @@ export function NotificationBell({ notifications, unreadCount }: NotificationBel
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
