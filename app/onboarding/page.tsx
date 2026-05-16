@@ -132,38 +132,47 @@ export default function OnboardingPage() {
       let familyId!: string
       let familyInviteCode!: string
 
-      // Try server-side route first (needs SUPABASE_SERVICE_ROLE_KEY in .env.local)
-      let serverRouteSucceeded = false
+      // ── Path 1: SECURITY DEFINER RPC (bypasses RLS, works without service role key) ──
+      // Requires migration 007 to be applied in Supabase SQL Editor.
+      let familyCreated = false
       try {
-        const res = await fetch("/api/create-family", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: familyName, inviteCode, createdBy: user.id }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcData, error: rpcErr } = await (supabase as any).rpc('create_family', {
+          p_name: familyName,
+          p_invite_code: inviteCode,
         })
-        if (res.ok) {
-          const data = await res.json()
-          familyId = data.family.id
-          familyInviteCode = data.family.invite_code
-          serverRouteSucceeded = true
+        if (!rpcErr && rpcData) {
+          familyId = (rpcData as any).id
+          familyInviteCode = (rpcData as any).invite_code
+          familyCreated = true
         }
-      } catch { /* fall through to direct insert */ }
+      } catch { /* fall through */ }
 
-      if (!serverRouteSucceeded) {
-        // Direct Supabase insert — requires migration 004 (families INSERT policy)
+      // ── Path 2: Server-side API route (needs SUPABASE_SERVICE_ROLE_KEY in Vercel) ──
+      if (!familyCreated) {
+        try {
+          const res = await fetch("/api/create-family", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: familyName, inviteCode, createdBy: user.id }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            familyId = data.family.id
+            familyInviteCode = data.family.invite_code
+            familyCreated = true
+          }
+        } catch { /* fall through */ }
+      }
+
+      // ── Path 3: Direct insert (requires migration 004 INSERT policy) ──
+      if (!familyCreated) {
         const { data: family, error: familyErr } = await supabase
           .from("families")
           .insert({ name: familyName, invite_code: inviteCode, created_by: user.id })
           .select()
           .single()
-        if (familyErr) {
-          const isRLS = familyErr.code === '42501' || familyErr.message?.includes('row-level security') || familyErr.message?.includes('policy')
-          if (isRLS) {
-            throw new Error(
-              "Permission denied creating family.\n\nFix: Run migration 004 in your Supabase SQL Editor, or add SUPABASE_SERVICE_ROLE_KEY to .env.local."
-            )
-          }
-          throw familyErr
-        }
+        if (familyErr) throw familyErr
         familyId = family.id
         familyInviteCode = family.invite_code
       }
