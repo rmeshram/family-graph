@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2 } from 'lucide-react'
 
 interface AddMemberDialogProps {
   open: boolean
@@ -45,6 +45,8 @@ export function AddMemberDialog({
   const photoInputRef = useRef<HTMLInputElement>(null)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [birthYear, setBirthYear] = useState('')
   const [deathYear, setDeathYear] = useState('')
@@ -62,12 +64,25 @@ export function AddMemberDialog({
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    // Revoke previous object URL to avoid memory leak
+    if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoFile(file)
     setPhotoPreview(URL.createObjectURL(file))
   }
 
+  const clearPhoto = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (photoPreview) URL.revokeObjectURL(photoPreview)
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    if (photoInputRef.current) photoInputRef.current.value = ''
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setUploadError(null)
 
     const parentIds = parentId && parentId !== 'none' ? [parentId] : []
     const spouseIds = spouseId && spouseId !== 'none' ? [spouseId] : []
@@ -77,11 +92,13 @@ export function AddMemberDialog({
 
     let uploadedPhotoUrl: string | undefined
     if (photoFile && familyId) {
-      const ext = photoFile.name.split('.').pop()
-      const path = `${familyId}/members/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('members').upload(path, photoFile, { upsert: false })
-      if (!error) {
-        const { data } = supabase.storage.from('members').getPublicUrl(path)
+      const ext = photoFile.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const path = `${familyId}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('avatars').upload(path, photoFile, { upsert: false })
+      if (error) {
+        setUploadError('Photo upload failed — member will be added without photo.')
+      } else {
+        const { data } = supabase.storage.from('avatars').getPublicUrl(path)
         uploadedPhotoUrl = data.publicUrl
       }
     }
@@ -105,6 +122,7 @@ export function AddMemberDialog({
       affiliatedJunctionId: networkGroup === 'affiliated' && affiliatedJunctionId && affiliatedJunctionId !== 'none' ? affiliatedJunctionId : undefined,
     })
 
+    setIsSubmitting(false)
     resetForm()
     onOpenChange(false)
   }
@@ -123,8 +141,11 @@ export function AddMemberDialog({
     setNetworkGroup('core')
     setAffiliatedFamilyName('')
     setAffiliatedJunctionId('')
+    if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoFile(null)
     setPhotoPreview(null)
+    setUploadError(null)
+    setIsSubmitting(false)
   }
 
   return (
@@ -146,7 +167,7 @@ export function AddMemberDialog({
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(90vh-180px)]">
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form id="add-member-form" onSubmit={handleSubmit} className="p-6 space-y-6">
             {/* Photo Upload */}
             <div className="flex items-center gap-4">
               <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
@@ -160,7 +181,7 @@ export function AddMemberDialog({
                   <ImageIcon className="h-7 w-7 text-muted-foreground/50" />
                 )}
                 {photoPreview && (
-                  <button type="button" onClick={e => { e.stopPropagation(); setPhotoFile(null); setPhotoPreview(null) }} className="absolute top-1 right-1 rounded-full bg-black/60 p-0.5 text-white">
+                  <button type="button" onClick={clearPhoto} className="absolute top-1 right-1 rounded-full bg-black/60 p-0.5 text-white">
                     <X className="h-3 w-3" />
                   </button>
                 )}
@@ -427,15 +448,21 @@ export function AddMemberDialog({
         </ScrollArea>
 
         <DialogFooter className="p-6 pt-4 border-t border-border/50">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          {uploadError && (
+            <p className="text-xs text-amber-500 mr-auto">{uploadError}</p>
+          )}
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
           <Button
             type="submit"
-            onClick={handleSubmit}
+            form="add-member-form"
+            disabled={isSubmitting || !name.trim()}
             className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
           >
-            Add Member
+            {isSubmitting ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding...</>
+            ) : 'Add Member'}
           </Button>
         </DialogFooter>
       </DialogContent>

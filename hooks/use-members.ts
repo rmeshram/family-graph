@@ -14,6 +14,8 @@ function dbToMember(row: DBMember): FamilyMember {
     id: row.id,
     name: row.name,
     birthYear: row.birth_year ?? undefined,
+    birthMonth: (row as any).birth_month ?? undefined,
+    birthDay: (row as any).birth_day ?? undefined,
     deathYear: row.death_year ?? undefined,
     birthPlace: row.birth_place ?? undefined,
     currentPlace: row.current_place ?? undefined,
@@ -59,6 +61,8 @@ function memberToInsert(
     family_id: familyId,
     name: member.name,
     birth_year: member.birthYear ?? null,
+    birth_month: (member as any).birthMonth ?? null,
+    birth_day: (member as any).birthDay ?? null,
     death_year: member.deathYear ?? null,
     birth_place: member.birthPlace ?? null,
     current_place: member.currentPlace ?? null,
@@ -217,9 +221,13 @@ export function useMembers(familyId: string | null) {
   }, [familyId, supabase, members])
 
   const updateMember = useCallback(async (id: string, updates: Partial<FamilyMember>) => {
-    const { error } = await supabase.from('family_members').update({
+    // Cast to any to accommodate columns added in migration 005 (birth_month, birth_day)
+    // that may not yet be in the generated database.types.ts
+    const patch: Record<string, unknown> = {
       name: updates.name,
       birth_year: updates.birthYear ?? null,
+      birth_month: (updates as any).birthMonth ?? null,
+      birth_day: (updates as any).birthDay ?? null,
       death_year: updates.deathYear ?? null,
       birth_place: updates.birthPlace ?? null,
       current_place: updates.currentPlace ?? null,
@@ -227,15 +235,16 @@ export function useMembers(familyId: string | null) {
       bio: updates.bio ?? null,
       relationship: updates.relationship ?? null,
       occupation: updates.occupation ?? null,
-      parent_ids: updates.parentIds as string[] | undefined,
-      spouse_ids: updates.spouseIds as string[] | undefined,
+      parent_ids: updates.parentIds,
+      spouse_ids: updates.spouseIds,
       generation: updates.generation,
       is_alive: updates.isAlive,
       gender: updates.gender ?? null,
       gotra: updates.gotra ?? null,
       hometown: updates.hometown ?? null,
       updated_at: new Date().toISOString(),
-    }).eq('id', id)
+    }
+    const { error } = await (supabase.from('family_members') as any).update(patch).eq('id', id)
     if (error) throw new Error(error.message)
   }, [supabase])
 
