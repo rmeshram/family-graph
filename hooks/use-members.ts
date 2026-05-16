@@ -101,7 +101,8 @@ function memberToInsert(
 const FETCH_LIMIT = 500
 
 export function useMembers(familyId: string | null) {
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
   const [members, setMembers] = useState<FamilyMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -293,7 +294,8 @@ export function useMembers(familyId: string | null) {
 // ─── useStories hook ──────────────────────────────────────────────────────────
 
 export function useStories(familyId: string | null) {
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
   const [storiesByMember, setStoriesByMember] = useState<Record<string, Story[]>>({})
 
   const fetchStories = useCallback(async () => {

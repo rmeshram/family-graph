@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/lib/supabase/database.types'
 import type { FamilyEvent } from '@/lib/types'
@@ -22,7 +22,8 @@ function dbToEvent(row: DBEvent) {
 }
 
 export function useEvents(familyId: string | null) {
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
   const [events, setEvents] = useState<ReturnType<typeof dbToEvent>[]>([])
   const [loading, setLoading] = useState(true)
 
