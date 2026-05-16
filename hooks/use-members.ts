@@ -279,6 +279,10 @@ export function useMembers(familyId: string | null) {
       .eq('id', memberId)
       .eq('is_claimed', false)
     if (error) throw new Error(error.message)
+    // Optimistically update local state so UI reflects immediately (no realtime lag)
+    setMembers(prev => prev.map(m =>
+      m.id === memberId ? { ...m, isClaimed: true, claimedByUserId: userId } : m
+    ))
   }, [supabase])
 
   const setVisibility = useCallback(async (memberId: string, visibility: 'public' | 'family' | 'private') => {

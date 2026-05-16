@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { FamilyMember, Story } from '@/lib/types'
 import { sampleFamilyMembers, familyFeed } from '@/lib/sample-data'
-import { filterByDegree } from '@/lib/utils'
+import { filterByDegree, computeProfileCompleteness } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers, useStories } from '@/hooks/use-members'
 import { useInvites } from '@/hooks/use-invites'
@@ -687,19 +687,13 @@ export default function FamilyGraphApp() {
 
         {/* ── Profile completeness nudge ───────────────────────────── */}
         {!isDemoMode && selfMember && (() => {
-          const missing = [
-            !selfMember.photoUrl && 'photo',
-            !selfMember.birthYear && 'birth year',
-            !selfMember.occupation && 'occupation',
-            !selfMember.bio && 'bio',
-          ].filter(Boolean) as string[]
+          const { score, missing } = computeProfileCompleteness(selfMember)
           if (missing.length === 0) return null
-          const score = Math.round(((4 - missing.length) / 4) * 100)
           return (
             <div className="flex items-center gap-3 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="font-medium text-amber-400">{score}% complete</span>
-                <span className="text-muted-foreground hidden sm:inline">— your profile is missing: {missing.join(', ')}</span>
+                <span className="text-muted-foreground hidden sm:inline">— missing: {missing.slice(0, 3).join(', ')}{missing.length > 3 ? ` +${missing.length - 3} more` : ''}</span>
               </div>
               <Button
                 size="sm"
@@ -807,7 +801,9 @@ export default function FamilyGraphApp() {
                 onEdit={() => setEditingMember(selectedMember)}
                 onDelete={() => setIsDeleteDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
+                onInvite={() => { setSelectedMemberId(null); setShowInviteWidget(true) }}
                 isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
+                currentUserId={user?.id}
                 onSetVisibility={async (memberId, v) => {
                   try {
                     await setVisibility(memberId, v)

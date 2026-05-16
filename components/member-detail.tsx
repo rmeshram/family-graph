@@ -31,27 +31,12 @@ import {
   Users,
   Lock,
   Shield,
+  UserPlus,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, computeProfileCompleteness } from '@/lib/utils'
 import { findRelationshipPath, computeRelationLabel } from '@/lib/relation-engine'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function computeProfileCompleteness(member: FamilyMember): { score: number; missing: string[] } {
-  const checks = [
-    { label: 'Birth year', has: !!member.birthYear },
-    { label: 'Birthplace', has: !!member.birthPlace },
-    { label: 'Occupation', has: !!member.occupation },
-    { label: 'Biography', has: !!member.bio },
-    { label: 'Milestones', has: (member.milestones?.length ?? 0) > 0 },
-    { label: 'Stories', has: (member.stories?.length ?? 0) > 0 },
-    { label: 'Gotra', has: !!member.gotra },
-    { label: 'Photo', has: !!member.photoUrl },
-  ]
-  const done = checks.filter(c => c.has)
-  const missing = checks.filter(c => !c.has).map(c => c.label)
-  return { score: Math.round((done.length / checks.length) * 100), missing }
-}
 
 interface MemberDetailProps {
   member: FamilyMember
@@ -60,7 +45,9 @@ interface MemberDetailProps {
   onEdit: () => void
   onDelete?: () => void
   onAddStory?: () => void
+  onInvite?: () => void
   isAdmin?: boolean
+  currentUserId?: string
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
 }
 
@@ -89,7 +76,9 @@ export function MemberDetail({
   onEdit,
   onDelete,
   onAddStory,
+  onInvite,
   isAdmin = false,
+  currentUserId,
   onSetVisibility,
 }: MemberDetailProps) {
   const initials = member.name
@@ -301,8 +290,8 @@ export function MemberDetail({
 
               <Separator className="bg-border/50" />
 
-              {/* Privacy / Visibility — admin only */}
-              {isAdmin && onSetVisibility && (
+              {/* Privacy / Visibility — admin or the member's own claimed profile */}
+              {(isAdmin || (currentUserId && member.claimedByUserId === currentUserId)) && onSetVisibility && (
                 <div className="rounded-xl bg-muted/30 border border-border/40 p-3 space-y-2">
                   <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5 text-muted-foreground" />
@@ -486,6 +475,16 @@ export function MemberDetail({
       </ScrollArea>
 
       <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border/50 bg-card">
+        {/* Invite nudge for unclaimed members */}
+        {!member.isClaimed && member.relationship !== 'self' && onInvite && (
+          <button
+            onClick={onInvite}
+            className="mb-2 w-full flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-sm text-orange-400 hover:bg-orange-500/10 transition-colors"
+          >
+            <UserPlus className="h-4 w-4 shrink-0" />
+            <span>Invite {member.name.split(' ')[0]} to join the tree</span>
+          </button>
+        )}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
             <Edit className="mr-2 h-4 w-4" />

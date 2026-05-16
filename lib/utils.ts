@@ -68,3 +68,23 @@ export function filterByDegree(
     return d === undefined || d <= maxDegree
   })
 }
+
+/**
+ * Shared profile completeness computation. Uses 8 weighted fields.
+ * Returns a score (0-100) and an array of missing field labels.
+ */
+export function computeProfileCompleteness(member: FamilyMember): { score: number; missing: string[] } {
+  const checks = [
+    { label: 'Photo', has: !!member.photoUrl },
+    { label: 'Birth year', has: !!member.birthYear },
+    { label: 'Birthplace', has: !!member.birthPlace },
+    { label: 'Occupation', has: !!member.occupation },
+    { label: 'Biography', has: !!member.bio },
+    { label: 'Current place', has: !!member.currentPlace },
+    { label: 'Gotra', has: !!member.gotra },
+    { label: 'Phone / email', has: !!(member.phone || member.email) },
+  ]
+  const done = checks.filter(c => c.has)
+  const missing = checks.filter(c => !c.has).map(c => c.label)
+  return { score: Math.round((done.length / checks.length) * 100), missing }
+}
