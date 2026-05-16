@@ -38,8 +38,44 @@ import {
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 
-// ─── Tree View Modes ───────────────────────────────────────────────────────────
+// ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
+function FamilyTreeSkeleton() {
+  const rows = [
+    [{ w: 72, label: true }],
+    [{ w: 64 }, { w: 64 }],
+    [{ w: 56 }, { w: 56 }, { w: 56 }],
+    [{ w: 52 }, { w: 52 }, { w: 52 }, { w: 52 }],
+  ] as { w: number; label?: boolean }[][]
+
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 pointer-events-none select-none overflow-hidden">
+      {rows.map((row, ri) => (
+        <div key={ri} className="flex items-start gap-10 md:gap-16">
+          {row.map((node, ni) => (
+            <div key={ni} className="flex flex-col items-center gap-2 relative">
+              {/* connector up */}
+              {ri > 0 && (
+                <div className="absolute -top-8 left-1/2 -translate-x-px w-px h-8 bg-border/40" />
+              )}
+              {/* node card */}
+              <div
+                className="rounded-2xl border border-border/30 bg-muted/20 p-3 flex flex-col items-center gap-2"
+                style={{ width: node.w + 16 }}
+              >
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <Skeleton className="h-2.5 rounded-full" style={{ width: node.w * 0.65 }} />
+                {node.label && <Skeleton className="h-2 rounded-full" style={{ width: node.w * 0.45 }} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 
 type TreeViewMode = 'graph' | 'orgchart' | 'list'
 
@@ -52,18 +88,35 @@ function quickAIAnswer(q: string, members: FamilyMember[]): string {
   }
   if (lower.includes('oldest')) {
     const oldest = members.filter(m => m.birthYear && m.isAlive !== false).sort((a, b) => (a.birthYear ?? 9999) - (b.birthYear ?? 9999))[0]
-    return oldest ? `The oldest living member is **${oldest.name}**, born in ${oldest.birthYear}.` : 'No data found.'
+    return oldest ? `The oldest living member is **${oldest.name}**, born in ${oldest.birthYear}.` : 'No birth year data found.'
   }
-  if (lower.includes('mumbai') || lower.includes('bengaluru') || lower.includes('pune') || lower.includes('nagpur')) {
-    const city = ['Mumbai', 'Bengaluru', 'Pune', 'Nagpur'].find(c => lower.includes(c.toLowerCase()))!
-    const found = members.filter(m => m.currentPlace?.includes(city) || m.birthPlace?.includes(city))
-    return found.length ? `${found.map(m => `**${m.name}**`).join(', ')} ${found.length === 1 ? 'is' : 'are'} connected to **${city}**.` : `No members found in ${city}.`
+  if (lower.includes('youngest')) {
+    const youngest = members.filter(m => m.birthYear && m.isAlive !== false).sort((a, b) => (b.birthYear ?? 0) - (a.birthYear ?? 0))[0]
+    return youngest ? `The youngest member is **${youngest.name}**, born in ${youngest.birthYear}.` : 'No birth year data found.'
   }
-  if (lower.includes('related to arjun')) {
-    return `Arjun Sharma is your **first cousin** on the paternal side — son of Deepak Sharma, who is your father Vikram's brother.`
+  // City-based query: detect any city mentioned in member data
+  const allCities = [...new Set(members.flatMap(m => [m.currentPlace?.split(',')[0], m.birthPlace?.split(',')[0]]).filter(Boolean) as string[])]
+  const mentionedCity = allCities.find(city => lower.includes(city.toLowerCase()))
+  if (mentionedCity) {
+    const found = members.filter(m => m.currentPlace?.includes(mentionedCity) || m.birthPlace?.includes(mentionedCity))
+    return found.length
+      ? `${found.map(m => `**${m.name}**`).join(', ')} ${found.length === 1 ? 'is' : 'are'} connected to **${mentionedCity}**.`
+      : `No members found in ${mentionedCity}.`
   }
-  if (lower.includes('maternal') || lower.includes('mishra')) {
-    return `Your **maternal side** (Mishra family) includes Ramdas & Pushpa Mishra (Nana-Nani), Ashok & Kavitha Mishra (Mama & Mami), and cousins Karan & Ananya Mishra in Bengaluru.`
+  if (lower.includes('generation')) {
+    const gens = [...new Set(members.map(m => m.generation))].sort((a, b) => a - b)
+    return `Your family spans **${gens.length} generations** (Gen ${gens[0]} to Gen ${gens[gens.length - 1]}). Total: **${members.length} members**.`
+  }
+  if (lower.includes('alive') || lower.includes('living')) {
+    const alive = members.filter(m => m.isAlive !== false).length
+    return `**${alive} of ${members.length}** family members are alive.`
+  }
+  // Name search
+  const nameMatch = members.find(m => lower.includes(m.name.toLowerCase()) || lower.includes(m.name.split(' ')[0].toLowerCase()))
+  if (nameMatch) {
+    const rel = nameMatch.relationship ?? 'family member'
+    const born = nameMatch.birthYear ? `, born ${nameMatch.birthYear}` : ''
+    return `**${nameMatch.name}** is your ${rel}${born}. ${nameMatch.occupation ? `Occupation: ${nameMatch.occupation}.` : ''} ${nameMatch.currentPlace ? `Currently in ${nameMatch.currentPlace}.` : ''}`
   }
   return `I found **${members.length} members** in your tree. Ask me about relationships, cities, generations, or any specific member!`
 }
@@ -85,14 +138,14 @@ function OrgChartView({ members, onSelect, selectedId }: {
   }, [members])
 
   return (
-    <div className="h-full overflow-auto p-6">
-      <div className="mx-auto space-y-8" style={{ minWidth: 600 }}>
+    <div className="h-full overflow-auto p-4 md:p-6">
+      <div className="mx-auto space-y-8 w-full">
         {byGen.map(([gen, genMembers]) => (
           <div key={gen}>
             <div className="flex items-center gap-3 mb-4">
               <div className="h-px flex-1 bg-border/50" />
               <Badge variant="outline" className="text-[10px] text-muted-foreground shrink-0">
-                Gen {gen} — {gen === 0 ? 'Great Grandparents' : gen === 1 ? 'Grandparents' : gen === 2 ? 'Parents' : 'You & Cousins'}
+                Gen {gen} — {gen === 0 ? 'Great Grandparents' : gen === 1 ? 'Grandparents' : gen === 2 ? 'Parents & Aunts/Uncles' : gen === 3 ? 'You & Cousins' : gen === 4 ? 'Children & 2nd Cousins' : `Generation ${gen}`}
               </Badge>
               <div className="h-px flex-1 bg-border/50" />
             </div>
@@ -640,15 +693,8 @@ export default function FamilyGraphApp() {
 
           {/* Main canvas */}
           <main className="flex-1 overflow-hidden relative">
-            {/* Skeleton while loading for authenticated users */}
-            {!isDemoMode && (dbLoading || authLoading) && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
-                  <p className="text-sm text-muted-foreground">Loading your family tree…</p>
-                </div>
-              </div>
-            )}
+            {/* Progressive skeleton while data loads */}
+            {!isDemoMode && (dbLoading || authLoading) && <FamilyTreeSkeleton />}
             {viewMode === 'graph' && (
               <FamilyTree
                 members={filteredMembers}

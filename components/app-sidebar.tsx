@@ -11,6 +11,7 @@ import { sampleFamilyMembers, sampleMemories } from '@/lib/sample-data'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers } from '@/hooks/use-members'
 import { useMemories } from '@/hooks/use-memories'
+import { useEvents } from '@/hooks/use-events'
 import { useNotifications } from '@/hooks/use-notifications'
 import { NotificationBell } from '@/components/notification-bell'
 import {
@@ -52,10 +53,12 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const { user, profile, familyId, loading: authLoading, signOut } = useAuth()
   const { members: dbMembers } = useMembers(familyId)
   const { memories: dbMemories } = useMemories(familyId)
+  const { events: dbEvents } = useEvents(familyId)
   const isDemoMode = !authLoading && !user
   const sidebarMembers = useMemo(() => isDemoMode ? sampleFamilyMembers : dbMembers, [isDemoMode, dbMembers])
   const memoriesCount = isDemoMode ? sampleMemories.length : dbMemories.length
-  const { notifications, unreadCount } = useNotifications(sidebarMembers, memoriesCount)
+  const sidebarEvents = useMemo(() => isDemoMode ? [] : dbEvents, [isDemoMode, dbEvents])
+  const { notifications, unreadCount } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents)
 
   const handleSignOut = async () => {
     await signOut()
