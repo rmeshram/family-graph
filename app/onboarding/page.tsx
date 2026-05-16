@@ -23,6 +23,9 @@ import {
   TreePine,
   Share2,
   Camera,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -72,6 +75,7 @@ export default function OnboardingPage() {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [pushGranted, setPushGranted] = useState(false)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
@@ -95,6 +99,7 @@ export default function OnboardingPage() {
   const treeSize = 1 + (parent1.name ? 1 : 0) + (parent2.name ? 1 : 0)
 
   const handleNext = () => {
+    setErrorMsg(null)
     if (currentStep < steps.length - 1) setCurrentStep(currentStep + 1)
   }
 
@@ -112,6 +117,7 @@ export default function OnboardingPage() {
 
   const handleComplete = async () => {
     setIsLoading(true)
+    setErrorMsg(null)
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -237,11 +243,15 @@ export default function OnboardingPage() {
     } catch (e) {
       console.error("Onboarding error:", e)
       setIsLoading(false)
-      // Supabase errors are plain objects with a `message` field, not Error instances
-      const msg = e instanceof Error
+      const raw = e instanceof Error
         ? e.message
-        : (e as any)?.message ?? (e as any)?.error_description ?? JSON.stringify(e)
-      alert("Setup failed: " + msg + "\n\nPlease try again or contact support.")
+        : (e as any)?.message ?? (e as any)?.error_description ?? "Unknown error"
+      // Surface a friendly message for the most common failure
+      const isRLS = raw.includes('row-level security') || raw.includes('policy') || raw.includes('42501')
+      setErrorMsg(isRLS
+        ? "Account setup hit a permissions error. Please try again — if it persists, contact support."
+        : raw
+      )
     }
   }
 
@@ -254,7 +264,7 @@ export default function OnboardingPage() {
   const canProceed = () => {
     switch (steps[currentStep].id) {
       case "yourself": return userData.name.trim() !== ""
-      case "goals": return selectedGoals.length > 0
+      case "goals": return true // goals are optional — never block completion
       default: return true
     }
   }
@@ -571,10 +581,28 @@ export default function OnboardingPage() {
           {renderStepContent()}
         </div>
 
+        {/* Error banner */}
+        {errorMsg && (
+          <div className="mb-3 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+            <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-destructive font-medium">Setup failed</p>
+              <p className="text-xs text-destructive/80 mt-0.5">{errorMsg}</p>
+            </div>
+            <button
+              onClick={handleComplete}
+              className="shrink-0 flex items-center gap-1 text-xs text-destructive hover:text-destructive/80 transition-colors"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Navigation */}
         <div className="flex items-center gap-3">
           {currentStep > 0 && (
-            <Button variant="outline" onClick={handleBack} className="h-11 px-5 border-border">
+            <Button variant="outline" onClick={handleBack} disabled={isLoading} className="h-11 px-5 border-border">
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back
             </Button>
@@ -586,8 +614,11 @@ export default function OnboardingPage() {
               disabled={!canProceed() || isLoading}
               className="h-11 px-8 bg-primary hover:bg-primary/90"
             >
-              {isLoading ? "Creating your tree..." : "Launch My Family Tree"}
-              <Sparkles className="w-4 h-4 ml-2" />
+              {isLoading ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating your tree...</>
+              ) : (
+                <>Launch My Family Tree <Sparkles className="w-4 h-4 ml-2" /></>
+              )}
             </Button>
           ) : (
             <Button onClick={handleNext} disabled={!canProceed()} className="h-11 px-6 bg-primary hover:bg-primary/90">
