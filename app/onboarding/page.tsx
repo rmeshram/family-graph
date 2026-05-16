@@ -131,9 +131,9 @@ export default function OnboardingPage() {
 
       let familyId!: string
       let familyInviteCode!: string
+      const _diag: string[] = []
 
       // ── Path 1: SECURITY DEFINER RPC (bypasses RLS, works without service role key) ──
-      // Requires migration 007 to be applied in Supabase SQL Editor.
       let familyCreated = false
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,8 +145,12 @@ export default function OnboardingPage() {
           familyId = (rpcData as any).id
           familyInviteCode = (rpcData as any).invite_code
           familyCreated = true
+        } else {
+          _diag.push(`RPC: ${rpcErr?.message ?? 'no data returned'}`)
         }
-      } catch { /* fall through */ }
+      } catch (e: unknown) {
+        _diag.push(`RPC exception: ${(e as any)?.message ?? String(e)}`)
+      }
 
       // ── Path 2: Server-side API route (needs SUPABASE_SERVICE_ROLE_KEY in Vercel) ──
       if (!familyCreated) {
@@ -161,8 +165,13 @@ export default function OnboardingPage() {
             familyId = data.family.id
             familyInviteCode = data.family.invite_code
             familyCreated = true
+          } else {
+            const body = await res.json().catch(() => ({}))
+            _diag.push(`API ${res.status}: ${body.error ?? 'unknown'}`)
           }
-        } catch { /* fall through */ }
+        } catch (e: unknown) {
+          _diag.push(`API exception: ${(e as any)?.message ?? String(e)}`)
+        }
       }
 
       // ── Path 3: Direct insert (requires migration 004 INSERT policy) ──
@@ -172,7 +181,10 @@ export default function OnboardingPage() {
           .insert({ name: familyName, invite_code: inviteCode, created_by: user.id })
           .select()
           .single()
-        if (familyErr) throw familyErr
+        if (familyErr) {
+          _diag.push(`Direct: ${familyErr.message}`)
+          throw new Error(`All methods failed — ${_diag.join(' | ')}`)
+        }
         familyId = family.id
         familyInviteCode = family.invite_code
       }
