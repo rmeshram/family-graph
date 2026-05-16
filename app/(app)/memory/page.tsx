@@ -15,6 +15,7 @@ import { useMembers } from "@/hooks/use-members"
 import { useMemories, useVoiceNotes } from "@/hooks/use-memories"
 import { Textarea } from "@/components/ui/textarea"
 import { useRef } from "react"
+import { useToast } from "@/hooks/use-toast"
 import {
   ArrowLeft,
   Camera,
@@ -79,14 +80,18 @@ export default function MemoryPage() {
   const { voiceNotes: dbVoiceNotes, loading: voiceLoading } = useVoiceNotes(familyId)
 
   const isDemoMode = !authLoading && !user
+  const [localDemoMemories, setLocalDemoMemories] = useState<MemoryItem[]>([])
   const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !membersLoading ? dbMembers : [])
-  const allMemories = isDemoMode ? sampleMemories : (familyId && !memoriesLoading ? dbMemories : [])
+  const allMemories = isDemoMode
+    ? [...localDemoMemories, ...sampleMemories]
+    : (familyId && !memoriesLoading ? dbMemories : [])
   const allVoiceNotes = isDemoMode ? sampleVoiceNotes : (familyId && !voiceLoading ? dbVoiceNotes : [])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [filterEvent, setFilterEvent] = useState<string>("all")
   const [playingVoice, setPlayingVoice] = useState<string | null>(null)
   const [selectedMemory, setSelectedMemory] = useState<MemoryItem | null>(null)
+  const { toast } = useToast()
   const [showAddForm, setShowAddForm] = useState(false)
   const [newMemory, setNewMemory] = useState(BLANK_MEMORY)
   const [addingSaving, setAddingSaving] = useState(false)
@@ -102,23 +107,70 @@ export default function MemoryPage() {
 
   const handleAddMemory = async () => {
     if (!newMemory.title) return
-    if (!isDemoMode && familyId && user) {
-      try {
-        setAddingSaving(true)
-        let resolvedPhotoUrl = newMemory.photoUrl || undefined
-        if (newMemory.photoFile) {
-          resolvedPhotoUrl = await uploadPhoto(newMemory.photoFile, familyId)
-        }
-        await dbAddMemory(familyId, {
-          title: newMemory.title,
-          description: newMemory.description || undefined,
-          photoUrl: resolvedPhotoUrl,
-          eventType: newMemory.eventType,
-          year: newMemory.year,
-          taggedMemberIds: [],
-        }, user.id)
-      } catch { /* refetch will pick it up */ } finally { setAddingSaving(false) }
+
+    // Demo mode — add to local state so user sees the memory immediately
+    if (isDemoMode) {
+      const demoMemory: MemoryItem = {
+        id: `demo-${Date.now()}`,
+        title: newMemory.title,
+        description: newMemory.description || undefined,
+        photoUrl: photoPreview || undefined,
+        eventType: newMemory.eventType,
+        year: newMemory.year,
+        taggedMemberIds: [],
+        uploadedAt: new Date().toISOString(),
+      }
+      setLocalDemoMemories(prev => [demoMemory, ...prev])
+      setShowAddForm(false)
+      setNewMemory(BLANK_MEMORY)
+      setPhotoPreview(null)
+      toast({ title: 'Memory added (demo)', description: 'Sign in to save memories permanently.' })
+      return
     }
+
+    // Not logged in but also not demo (loading state race) — bail
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Please sign in to save memories.', variant: 'destructive' })
+      return
+    }
+
+    // Logged in but no family yet
+    if (!familyId) {
+      toast({ title: 'No family yet', description: 'Complete onboarding first to save memories.', variant: 'destructive' })
+      return
+    }
+
+    setAddingSaving(true)
+    try {
+      let resolvedPhotoUrl = newMemory.photoUrl || undefined
+      if (newMemory.photoFile) {
+        try {
+          resolvedPhotoUrl = await uploadPhoto(newMemory.photoFile, familyId)
+        } catch (uploadErr) {
+          // Storage bucket may not be set up yet (run migration 005)
+          console.warn('Photo upload skipped:', uploadErr)
+          resolvedPhotoUrl = undefined
+        }
+      }
+      await dbAddMemory(familyId, {
+        title: newMemory.title,
+        description: newMemory.description || undefined,
+        photoUrl: resolvedPhotoUrl,
+        eventType: newMemory.eventType,
+        year: newMemory.year,
+        taggedMemberIds: [],
+      }, user.id)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : (err as any)?.message ?? 'Unknown error'
+      console.error('Memory save failed:', msg)
+      toast({ title: 'Could not save memory', description: msg, variant: 'destructive' })
+      setAddingSaving(false)
+      return
+    } finally {
+      setAddingSaving(false)
+    }
+
+    toast({ title: 'Memory saved!', description: `"${newMemory.title}" added to your vault.` })
     setShowAddForm(false)
     setNewMemory(BLANK_MEMORY)
     setPhotoPreview(null)
@@ -141,7 +193,7 @@ export default function MemoryPage() {
   }), [allMemories, allVoiceNotes])
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background overflow-x-hidden">
       <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-card/95 backdrop-blur-md">
@@ -156,7 +208,7 @@ export default function MemoryPage() {
           </div>
           <div>
             <h1 className="text-lg font-bold">Memory Vault</h1>
-            <p className="text-xs text-muted-foreground">Photos, stories & voice memories of the Sharma-Mishra family</p>
+            <p className="text-xs text-muted-foreground">Photos, stories &amp; voice memories of your family</p>
           </div>
           <div className="ml-auto">
             <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => setShowAddForm(true)}>
@@ -183,6 +235,47 @@ export default function MemoryPage() {
         ))}
       </div>
 
+      {/* Add Memory inline form — rendered OUTSIDE Tabs so overflow-hidden never clips the Save button */}
+      {showAddForm && (
+        <div className="mx-4 my-3 rounded-2xl border border-amber-500/30 bg-card p-4 space-y-3 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-sm">New Memory</p>
+            <button onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+          <Input placeholder="Title (required)" value={newMemory.title} onChange={e => setNewMemory(p => ({ ...p, title: e.target.value }))} />
+          <Textarea placeholder="Description (optional)" value={newMemory.description} onChange={e => setNewMemory(p => ({ ...p, description: e.target.value }))} rows={2} className="resize-none" />
+          <div className="grid grid-cols-2 gap-2">
+            <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={newMemory.eventType} onChange={e => setNewMemory(p => ({ ...p, eventType: e.target.value as MemoryItem['eventType'] }))}>
+              {['wedding', 'birth', 'festival', 'graduation', 'travel', 'family-gathering', 'other'].map(t => (
+                <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
+              ))}
+            </select>
+            <Input type="number" placeholder="Year (e.g. 2010)" value={newMemory.year ?? ''} onChange={e => setNewMemory(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
+          </div>
+          {/* Photo upload */}
+          <div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+            {photoPreview ? (
+              <div className="relative rounded-xl overflow-hidden border border-border/50">
+                <img src={photoPreview} alt="preview" className="w-full h-40 object-cover" />
+                <button onClick={() => { setPhotoPreview(null); setNewMemory(p => ({ ...p, photoFile: null, photoUrl: '' })) }} className="absolute top-2 right-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="h-3.5 w-3.5" /></button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-border/50 p-3 text-muted-foreground hover:border-amber-500/50 hover:text-amber-400 transition-colors">
+                <ImageIcon className="h-5 w-5" />
+                <span className="text-sm">Tap to upload photo (optional)</span>
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
+            <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!newMemory.title || addingSaving} onClick={handleAddMemory}>
+              {addingSaving ? 'Saving…' : 'Save Memory'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Tabs defaultValue="photos" className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border/50 bg-card/80 px-4 pt-2">
           <TabsList className="bg-muted/50">
@@ -196,47 +289,6 @@ export default function MemoryPage() {
             </TabsTrigger>
           </TabsList>
         </div>
-
-        {/* Add Memory inline form */}
-        {showAddForm && (
-          <div className="mx-4 mt-3 rounded-2xl border border-amber-500/30 bg-card p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-sm">New Memory</p>
-              <button onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
-            </div>
-            <Input placeholder="Title (required)" value={newMemory.title} onChange={e => setNewMemory(p => ({ ...p, title: e.target.value }))} />
-            <Textarea placeholder="Description (optional)" value={newMemory.description} onChange={e => setNewMemory(p => ({ ...p, description: e.target.value }))} rows={2} className="resize-none" />
-            <div className="grid grid-cols-2 gap-2">
-              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={newMemory.eventType} onChange={e => setNewMemory(p => ({ ...p, eventType: e.target.value as MemoryItem['eventType'] }))}>
-                {['wedding', 'birth', 'festival', 'graduation', 'travel', 'family-gathering', 'other'].map(t => (
-                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
-                ))}
-              </select>
-              <Input type="number" placeholder="Year (e.g. 2010)" value={newMemory.year ?? ''} onChange={e => setNewMemory(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
-            </div>
-            {/* Photo upload */}
-            <div>
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
-              {photoPreview ? (
-                <div className="relative rounded-xl overflow-hidden border border-border/50">
-                  <img src={photoPreview} alt="preview" className="w-full h-40 object-cover" />
-                  <button onClick={() => { setPhotoPreview(null); setNewMemory(p => ({ ...p, photoFile: null, photoUrl: '' })) }} className="absolute top-2 right-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="h-3.5 w-3.5" /></button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-border/50 p-3 text-muted-foreground hover:border-amber-500/50 hover:text-amber-400 transition-colors">
-                  <ImageIcon className="h-5 w-5" />
-                  <span className="text-sm">Tap to upload photo (optional)</span>
-                </button>
-              )}
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
-              <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!newMemory.title || addingSaving} onClick={handleAddMemory}>
-                {addingSaving ? 'Saving…' : 'Save Memory'}
-              </Button>
-            </div>
-          </div>
-        )}
 
         {/* Photos Tab */}
         <TabsContent value="photos" className="flex-1 overflow-hidden mt-0">
