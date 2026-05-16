@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Bell, Users, Camera, ChevronRight, BellOff } from 'lucide-react'
+import { Bell, Users, Camera, ChevronRight, Calendar } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +17,7 @@ const TYPE_ICON: Record<string, React.ElementType> = {
   member_joined: Users,
   birthday_today: Bell,
   birthday_upcoming: Bell,
+  event_upcoming: Calendar,
   anniversary: Bell,
   memory_added: Camera,
 }
@@ -25,6 +26,7 @@ const TYPE_COLOR: Record<string, string> = {
   member_joined: 'bg-green-500/10 text-green-400',
   birthday_today: 'bg-amber-500/10 text-amber-400',
   birthday_upcoming: 'bg-amber-500/10 text-amber-400',
+  event_upcoming: 'bg-blue-500/10 text-blue-400',
   anniversary: 'bg-pink-500/10 text-pink-400',
   memory_added: 'bg-violet-500/10 text-violet-400',
 }
@@ -108,6 +110,17 @@ export function NotificationBell({ notifications, unreadCount }: NotificationBel
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium leading-snug">{notif.title}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">{notif.body}</p>
+                    {notif.type === 'birthday_today' && notif.whatsappLink && (
+                      <a
+                        href={notif.whatsappLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-green-600 hover:bg-green-700 text-white text-[11px] font-medium px-2.5 py-0.5 transition-colors"
+                      >
+                        🎂 Wish on WhatsApp
+                      </a>
+                    )}
                   </div>
                   {!notif.read && (
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
