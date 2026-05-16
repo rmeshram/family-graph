@@ -120,8 +120,15 @@ export default function OnboardingPage() {
     setErrorMsg(null)
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push("/auth/signin"); return }
+
+      // Refresh session first — ensures JWT is valid before any DB writes
+      // (stale/expired token causes auth.uid() = NULL → RLS blocks insert)
+      const { data: { session }, error: sessionErr } = await supabase.auth.refreshSession()
+      if (sessionErr || !session) {
+        router.push("/auth/signin")
+        return
+      }
+      const user = session.user
 
       // 1. Create the family — try server route first (bypasses RLS), fall back to direct insert
       const nameParts = userData.name.trim().split(" ")
