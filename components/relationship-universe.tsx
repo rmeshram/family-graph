@@ -432,7 +432,9 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
     if (!d) return
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy
     if (Math.hypot(dx, dy) > 3) isPanning.current = true
-    setView(v => ({ ...v, x: d.vx + dx, y: d.vy + dy }))
+    // Capture both values as primitives so the updater has no ref dependency
+    const nx = d.vx + dx, ny = d.vy + dy
+    setView(v => ({ ...v, x: nx, y: ny }))
   }, [])
 
   const onPointerUp = useCallback(() => { drag.current = null }, [])
@@ -542,6 +544,7 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
 
       {/* ── SVG: atmospheric depth blooms + edges ──────────────────── */}
