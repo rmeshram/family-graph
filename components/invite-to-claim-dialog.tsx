@@ -68,7 +68,7 @@ export function InviteToClaimDialog({
         .from('family_members')
         .update({ claim_status: 'invite_sent' } as any)
         .eq('id', member.id)
-        .eq('claim_status', 'unclaimed')
+        .eq('claim_status' as any, 'unclaimed')
 
       const link = `${window.location.origin}/join/${(data as any).code}`
       setInviteLink(link)

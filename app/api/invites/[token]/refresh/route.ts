@@ -77,7 +77,7 @@ export async function POST(
     await admin.from('family_members')
       .update({ claim_status: 'invite_sent' } as any)
       .eq('id', (invite as any).node_id)
-      .eq('claim_status', 'unclaimed')
+      .eq('claim_status' as any, 'unclaimed')
 
     await admin.from('claim_audit_log').insert({
       node_id: (invite as any).node_id,

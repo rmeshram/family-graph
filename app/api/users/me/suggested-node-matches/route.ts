@@ -60,7 +60,7 @@ export async function GET() {
   const { data: nodes } = await admin
     .from('family_members')
     .select('id, name, birth_year, phone, email, relationship, family_id, added_by')
-    .eq('claim_status', 'unclaimed')
+    .eq('claim_status' as any, 'unclaimed')
     .neq('family_id', (profile as any).family_id ?? '')
     .eq('is_deceased', false)
     .limit(200)
