@@ -84,7 +84,7 @@ export async function POST(
       actor_id: user.id,
       family_id: invite.family_id,
       action: 'invite_refreshed',
-      metadata: { oldCode: params.token, newCode },
+      metadata: { oldCode: token, newCode },
     })
   }
 
