@@ -109,7 +109,7 @@ export async function GET() {
       )
     )
     .filter(Boolean)
-    .sort((a, b) => (b?.confidenceScore ?? 0) - (a?.confidenceScore ?? 0))
+    .sort((a: any, b: any) => (b?.confidenceScore ?? 0) - (a?.confidenceScore ?? 0))
     .slice(0, 5)
 
   return NextResponse.json({ matches: results })
