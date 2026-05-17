@@ -34,8 +34,9 @@ function randomCode(len = 8) {
 // Inviter renews an expired node-claim invite. Archives the old one.
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
+  const { token } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
@@ -44,7 +45,7 @@ export async function POST(
   const { data: invite } = await admin
     .from('invite_links')
     .select('*')
-    .eq('code', params.token.toUpperCase())
+    .eq('code', token.toUpperCase())
     .single()
 
   if (!invite) return NextResponse.json({ error: 'INVITE_NOT_FOUND' }, { status: 404 })

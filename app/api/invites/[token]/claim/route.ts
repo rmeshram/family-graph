@@ -31,8 +31,9 @@ async function authedClient() {
 // If unauthenticated, stores claim_intent cookie and signals redirect to auth.
 export async function POST(
   req: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
+  const { token } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -42,7 +43,7 @@ export async function POST(
       { error: 'UNAUTHENTICATED', action: 'REDIRECT_TO_AUTH' },
       { status: 401 }
     )
-    response.cookies.set('claim_intent', params.token, {
+    response.cookies.set('claim_intent', token, {
       httpOnly: true,
       sameSite: 'lax',
       maxAge: 3600,
@@ -57,7 +58,7 @@ export async function POST(
   const { data: invite } = await admin
     .from('invite_links')
     .select('*, family_members(id, name, birth_year, claim_status, is_deceased, family_id)')
-    .eq('code', params.token.toUpperCase())
+    .eq('code', token.toUpperCase())
     .single()
 
   if (!invite) return NextResponse.json({ error: 'INVITE_NOT_FOUND' }, { status: 404 })

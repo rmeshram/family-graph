@@ -86,13 +86,12 @@ function scoreIdentity(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: nodeId } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
-
-  const nodeId = params.id
   let body: {
     submittedName?: string
     submittedBirthYear?: number

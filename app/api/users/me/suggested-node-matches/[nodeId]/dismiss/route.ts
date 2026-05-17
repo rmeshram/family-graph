@@ -29,8 +29,9 @@ async function authedClient() {
 // POST /api/users/me/suggested-node-matches/[nodeId]/dismiss
 export async function POST(
   req: NextRequest,
-  { params }: { params: { nodeId: string } }
+  { params }: { params: Promise<{ nodeId: string }> }
 ) {
+  const { nodeId } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
@@ -42,13 +43,13 @@ export async function POST(
 
   const admin = adminClient()
   await admin.from('node_match_dismissals').upsert(
-    { user_id: user.id, node_id: params.nodeId, reason },
+    { user_id: user.id, node_id: nodeId, reason },
     { onConflict: 'user_id,node_id' }
   )
 
   // Best-effort audit (no family_id available without extra query)
   await admin.from('claim_audit_log').insert({
-    node_id: params.nodeId,
+    node_id: nodeId,
     actor_id: user.id,
     action: 'match_dismissed',
     metadata: { reason },

@@ -30,8 +30,9 @@ async function authedClient() {
 // Tree admin or family owner only.
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
@@ -44,7 +45,7 @@ export async function POST(
   const { data: node } = await admin
     .from('family_members')
     .select('id, claim_status, claimed_by_user_id, family_id')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
   if (!node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
 
@@ -70,17 +71,17 @@ export async function POST(
     claim_revoked_at: revokedAt,
     claim_revoked_by: user.id,
     claim_revoke_reason: body.reason ?? null,
-  } as any).eq('id', params.id)
+  } as any).eq('id', id)
 
   await admin.from('claim_requests')
     .update({ status: 'rejected', updated_at: revokedAt } as any)
-    .eq('node_id', params.id)
+    .eq('node_id', id)
     .neq('status', 'rejected')
 
-  await admin.from('user_node_links').delete().eq('node_id', params.id)
+  await admin.from('user_node_links').delete().eq('node_id', id)
 
   await admin.from('claim_audit_log').insert({
-    node_id: params.id,
+    node_id: id,
     family_id: (node as any).family_id,
     actor_id: user.id,
     action: 'claim_revoked',

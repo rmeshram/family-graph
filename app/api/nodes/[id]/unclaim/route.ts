@@ -32,8 +32,9 @@ const GRACE_DAYS = 7
 // Only the claimer can unclaim, and only within the 7-day grace window.
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
@@ -42,7 +43,7 @@ export async function POST(
   const { data: node } = await admin
     .from('family_members')
     .select('id, claim_status, claimed_by_user_id, claimed_at, family_id')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
 
   if (!node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
@@ -64,17 +65,17 @@ export async function POST(
 
   await admin.from('family_members')
     .update({ claim_status: 'unclaimed', is_claimed: false, claimed_by_user_id: null, claimed_at: null } as any)
-    .eq('id', params.id)
+    .eq('id', id)
 
   await admin.from('claim_requests')
     .update({ status: 'abandoned', updated_at: new Date().toISOString() } as any)
-    .eq('node_id', params.id)
+    .eq('node_id', id)
     .eq('claimant_user_id', user.id)
 
-  await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', params.id)
+  await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', id)
 
   await admin.from('claim_audit_log').insert({
-    node_id: params.id,
+    node_id: id,
     family_id: (node as any).family_id,
     actor_id: user.id,
     action: 'claim_unclaimed',
