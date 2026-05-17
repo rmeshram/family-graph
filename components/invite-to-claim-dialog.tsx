@@ -64,11 +64,12 @@ export function InviteToClaimDialog({
       if (error) throw new Error(error.message)
 
       // Set node to invite_sent
-      await supabase
-        .from('family_members')
-        .update({ claim_status: 'invite_sent' } as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fmQuery = supabase.from('family_members') as any
+      await fmQuery
+        .update({ claim_status: 'invite_sent' })
         .eq('id', member.id)
-        .eq('claim_status' as any, 'unclaimed')
+        .eq('claim_status', 'unclaimed')
 
       const link = `${window.location.origin}/join/${(data as any).code}`
       setInviteLink(link)

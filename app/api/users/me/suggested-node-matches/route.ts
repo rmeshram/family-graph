@@ -57,10 +57,11 @@ export async function GET() {
   const dismissedIds = new Set((dismissed ?? []).map((d: any) => d.node_id))
 
   // Fetch unclaimed nodes outside the user's own family
-  const { data: nodes } = await admin
-    .from('family_members')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fmQuery = admin.from('family_members') as any
+  const { data: nodes } = await fmQuery
     .select('id, name, birth_year, phone, email, relationship, family_id, added_by')
-    .eq('claim_status' as any, 'unclaimed')
+    .eq('claim_status', 'unclaimed')
     .neq('family_id', (profile as any).family_id ?? '')
     .eq('is_deceased', false)
     .limit(200)

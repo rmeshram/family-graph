@@ -74,10 +74,12 @@ export async function POST(
 
   // Update node status back to invite_sent if applicable
   if ((invite as any).node_id) {
-    await admin.from('family_members')
-      .update({ claim_status: 'invite_sent' } as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fmQuery = admin.from('family_members') as any
+    await fmQuery
+      .update({ claim_status: 'invite_sent' })
       .eq('id', (invite as any).node_id)
-      .eq('claim_status' as any, 'unclaimed')
+      .eq('claim_status', 'unclaimed')
 
     await admin.from('claim_audit_log').insert({
       node_id: (invite as any).node_id,
