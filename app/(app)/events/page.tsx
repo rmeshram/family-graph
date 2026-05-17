@@ -132,7 +132,7 @@ export default function EventsPage() {
   const events = isDemoMode ? localEvents : (familyId && !eventsLoading ? dbMappedEvents : [])
   const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>({})
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [newEvent, setNewEvent] = useState({ title: "", type: "reunion" as EventType, date: "", location: "", description: "" })
+  const [newEvent, setNewEvent] = useState({ title: "", type: "reunion" as EventType, date: "", time: "", location: "", description: "" })
   const [filter, setFilter] = useState<"all" | "upcoming" | "mine">("upcoming")
 
   const rsvp = (eventId: string, status: RSVPStatus) => {
@@ -156,7 +156,8 @@ export default function EventsPage() {
     setCreateError(null)
     try {
       if (familyId && user) {
-        await dbCreateEvent(familyId, { title: newEvent.title, description: newEvent.description, eventDate: newEvent.date, location: newEvent.location }, user.id)
+        const eventDate = newEvent.time ? `${newEvent.date}T${newEvent.time}:00` : newEvent.date
+        await dbCreateEvent(familyId, { title: newEvent.title, description: newEvent.description, eventDate, location: newEvent.location }, user.id)
       } else {
         // Demo mode: add to local state
         const ev: FamilyEventItem = {
@@ -169,7 +170,7 @@ export default function EventsPage() {
         setLocalEvents(prev => [ev, ...prev])
       }
       setShowCreateForm(false)
-      setNewEvent({ title: "", type: "reunion", date: "", location: "", description: "" })
+      setNewEvent({ title: "", type: "reunion", date: "", time: "", location: "", description: "" })
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create event. Please try again.')
     } finally {
@@ -229,6 +230,12 @@ export default function EventsPage() {
                 value={newEvent.date}
                 onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))}
                 className={!newEvent.date && createError ? 'border-destructive' : ''}
+              />
+              <Input
+                type="time"
+                value={newEvent.time}
+                onChange={e => setNewEvent(p => ({ ...p, time: e.target.value }))}
+                className=""
               />
               <Input
                 placeholder="Location *"

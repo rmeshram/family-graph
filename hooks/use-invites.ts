@@ -32,6 +32,40 @@ export function useInvites(familyId: string | null) {
     return { ...data, link: `${location.origin}/join/${data.code}` }
   }, [familyId, supabase])
 
+  const createNodeClaimInvite = useCallback(async (
+    nodeId: string,
+    nodeName: string,
+    userId: string,
+    expiryHours = 72
+  ) => {
+    if (!familyId) throw new Error('No family')
+    const code = randomCode(8)
+    const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
+
+    const { data, error } = await supabase.from('invite_links').insert({
+      family_id: familyId,
+      code,
+      role: 'contributor',
+      created_by: userId,
+      expires_at: expiresAt,
+      max_uses: 1,
+      node_id: nodeId,
+      invite_type: 'node_claim',
+      identity_hint: nodeName,
+    } as any).select().single()
+
+    if (error) throw new Error(error.message)
+
+    // Advance node claim status
+    await supabase
+      .from('family_members')
+      .update({ claim_status: 'invite_sent' } as any)
+      .eq('id', nodeId)
+      .eq('claim_status' as any, 'unclaimed')
+
+    return { ...data, link: `${location.origin}/join/${(data as any).code}` }
+  }, [familyId, supabase])
+
   const getActiveLinks = useCallback(async () => {
     if (!familyId) return []
     const { data } = await supabase
@@ -42,7 +76,7 @@ export function useInvites(familyId: string | null) {
     return data ?? []
   }, [familyId, supabase])
 
-  return { createInviteLink, getActiveLinks }
+  return { createInviteLink, createNodeClaimInvite, getActiveLinks }
 }
 
 // ─── Join via invite code ─────────────────────────────────────────────────────
@@ -159,7 +193,7 @@ export function useJoinFamily() {
         sibling: 'sibling', relative: 'relative', skip: 'member',
       }
 
-      const { data: newMember } = await supabase.from('family_members').insert({
+      const { data: newMember, error: memberErr } = await supabase.from('family_members').insert({
         family_id: invite.family_id,
         name: opts.displayName,
         relationship: relationshipLabel[opts.relationshipToInviter],
@@ -171,6 +205,7 @@ export function useJoinFamily() {
         network_group: networkGroup,
         added_by: userId,
       } as any).select().single()
+      if (memberErr) throw new Error(memberErr.message)
 
       if (newMember && inviterMemberId) {
         // Bidirectional link back to inviter

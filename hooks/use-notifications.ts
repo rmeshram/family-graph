@@ -3,7 +3,7 @@
 import { useMemo, useState, useCallback } from 'react'
 import { FamilyMember } from '@/lib/types'
 
-export type NotifType = 'member_joined' | 'birthday_today' | 'birthday_upcoming' | 'event_upcoming' | 'memory_added'
+export type NotifType = 'member_joined' | 'birthday_today' | 'birthday_upcoming' | 'event_upcoming' | 'memory_added' | 'node_match_found' | 'claim_accepted' | 'claim_revoked' | 'node_claimed'
 
 export interface AppNotification {
   id: string

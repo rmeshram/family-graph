@@ -263,9 +263,14 @@ DROP POLICY IF EXISTS "stories: family"  ON public.stories;
 DROP POLICY IF EXISTS "memories: family" ON public.memories;
 DROP POLICY IF EXISTS "vnotes: family"   ON public.voice_notes;
 DROP POLICY IF EXISTS "events: family"   ON public.events;
-DROP POLICY IF EXISTS "invites: family"  ON public.invite_links;
+DROP POLICY IF EXISTS "invites: family"          ON public.invite_links;
+DROP POLICY IF EXISTS "invites: family can manage" ON public.invite_links;
+DROP POLICY IF EXISTS "invites: public can read"   ON public.invite_links;
 
-CREATE POLICY "stories: family"  ON public.stories       FOR ALL USING (family_id = public.my_family_id());
+-- Family members can manage their own invite links
+CREATE POLICY "invites: family can manage" ON public.invite_links FOR ALL    USING (family_id = public.my_family_id());
+-- Anyone can read invite links (the code is the security token)
+CREATE POLICY "invites: public can read"   ON public.invite_links FOR SELECT USING (true);
 CREATE POLICY "memories: family" ON public.memories      FOR ALL USING (family_id = public.my_family_id());
 CREATE POLICY "vnotes: family"   ON public.voice_notes   FOR ALL USING (family_id = public.my_family_id());
 CREATE POLICY "events: family"   ON public.events        FOR ALL USING (family_id = public.my_family_id());

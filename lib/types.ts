@@ -17,6 +17,43 @@ export type RelationshipType =
 
 export type FamilyRole = 'admin' | 'contributor' | 'viewer'
 
+export type ClaimStatus =
+  | 'unclaimed'
+  | 'invite_sent'
+  | 'claim_pending'
+  | 'claimed'
+  | 'rejected'
+  | 'revoked'
+
+export interface NodeMatchSuggestion {
+  nodeId: string
+  nodeName: string
+  nodeInitials: string
+  familyId: string
+  familyName: string
+  addedByName: string | null
+  relationship: string | null
+  confidenceScore: number
+  confidenceTier: 'high' | 'medium' | 'low'
+  matchReasons: string[]
+}
+
+export interface ClaimRequest {
+  id: string
+  nodeId: string
+  claimantUserId: string
+  status: 'pending' | 'verified' | 'rejected' | 'abandoned' | 'expired'
+  submittedName?: string
+  submittedBirthYear?: number
+  confidenceScore?: number
+  attempts: number
+  lockedUntil?: string
+  intentToken?: string
+  resumeStep: string
+  createdAt: string
+  expiresAt: string
+}
+
 export type MemberTag = 'elder' | 'historian' | 'child' | 'youth' | 'patriarch' | 'matriarch' | 'veteran' | 'scholar' | 'artist' | 'athlete'
 
 export type FamilySide = 'paternal' | 'maternal' | 'both' | 'spouse'
@@ -64,12 +101,39 @@ export interface FamilyMember {
   // Claiming & privacy
   claimedByUserId?: string
   isClaimed?: boolean
+  claimStatus?: ClaimStatus
+  claimedAt?: string
+  claimRevokedReason?: string
+  isDeceased?: boolean
+  dateOfBirth?: string
   visibility?: 'public' | 'family' | 'private'
   // Extended & affiliated family network
   networkGroup?: 'core' | 'extended' | 'affiliated'
   affiliatedFamilyId?: string     // shared key for all members of same external family cluster
   affiliatedFamilyName?: string   // display name e.g. "Rao Family"
   affiliatedJunctionId?: string   // ID of the core-tree member this cluster connects through
+}
+
+export interface LinkedFamily {
+  id: string
+  name: string
+  memberCount: number
+  junctionMemberId: string | null
+}
+
+export interface FamilyLink {
+  id: string
+  familyAId: string
+  familyBId: string
+  status: 'pending' | 'accepted' | 'rejected' | 'revoked'
+  junctionMemberA?: string | null
+  junctionMemberB?: string | null
+  linkNote?: string | null
+  visibilityScope: 'names_only' | 'full_profile' | 'admin_only'
+  initiatedBy: string
+  acceptedBy?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Story {
@@ -108,12 +172,13 @@ export interface VoiceNote {
   id: string
   title: string
   durationSeconds: number
+  fileUrl?: string
   transcription?: string
   translation?: string
   language?: string
   recordedBy?: string
   recordedAt: string
-  memberId: string
+  memberId?: string
 }
 
 export interface Milestone {

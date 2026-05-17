@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe,
+  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
@@ -62,6 +62,49 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
   const [birthdayNotifs, setBirthdayNotifs] = usePref('birthdayNotifs', true)
   const [anniversaryNotifs, setAnniversaryNotifs] = usePref('anniversaryNotifs', false)
 
+  // Connected families
+  const [linkedData, setLinkedData] = useState<{
+    incoming: any[]
+    outgoing: any[]
+    accepted: any[]
+  }>({ incoming: [], outgoing: [], accepted: [] })
+  const [loadingLinked, setLoadingLinked] = useState(false)
+  const [linkedTab, setLinkedTab] = useState<'incoming' | 'outgoing' | 'accepted'>('incoming')
+  const [respondingId, setRespondingId] = useState<string | null>(null)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+
+  const fetchLinkedData = useCallback(async () => {
+    if (!familyId) return
+    setLoadingLinked(true)
+    try {
+      const res = await fetch('/api/family-links/pending')
+      if (res.ok) setLinkedData(await res.json())
+    } catch { }
+    setLoadingLinked(false)
+  }, [familyId])
+
+  const respondToLink = async (id: string, action: 'accept' | 'reject') => {
+    setRespondingId(id)
+    try {
+      await fetch(`/api/family-links/${id}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      await fetchLinkedData()
+    } catch { }
+    setRespondingId(null)
+  }
+
+  const revokeLink = async (id: string) => {
+    setRevokingId(id)
+    try {
+      await fetch(`/api/family-links/${id}/revoke`, { method: 'POST' })
+      await fetchLinkedData()
+    } catch { }
+    setRevokingId(null)
+  }
+
   // Privacy mode
   const [privacyMode, setPrivacyMode] = useState<'open' | 'protected' | 'closed'>('protected')
   const [savingPrivacy, setSavingPrivacy] = useState(false)
@@ -102,6 +145,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
   useEffect(() => {
     if (open) fetchPrivacyMode()
   }, [open, fetchPrivacyMode])
+
+  useEffect(() => {
+    if (open && isAdmin) fetchLinkedData()
+  }, [open, isAdmin, fetchLinkedData])
 
   const updateRole = async (userId: string, role: string) => {
     await supabase.from('profiles').update({ role }).eq('id', userId)
@@ -145,6 +192,14 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
             </TabsTrigger>
             <TabsTrigger value="privacy" className="flex-1">Privacy</TabsTrigger>
             <TabsTrigger value="data" className="flex-1">Data</TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="connected" className="flex-1">
+                Connected
+                {linkedData.incoming.length > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 h-4 text-[10px] px-1 bg-teal-500/30 text-teal-300">{linkedData.incoming.length}</Badge>
+                )}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* ── General ───────────────────────────────────────────── */}
@@ -434,6 +489,135 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
               </CardContent>
             </Card>
           </TabsContent>
+          {/* ── Connected Families ───────────────────────────────── */}
+          {isAdmin && (
+            <TabsContent value="connected" className="space-y-4 mt-0">
+              <Card className="bg-muted/30 border-border/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Link2 className="h-4 w-4 text-teal-400" />
+                    Connected Families
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingLinked ? (
+                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…
+                    </div>
+                  ) : (
+                    <>
+                      {/* Sub-tabs */}
+                      <div className="flex gap-1 px-4 pt-3 pb-1">
+                        {(['incoming', 'outgoing', 'accepted'] as const).map(t => (
+                          <button
+                            key={t}
+                            onClick={() => setLinkedTab(t)}
+                            className={`text-xs px-2.5 py-1 rounded-full transition-colors capitalize ${linkedTab === t
+                                ? 'bg-primary/20 text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                          >
+                            {t}
+                            {t === 'incoming' && linkedData.incoming.length > 0 && (
+                              <span className="ml-1 text-[10px] bg-teal-500/30 text-teal-300 rounded-full px-1">{linkedData.incoming.length}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <Separator className="bg-border/30 my-2" />
+
+                      {/* Incoming */}
+                      {linkedTab === 'incoming' && (
+                        <div className="divide-y divide-border/30">
+                          {linkedData.incoming.length === 0 ? (
+                            <p className="text-xs text-muted-foreground p-4">No incoming requests.</p>
+                          ) : linkedData.incoming.map((r: any) => (
+                            <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{r.otherFamilyName}</p>
+                                {r.linkNote && <p className="text-xs text-muted-foreground truncate">{r.linkNote}</p>}
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
+                              </div>
+                              <div className="flex gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                  disabled={respondingId === r.id}
+                                  onClick={() => respondToLink(r.id, 'reject')}
+                                >
+                                  {respondingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Decline'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs bg-teal-600 hover:bg-teal-500 text-white"
+                                  disabled={respondingId === r.id}
+                                  onClick={() => respondToLink(r.id, 'accept')}
+                                >
+                                  {respondingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Accept'}
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Outgoing */}
+                      {linkedTab === 'outgoing' && (
+                        <div className="divide-y divide-border/30">
+                          {linkedData.outgoing.length === 0 ? (
+                            <p className="text-xs text-muted-foreground p-4">No sent requests.</p>
+                          ) : linkedData.outgoing.map((r: any) => (
+                            <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{r.otherFamilyName}</p>
+                                {r.linkNote && <p className="text-xs text-muted-foreground truncate">{r.linkNote}</p>}
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
+                              </div>
+                              <Badge variant="outline" className={`text-[10px] capitalize ${r.status === 'pending' ? 'border-amber-500/30 text-amber-400' :
+                                  r.status === 'rejected' ? 'border-red-500/30 text-red-400' :
+                                    'border-border/50 text-muted-foreground'
+                                }`}>
+                                {r.status === 'pending' && <Clock className="h-2.5 w-2.5 mr-1" />}
+                                {r.status === 'rejected' && <XCircle className="h-2.5 w-2.5 mr-1" />}
+                                {r.status}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Accepted / Linked */}
+                      {linkedTab === 'accepted' && (
+                        <div className="divide-y divide-border/30">
+                          {linkedData.accepted.length === 0 ? (
+                            <p className="text-xs text-muted-foreground p-4">No active family connections yet.</p>
+                          ) : linkedData.accepted.map((r: any) => (
+                            <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                              <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{r.otherFamilyName}</p>
+                                <p className="text-[10px] text-muted-foreground">Linked {new Date(r.updatedAt).toLocaleDateString()}</p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                                disabled={revokingId === r.id}
+                                onClick={() => revokeLink(r.id)}
+                              >
+                                {revokingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Unlink className="h-3 w-3 mr-1" />Unlink</>}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>

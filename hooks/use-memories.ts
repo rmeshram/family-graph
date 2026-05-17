@@ -80,13 +80,27 @@ export function useMemories(familyId: string | null) {
     return data
   }, [supabase])
 
-  return { memories, loading, addMemory, uploadPhoto, refetch: fetch }
+  const updateMemory = useCallback(async (
+    memoryId: string,
+    updates: Partial<Pick<MemoryItem, 'title' | 'description' | 'taggedMemberIds' | 'year'>>
+  ) => {
+    const { error } = await supabase.from('memories').update({
+      title: updates.title,
+      description: updates.description ?? null,
+      tagged_member_ids: updates.taggedMemberIds ?? undefined,
+      year: updates.year ?? null,
+    }).eq('id', memoryId)
+    if (error) throw new Error(error.message)
+  }, [supabase])
+
+  return { memories, loading, addMemory, updateMemory, uploadPhoto, refetch: fetch }
 }
 
 // ─── useVoiceNotes ────────────────────────────────────────────────────────────
 
 export function useVoiceNotes(familyId: string | null) {
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
   const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -102,18 +116,30 @@ export function useVoiceNotes(familyId: string | null) {
         id: row.id,
         title: row.title,
         durationSeconds: row.duration_seconds,
+        fileUrl: row.file_url ?? undefined,
         transcription: row.transcription ?? undefined,
         translation: row.translation ?? undefined,
         language: row.language ?? undefined,
         recordedBy: row.recorded_by ?? undefined,
         recordedAt: row.created_at,
-        memberId: row.member_id,
+        memberId: row.member_id ?? undefined,
       }))
     )
     setLoading(false)
   }, [familyId, supabase])
 
   useEffect(() => { fetch() }, [fetch])
+
+  const uploadVoiceBlob = useCallback(async (blob: Blob, familyId: string): Promise<string> => {
+    const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'mp4' : 'webm'
+    const path = `${familyId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage
+      .from('voice-notes')
+      .upload(path, blob, { upsert: false, contentType: blob.type })
+    if (error) throw new Error(error.message)
+    const { data } = supabase.storage.from('voice-notes').getPublicUrl(path)
+    return data.publicUrl
+  }, [supabase])
 
   const addVoiceNote = useCallback(async (
     familyId: string,
@@ -122,18 +148,19 @@ export function useVoiceNotes(familyId: string | null) {
   ) => {
     const { data, error } = await supabase.from('voice_notes').insert({
       family_id: familyId,
-      member_id: note.memberId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      member_id: (note.memberId ?? null) as any,
       title: note.title,
       duration_seconds: note.durationSeconds,
-      file_url: null,
+      file_url: note.fileUrl ?? null,
       transcription: note.transcription ?? null,
       translation: note.translation ?? null,
-      language: note.language ?? 'hi',
+      language: note.language ?? null,
       recorded_by: userId,
     }).select().single()
     if (error) throw new Error(error.message)
     return data
   }, [supabase])
 
-  return { voiceNotes, loading, addVoiceNote, refetch: fetch }
+  return { voiceNotes, loading, addVoiceNote, uploadVoiceBlob, refetch: fetch }
 }

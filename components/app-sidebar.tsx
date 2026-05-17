@@ -22,10 +22,6 @@ import {
 import { cn } from '@/lib/utils'
 import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
 
-const ANALYTICS_DATA = [
-  { v: 32 }, { v: 18 }, { v: 45 }, { v: 27 }, { v: 38 },
-]
-
 const NAV_ITEMS = [
   { icon: GitBranch, label: 'Family Tree', href: '/dashboard', color: 'text-primary' },
   { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400' },
@@ -78,6 +74,20 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
     const generations = new Set(sidebarMembers.map(m => m.generation)).size
     const cities = new Set(sidebarMembers.map(m => m.currentPlace || m.birthPlace).filter(Boolean)).size
     return { total: sidebarMembers.length, living, generations, cities }
+  }, [sidebarMembers])
+
+  // Real "missing data" analytics derived from actual members
+  const analyticsData = useMemo(() => {
+    if (sidebarMembers.length === 0) return [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }]
+    const pct = (fn: (m: typeof sidebarMembers[0]) => boolean) =>
+      Math.round((sidebarMembers.filter(fn).length / sidebarMembers.length) * 100)
+    return [
+      { v: pct(m => !m.photoUrl), label: 'No photo' },
+      { v: pct(m => !m.birthYear), label: 'No birth year' },
+      { v: pct(m => !m.occupation), label: 'No occupation' },
+      { v: pct(m => !m.bio), label: 'No bio' },
+      { v: pct(m => !m.currentPlace), label: 'No location' },
+    ]
   }, [sidebarMembers])
 
   const sidebarContent = (
@@ -142,15 +152,28 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
 
         <Separator className="my-2" />
 
-        {/* Advanced Analytics mini-chart */}
+        {/* Connected Families */}
+        <Link
+          href="/dashboard"
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors border-l-2 border-teal-500/50 pl-[10px]"
+        >
+          <Globe className="h-4 w-4 text-teal-400" />
+          <span className="flex-1">Connected Families</span>
+          <Badge className="h-4 px-1.5 text-[9px] bg-teal-500/10 text-teal-400 border-teal-500/25">
+            Soon
+          </Badge>
+        </Link>
+
+        <Separator className="my-2" />
         <div className="mt-3 px-2">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 mb-2 px-1">Advanced Analytics</p>
           <div className="rounded-xl bg-muted/20 border border-border/40 p-2">
             <p className="text-[10px] text-muted-foreground mb-1">Missing data</p>
             <ResponsiveContainer width="100%" height={56}>
-              <BarChart data={ANALYTICS_DATA} barSize={10} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+              <BarChart data={analyticsData} barSize={10} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                 <Bar dataKey="v" radius={[3, 3, 0, 0]}>
-                  {ANALYTICS_DATA.map((_, idx) => (
+                  {analyticsData.map((_, idx) => (
                     <Cell key={idx} fill="#6366F1" fillOpacity={0.55 + idx * 0.09} />
                   ))}
                 </Bar>

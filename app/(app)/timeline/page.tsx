@@ -181,7 +181,7 @@ export default function TimelinePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-full overflow-y-auto bg-background">
       <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border">

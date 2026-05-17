@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -41,6 +41,9 @@ import {
   X,
   Upload,
   ImageIcon,
+  Pencil,
+  Check,
+  Square,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -71,13 +74,13 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryItem['eventType'], year: undefined as number | undefined, photoUrl: '', photoFile: null as File | null }
+const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryItem['eventType'], year: undefined as number | undefined, photoUrl: '', photoFile: null as File | null, taggedMemberIds: [] as string[] }
 
 export default function MemoryPage() {
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
-  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory, uploadPhoto } = useMemories(familyId)
-  const { voiceNotes: dbVoiceNotes, loading: voiceLoading } = useVoiceNotes(familyId)
+  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory, updateMemory: dbUpdateMemory, uploadPhoto } = useMemories(familyId)
+  const { voiceNotes: dbVoiceNotes, loading: voiceLoading, addVoiceNote: dbAddVoiceNote, uploadVoiceBlob } = useVoiceNotes(familyId)
 
   const isDemoMode = !authLoading && !user
   const [localDemoMemories, setLocalDemoMemories] = useState<MemoryItem[]>([])
@@ -98,11 +101,116 @@ export default function MemoryPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Voice recording state
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false)
+  const [recState, setRecState] = useState<'idle' | 'recording' | 'recorded'>('idle')
+  const [recSeconds, setRecSeconds] = useState(0)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null)
+  const [voiceTitle, setVoiceTitle] = useState('')
+  const [voiceMemberId, setVoiceMemberId] = useState<string>('')
+  const [voiceSaving, setVoiceSaving] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Edit state
+  const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null)
+  const [editForm, setEditForm] = useState({ title: '', description: '', taggedMemberIds: [] as string[], year: undefined as number | undefined })
+  const [editSaving, setEditSaving] = useState(false)
+
+  const openEdit = (memory: MemoryItem) => {
+    setEditingMemory(memory)
+    setEditForm({ title: memory.title, description: memory.description ?? '', taggedMemberIds: memory.taggedMemberIds ?? [], year: memory.year })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingMemory || !editForm.title) return
+    setEditSaving(true)
+    try {
+      if (!isDemoMode) {
+        await dbUpdateMemory(editingMemory.id, { title: editForm.title, description: editForm.description, taggedMemberIds: editForm.taggedMemberIds, year: editForm.year })
+      }
+      toast({ title: 'Memory updated!' })
+      setEditingMemory(null)
+    } catch (err) {
+      toast({ title: 'Update failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' })
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setNewMemory(p => ({ ...p, photoFile: file, photoUrl: '' }))
     setPhotoPreview(URL.createObjectURL(file))
+  }
+
+  // ── Voice recording ──────────────────────────────────────────────────────
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+        .find(t => MediaRecorder.isTypeSupported(t)) ?? ''
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+      audioChunksRef.current = []
+      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      mr.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' })
+        setAudioBlob(blob)
+        setAudioPreviewUrl(URL.createObjectURL(blob))
+        setRecState('recorded')
+        stream.getTracks().forEach(t => t.stop())
+      }
+      mr.start(250)
+      mediaRecorderRef.current = mr
+      setRecState('recording')
+      setRecSeconds(0)
+      timerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000)
+    } catch {
+      toast({ title: 'Microphone access denied', description: 'Please allow microphone access in your browser settings.', variant: 'destructive' })
+    }
+  }
+
+  const handleStopRecording = () => {
+    mediaRecorderRef.current?.stop()
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+  }
+
+  const handleDiscardRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    if (audioPreviewUrl) URL.revokeObjectURL(audioPreviewUrl)
+    setShowVoiceRecorder(false)
+    setRecState('idle')
+    setRecSeconds(0)
+    setAudioBlob(null)
+    setAudioPreviewUrl(null)
+    setVoiceTitle('')
+    setVoiceMemberId('')
+  }
+
+  const handleSaveVoiceNote = async () => {
+    if (!audioBlob || !voiceTitle) return
+    if (!user) { toast({ title: 'Sign in required', variant: 'destructive' }); return }
+    if (!familyId) { toast({ title: 'No family yet', variant: 'destructive' }); return }
+    setVoiceSaving(true)
+    try {
+      const fileUrl = await uploadVoiceBlob(audioBlob, familyId)
+      await dbAddVoiceNote(familyId, {
+        title: voiceTitle,
+        durationSeconds: recSeconds,
+        memberId: voiceMemberId || undefined,
+        fileUrl,
+      }, user.id)
+      toast({ title: 'Voice note saved!', description: `"${voiceTitle}" added to your vault.` })
+      handleDiscardRecording()
+    } catch (err) {
+      toast({ title: 'Save failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' })
+    } finally {
+      setVoiceSaving(false)
+    }
   }
 
   const handleAddMemory = async () => {
@@ -158,7 +266,7 @@ export default function MemoryPage() {
         photoUrl: resolvedPhotoUrl,
         eventType: newMemory.eventType,
         year: newMemory.year,
-        taggedMemberIds: [],
+        taggedMemberIds: newMemory.taggedMemberIds,
       }, user.id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : (err as any)?.message ?? 'Unknown error'
@@ -193,7 +301,7 @@ export default function MemoryPage() {
   }), [allMemories, allVoiceNotes])
 
   return (
-    <div className="flex h-screen flex-col bg-background overflow-x-hidden">
+    <div className="flex h-full flex-col bg-background">
       <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-card/95 backdrop-blur-md">
@@ -234,47 +342,6 @@ export default function MemoryPage() {
           </div>
         ))}
       </div>
-
-      {/* Add Memory inline form — rendered OUTSIDE Tabs so overflow-hidden never clips the Save button */}
-      {showAddForm && (
-        <div className="mx-4 my-3 rounded-2xl border border-amber-500/30 bg-card p-4 space-y-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-sm">New Memory</p>
-            <button onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
-          </div>
-          <Input placeholder="Title (required)" value={newMemory.title} onChange={e => setNewMemory(p => ({ ...p, title: e.target.value }))} />
-          <Textarea placeholder="Description (optional)" value={newMemory.description} onChange={e => setNewMemory(p => ({ ...p, description: e.target.value }))} rows={2} className="resize-none" />
-          <div className="grid grid-cols-2 gap-2">
-            <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={newMemory.eventType} onChange={e => setNewMemory(p => ({ ...p, eventType: e.target.value as MemoryItem['eventType'] }))}>
-              {['wedding', 'birth', 'festival', 'graduation', 'travel', 'family-gathering', 'other'].map(t => (
-                <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
-              ))}
-            </select>
-            <Input type="number" placeholder="Year (e.g. 2010)" value={newMemory.year ?? ''} onChange={e => setNewMemory(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
-          </div>
-          {/* Photo upload */}
-          <div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
-            {photoPreview ? (
-              <div className="relative rounded-xl overflow-hidden border border-border/50">
-                <img src={photoPreview} alt="preview" className="w-full h-40 object-cover" />
-                <button onClick={() => { setPhotoPreview(null); setNewMemory(p => ({ ...p, photoFile: null, photoUrl: '' })) }} className="absolute top-2 right-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="h-3.5 w-3.5" /></button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-border/50 p-3 text-muted-foreground hover:border-amber-500/50 hover:text-amber-400 transition-colors">
-                <ImageIcon className="h-5 w-5" />
-                <span className="text-sm">Tap to upload photo (optional)</span>
-              </button>
-            )}
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
-            <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!newMemory.title || addingSaving} onClick={handleAddMemory}>
-              {addingSaving ? 'Saving…' : 'Save Memory'}
-            </Button>
-          </div>
-        </div>
-      )}
 
       <Tabs defaultValue="photos" className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border/50 bg-card/80 px-4 pt-2">
@@ -336,6 +403,7 @@ export default function MemoryPage() {
                       memory={memory}
                       members={allMembers}
                       onClick={() => setSelectedMemory(memory)}
+                      onEdit={() => openEdit(memory)}
                     />
                   ))}
                   {/* Add Memory Card */}
@@ -379,7 +447,7 @@ export default function MemoryPage() {
               ))}
 
               {/* Record New */}
-              <button className="group w-full flex items-center gap-4 rounded-2xl border-2 border-dashed border-border/50 p-5 text-muted-foreground transition-colors hover:border-violet-500/50 hover:text-violet-400">
+              <button onClick={() => setShowVoiceRecorder(true)} className="group w-full flex items-center gap-4 rounded-2xl border-2 border-dashed border-border/50 p-5 text-muted-foreground transition-colors hover:border-violet-500/50 hover:text-violet-400">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 group-hover:bg-violet-500/10 transition-colors">
                   <Mic className="h-6 w-6" />
                 </div>
@@ -392,77 +460,259 @@ export default function MemoryPage() {
           </ScrollArea>
         </TabsContent>
       </Tabs>
+
+      {/* Add Memory Dialog */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-card p-5 space-y-3 shadow-2xl my-auto">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-sm">New Memory</p>
+              <button onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <Input placeholder="Title (required)" value={newMemory.title} onChange={e => setNewMemory(p => ({ ...p, title: e.target.value }))} />
+            <Textarea placeholder="Description (optional)" value={newMemory.description} onChange={e => setNewMemory(p => ({ ...p, description: e.target.value }))} rows={2} className="resize-none" />
+            <div className="grid grid-cols-2 gap-2">
+              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={newMemory.eventType} onChange={e => setNewMemory(p => ({ ...p, eventType: e.target.value as MemoryItem['eventType'] }))}>
+                {['wedding', 'birth', 'festival', 'graduation', 'travel', 'family-gathering', 'other'].map(t => (
+                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}</option>
+                ))}
+              </select>
+              <Input type="number" placeholder="Year (e.g. 2010)" value={newMemory.year ?? ''} onChange={e => setNewMemory(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
+            </div>
+            {/* Photo upload */}
+            <div>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+              {photoPreview ? (
+                <div className="relative rounded-xl overflow-hidden border border-border/50">
+                  <img src={photoPreview} alt="preview" className="w-full h-40 object-cover" />
+                  <button onClick={() => { setPhotoPreview(null); setNewMemory(p => ({ ...p, photoFile: null, photoUrl: '' })) }} className="absolute top-2 right-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-border/50 p-3 text-muted-foreground hover:border-amber-500/50 hover:text-amber-400 transition-colors">
+                  <ImageIcon className="h-5 w-5" />
+                  <span className="text-sm">Tap to upload photo (optional)</span>
+                </button>
+              )}
+            </div>
+            {/* Member tagging */}
+            {allMembers.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Tag family members (optional)</label>
+                <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+                  {allMembers.map(m => {
+                    const tagged = newMemory.taggedMemberIds.includes(m.id)
+                    return (
+                      <button key={m.id} type="button"
+                        onClick={() => setNewMemory(p => ({ ...p, taggedMemberIds: tagged ? p.taggedMemberIds.filter(id => id !== m.id) : [...p.taggedMemberIds, m.id] }))}
+                        className={cn('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all', tagged ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border/50 text-muted-foreground hover:border-border/70')}
+                      >
+                        {tagged && <Check className="h-3 w-3" />}
+                        {m.name.split(' ')[0]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
+              <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!newMemory.title || addingSaving} onClick={handleAddMemory}>
+                {addingSaving ? 'Saving…' : 'Save Memory'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Voice Recorder Dialog */}
+      {showVoiceRecorder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-violet-500/30 bg-card p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold flex items-center gap-2">
+                <Mic className="h-4 w-4 text-violet-400" />
+                Record Voice Memory
+              </p>
+              <button onClick={handleDiscardRecording} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+
+            {/* Recording UI */}
+            <div className="flex flex-col items-center gap-4 py-2">
+              {recState === 'idle' && (
+                <>
+                  <button onClick={handleStartRecording}
+                    className="flex h-20 w-20 items-center justify-center rounded-full bg-violet-500 text-white shadow-lg shadow-violet-500/30 hover:bg-violet-600 transition-all active:scale-95">
+                    <Mic className="h-8 w-8" />
+                  </button>
+                  <p className="text-xs text-muted-foreground">Tap the microphone to start recording</p>
+                </>
+              )}
+              {recState === 'recording' && (
+                <>
+                  <div className="relative">
+                    <div className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
+                    <button onClick={handleStopRecording}
+                      className="relative flex h-20 w-20 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/30 hover:bg-red-600 transition-all active:scale-95">
+                      <Square className="h-7 w-7" />
+                    </button>
+                  </div>
+                  <p className="text-2xl font-mono font-bold text-red-400">{formatDuration(recSeconds)}</p>
+                  <p className="text-xs text-muted-foreground">Recording… tap square to stop</p>
+                </>
+              )}
+              {recState === 'recorded' && audioPreviewUrl && (
+                <>
+                  <audio controls src={audioPreviewUrl} className="w-full rounded-lg" />
+                  <p className="text-xs text-muted-foreground">{formatDuration(recSeconds)} recorded</p>
+                </>
+              )}
+            </div>
+
+            {recState === 'recorded' && (
+              <>
+                <Input placeholder="Title — e.g. Dada's story about the village (required)" value={voiceTitle} onChange={e => setVoiceTitle(e.target.value)} />
+                {allMembers.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Voice of (optional)</label>
+                    <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+                      {allMembers.map(m => (
+                        <button key={m.id} type="button"
+                          onClick={() => setVoiceMemberId(id => id === m.id ? '' : m.id)}
+                          className={cn('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all', voiceMemberId === m.id ? 'border-violet-500 bg-violet-500/10 text-violet-400' : 'border-border/50 text-muted-foreground hover:border-border/70')}
+                        >
+                          {voiceMemberId === m.id && <Check className="h-3 w-3" />}
+                          {m.name.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" size="sm" onClick={() => setRecState('idle')}>Re-record</Button>
+                  <Button size="sm" className="bg-violet-500 hover:bg-violet-600 text-white" disabled={!voiceTitle || voiceSaving} onClick={handleSaveVoiceNote}>
+                    {voiceSaving ? 'Saving…' : 'Save Voice Note'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Memory Dialog */}
+      {editingMemory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold">Edit Memory</p>
+              <button onClick={() => setEditingMemory(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <Input placeholder="Title" value={editForm.title} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} />
+            <Textarea placeholder="Description" value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3} className="resize-none" />
+            <Input type="number" placeholder="Year" value={editForm.year ?? ''} onChange={e => setEditForm(p => ({ ...p, year: e.target.value ? parseInt(e.target.value) : undefined }))} />
+            {allMembers.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Tagged members</label>
+                <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+                  {allMembers.map(m => {
+                    const tagged = editForm.taggedMemberIds.includes(m.id)
+                    return (
+                      <button key={m.id} type="button" onClick={() => setEditForm(p => ({ ...p, taggedMemberIds: tagged ? p.taggedMemberIds.filter(id => id !== m.id) : [...p.taggedMemberIds, m.id] }))}
+                        className={cn('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all', tagged ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border/50 text-muted-foreground hover:border-border/70')}>
+                        {tagged && <Check className="h-3 w-3" />}
+                        {m.name.split(' ')[0]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="outline" size="sm" onClick={() => setEditingMemory(null)}>Cancel</Button>
+              <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" disabled={!editForm.title || editSaving} onClick={handleSaveEdit}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Memory Card ──────────────────────────────────────────────────────────────
 
-function MemoryCard({ memory, members, onClick }: { memory: MemoryItem; members: typeof sampleFamilyMembers; onClick: () => void }) {
+function MemoryCard({ memory, members, onClick, onEdit }: { memory: MemoryItem; members: typeof sampleFamilyMembers; onClick: () => void; onEdit?: () => void }) {
   const Icon = EVENT_ICONS[memory.eventType] || Camera
   const colorClass = EVENT_COLORS[memory.eventType] || EVENT_COLORS.other
+  const uploaderName = members.find(m => m.claimedByUserId === memory.uploadedBy)?.name ?? (memory.uploadedBy ? 'Family Member' : undefined)
 
   return (
-    <button
-      onClick={onClick}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
-    >
-      {/* Image */}
-      <div className="relative h-44 overflow-hidden bg-muted">
-        {memory.photoUrl ? (
-          <img
-            src={memory.photoUrl}
-            alt={memory.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center bg-gradient-to-br from-muted to-muted/50">
-            <Icon className="h-12 w-12 text-muted-foreground/30" />
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5">
+      {/* Edit button */}
+      {onEdit && (
+        <button onClick={e => { e.stopPropagation(); onEdit() }} className="absolute top-2 left-2 z-10 rounded-full bg-black/60 p-1.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80">
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
+      <button onClick={onClick} className="flex flex-col flex-1 text-left">
+        {/* Image */}
+        <div className="relative h-44 overflow-hidden bg-muted">
+          {memory.photoUrl ? (
+            <img
+              src={memory.photoUrl}
+              alt={memory.title}
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center bg-gradient-to-br from-muted to-muted/50">
+              <Icon className="h-12 w-12 text-muted-foreground/30" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          {/* Event Badge */}
+          <div className={cn(
+            "absolute top-2 right-2 flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm bg-gradient-to-r",
+            colorClass
+          )}>
+            <Icon className="h-2.5 w-2.5" />
+            {memory.eventType.replace('-', ' ')}
           </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        {/* Event Badge */}
-        <div className={cn(
-          "absolute top-2 right-2 flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm bg-gradient-to-r",
-          colorClass
-        )}>
-          <Icon className="h-2.5 w-2.5" />
-          {memory.eventType.replace('-', ' ')}
+          <div className="absolute bottom-2 left-2 text-white">
+            <p className="text-xs font-medium opacity-80">{memory.year}</p>
+          </div>
         </div>
-        <div className="absolute bottom-2 left-2 text-white">
-          <p className="text-xs font-medium opacity-80">{memory.year}</p>
-        </div>
-      </div>
 
-      {/* Content */}
-      <div className="p-3">
-        <h3 className="font-semibold text-sm leading-tight line-clamp-1">{memory.title}</h3>
-        {memory.description && (
-          <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{memory.description}</p>
-        )}
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex -space-x-1">
-            {(memory.taggedMemberIds || []).slice(0, 4).map(id => {
-              const m = members.find(fm => fm.id === id)
-              if (!m) return null
-              return (
-                <Avatar key={id} className="h-5 w-5 border border-background">
-                  <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
-                    {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                  </AvatarFallback>
-                </Avatar>
-              )
-            })}
-            {(memory.taggedMemberIds?.length || 0) > 4 && (
-              <div className="flex h-5 w-5 items-center justify-center rounded-full border border-background bg-muted text-[8px] text-muted-foreground">
-                +{(memory.taggedMemberIds?.length || 0) - 4}
-              </div>
-            )}
+        {/* Content */}
+        <div className="p-3">
+          <h3 className="font-semibold text-sm leading-tight line-clamp-1">{memory.title}</h3>
+          {memory.description && (
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{memory.description}</p>
+          )}
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex -space-x-1">
+              {(memory.taggedMemberIds || []).slice(0, 4).map(id => {
+                const m = members.find(fm => fm.id === id)
+                if (!m) return null
+                return (
+                  <Avatar key={id} className="h-5 w-5 border border-background">
+                    <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                      {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                    </AvatarFallback>
+                  </Avatar>
+                )
+              })}
+              {(memory.taggedMemberIds?.length || 0) > 4 && (
+                <div className="flex h-5 w-5 items-center justify-center rounded-full border border-background bg-muted text-[8px] text-muted-foreground">
+                  +{(memory.taggedMemberIds?.length || 0) - 4}
+                </div>
+              )}
+            </div>
+            {uploaderName && <span className="text-[10px] text-muted-foreground">{uploaderName}</span>}
           </div>
-          <span className="text-[10px] text-muted-foreground">{memory.uploadedBy}</span>
         </div>
-      </div>
-    </button>
+      </button>
+    </div>
   )
 }
 
@@ -489,19 +739,33 @@ function MemoryDetail({ memory, members, onBack }: { memory: MemoryItem; members
             variant="outline"
             size="sm"
             className="gap-1.5 border-green-500/40 text-green-600 hover:bg-green-500/10"
-            onClick={() => {
+            onClick={async () => {
+              if (memory.photoUrl && navigator.share) {
+                try {
+                  const res = await fetch(memory.photoUrl)
+                  const blob = await res.blob()
+                  await navigator.share({ files: [new File([blob], 'memory.jpg', { type: blob.type })], title: memory.title })
+                  return
+                } catch { /* fall through */ }
+              }
               const text = `${memory.title} (${memory.year})\n\n${memory.description ?? ''}\n\nShared from Family Graph`
               window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
             }}
           >
             <MessageCircle className="h-4 w-4" />
             WhatsApp
-          </Button>            <Button variant="outline" size="icon" className="h-8 w-8">
-              <Share2 className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8">
-              <Download className="h-4 w-4" />
-            </Button>
+          </Button>
+            {memory.photoUrl && (
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={async () => {
+                const link = document.createElement('a')
+                link.href = memory.photoUrl!
+                link.download = `${memory.title.replace(/\s+/g, '-')}.jpg`
+                link.target = '_blank'
+                link.click()
+              }}>
+                <Download className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{memory.description}</p>
@@ -529,7 +793,7 @@ function MemoryDetail({ memory, members, onBack }: { memory: MemoryItem; members
             })}
           </div>
         </div>
-        <p className="mt-4 text-xs text-muted-foreground">Uploaded by {memory.uploadedBy}</p>
+        {(() => { const n = members.find(m => m.claimedByUserId === memory.uploadedBy)?.name; return n ? <p className="mt-4 text-xs text-muted-foreground">Uploaded by {n}</p> : null })()}
       </div>
     </div>
   )
@@ -539,6 +803,35 @@ function MemoryDetail({ memory, members, onBack }: { memory: MemoryItem; members
 
 function VoiceCard({ voice, members, isPlaying, onPlay }: { voice: VoiceNote; members: typeof sampleFamilyMembers; isPlaying: boolean; onPlay: () => void }) {
   const member = members.find(m => m.id === voice.memberId)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const onPlayRef = useRef(onPlay)
+  useEffect(() => { onPlayRef.current = onPlay }, [onPlay])
+
+  // Create/destroy audio element when fileUrl changes
+  useEffect(() => {
+    if (!voice.fileUrl) return
+    const audio = new Audio(voice.fileUrl)
+    const handleEnded = () => onPlayRef.current()
+    audio.addEventListener('ended', handleEnded)
+    audioRef.current = audio
+    return () => {
+      audio.removeEventListener('ended', handleEnded)
+      audio.pause()
+      audioRef.current = null
+    }
+  }, [voice.fileUrl])
+
+  // Play/pause when isPlaying changes
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (isPlaying) {
+      audio.play().catch(() => { })
+    } else {
+      audio.pause()
+      audio.currentTime = 0
+    }
+  }, [isPlaying])
 
   return (
     <div className={cn(

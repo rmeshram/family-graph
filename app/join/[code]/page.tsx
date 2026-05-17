@@ -46,6 +46,7 @@ export default function JoinPage() {
   // Relationship step state
   const [selectedRel, setSelectedRel] = useState<RelType | null>(null)
   const [displayName, setDisplayName] = useState('')
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | 'other' | null>(null)
 
   // Claim step state
   const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
@@ -147,6 +148,7 @@ export default function JoinPage() {
       await joinWithCode(code, user.id, {
         displayName: displayName.trim() || undefined,
         relationshipToInviter: selectedRel ?? 'skip',
+        gender: selectedGender ?? undefined,
         claimMemberId: claimId ?? undefined,
       })
       setStatus('success')
@@ -261,6 +263,28 @@ export default function JoinPage() {
                   className="h-10 bg-muted/50 border-border"
                   autoFocus
                 />
+              </div>
+
+              {/* Gender field */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Your gender</label>
+                <div className="flex gap-2">
+                  {([['male', '♂ Male'], ['female', '♀ Female'], ['other', '⚥ Other']] as const).map(([g, label]) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setSelectedGender(g)}
+                      className={cn(
+                        'flex-1 rounded-lg border py-2 text-xs font-medium transition-all',
+                        selectedGender === g
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-border/70'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Relationship grid */}

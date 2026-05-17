@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { sampleFamilyMembers } from "@/lib/sample-data"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
+import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Download, Share2, Printer, Check, MessageCircle, Heart, MapPin, Briefcase, Users, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -19,6 +20,7 @@ const CURRENT_YEAR = new Date().getFullYear()
 export default function BiodataPage() {
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
+  const { toast } = useToast()
   const isDemoMode = !authLoading && !user
   const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
@@ -78,15 +80,15 @@ export default function BiodataPage() {
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
+        ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
       })
       const link = document.createElement('a')
       link.download = `${member.name.replace(/\s+/g, '-')}-biodata.png`
       link.href = canvas.toDataURL('image/png')
       link.click()
     } catch (err) {
-      console.error('Save PDF failed:', err)
-      // Fallback to print
-      window.print()
+      console.error('Save PNG failed:', err)
+      toast({ title: 'Download failed', description: 'Could not capture biodata. Please try again.', variant: 'destructive' })
     }
   }, [member])
 
@@ -273,8 +275,8 @@ export default function BiodataPage() {
 
                   {/* Biodata Card */}
                   <div ref={biodataRef} className="rounded-2xl border-2 border-amber-200 bg-white shadow-xl overflow-hidden print:shadow-none">
-                    {/* Header */}
-                    <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white text-center">
+                    {/* Header — inline styles needed for html2canvas (can't resolve oklch CSS vars) */}
+                    <div style={{ background: 'linear-gradient(to right, #F59E0B, #F97316)' }} className="p-6 text-white text-center">
                       <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/30 bg-white/20 text-3xl font-bold text-white">
                         {member.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                       </div>

@@ -118,7 +118,7 @@ export function MemberDetail({
     : null
 
   return (
-    <Card className="h-full overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
+    <Card className="flex flex-col h-full overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
       <CardHeader className="pb-4 border-b border-border/40">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
@@ -162,7 +162,7 @@ export function MemberDetail({
         </div>
       </CardHeader>
 
-      <ScrollArea className="h-[calc(100vh-280px)]">
+      <ScrollArea className="flex-1 overflow-auto">
         <CardContent className="p-0">
           <Tabs defaultValue="overview" className="w-full">
             <TabsList className="w-full rounded-none border-b border-border/50 bg-transparent h-auto p-0">

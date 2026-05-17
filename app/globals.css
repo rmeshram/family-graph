@@ -45,6 +45,13 @@
   --graph-connection: rgba(99, 102, 241, 0.18);
   --graph-highlight: #F59E0B;
 
+  /* Universe view — relationship category colors */
+  --paternal: #3b82f6;
+  --maternal: #f59e0b;
+  --marriage: #a855f7;
+  --community: #22c55e;
+  --cyan-glow: #22d3ee;
+
   /* Glow tokens */
   --glow-gold: rgba(245, 158, 11, 0.20);
   --glow-primary: rgba(99, 102, 241, 0.12);
@@ -230,4 +237,86 @@
   color-scheme: light;
   background-color: var(--background);
   color: var(--foreground);
+}
+
+/* ── Universe view utility classes ──────────────────────────────────────── */
+
+.universe-canvas {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(99, 102, 241, 0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 45% at 72% 65%, rgba(139, 92, 246, 0.05) 0%, transparent 70%),
+    #060912;
+}
+
+.universe-canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.5) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.3) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+  background-size: 330px 330px, 200px 200px, 130px 130px;
+  background-position: 0 0, 85px 65px, 42px 115px;
+  animation: starTwinkle 7s ease-in-out infinite;
+  z-index: 0;
+}
+
+.edge-flow {
+  animation: edgeFlow 2.6s linear infinite;
+}
+
+.glass {
+  background: rgba(15, 20, 32, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Node breathing — subtle alive feel */
+@keyframes nodeBreath {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.04);
+    opacity: 0.92;
+  }
+}
+
+@keyframes nodeBreathSelected {
+
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 28px var(--cyan-glow);
+  }
+
+  50% {
+    transform: scale(1.07);
+    box-shadow: 0 0 52px var(--cyan-glow);
+  }
+}
+
+@keyframes orbitRing {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.node-breath {
+  animation: nodeBreath 4.5s ease-in-out infinite;
+}
+
+.node-breath-selected {
+  animation: nodeBreathSelected 2.8s ease-in-out infinite;
 }

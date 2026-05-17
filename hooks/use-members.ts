@@ -44,6 +44,12 @@ function dbToMember(row: DBMember): FamilyMember {
     claimedByUserId: (row as any).claimed_by_user_id ?? undefined,
     isClaimed: (row as any).is_claimed ?? false,
     visibility: ((row as any).visibility as FamilyMember['visibility']) ?? 'family',
+    // Migration 009: claim state machine
+    claimStatus: ((row as any).claim_status as FamilyMember['claimStatus']) ?? 'unclaimed',
+    claimedAt: (row as any).claimed_at ?? undefined,
+    claimRevokedReason: (row as any).claim_revoke_reason ?? undefined,
+    isDeceased: (row as any).is_deceased ?? false,
+    dateOfBirth: (row as any).date_of_birth ?? undefined,
     // Migration 003: extended & affiliated family
     networkGroup: ((row as any).network_group as FamilyMember['networkGroup']) ?? 'core',
     affiliatedFamilyId: (row as any).affiliated_family_id ?? undefined,
@@ -279,18 +285,34 @@ export function useMembers(familyId: string | null) {
     if ((count ?? 0) === 0) throw new Error('Permission denied: only family admins can delete members')
   }, [supabase, members])
 
-  const claimMember = useCallback(async (memberId: string, userId: string) => {
-    const { error } = await supabase
-      .from('family_members')
-      .update({ claimed_by_user_id: userId, is_claimed: true } as any)
-      .eq('id', memberId)
-      .eq('is_claimed', false)
-    if (error) throw new Error(error.message)
-    // Optimistically update local state so UI reflects immediately (no realtime lag)
+  const claimMember = useCallback(async (
+    memberId: string,
+    _userId: string,
+    opts?: { submittedName?: string; submittedBirthYear?: number }
+  ) => {
+    const res = await fetch(`/api/nodes/${memberId}/claim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submittedName: opts?.submittedName,
+        submittedBirthYear: opts?.submittedBirthYear,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw Object.assign(new Error(data.message ?? 'Claim failed'), data)
+    // Optimistically reflect new status
     setMembers(prev => prev.map(m =>
-      m.id === memberId ? { ...m, isClaimed: true, claimedByUserId: userId } : m
+      m.id === memberId
+        ? {
+          ...m,
+          isClaimed: data.status === 'claimed',
+          claimStatus: data.status,
+          claimedByUserId: data.status === 'claimed' ? m.claimedByUserId : undefined,
+        }
+        : m
     ))
-  }, [supabase])
+    return data
+  }, [])
 
   const setVisibility = useCallback(async (memberId: string, visibility: 'public' | 'family' | 'private') => {
     const { error } = await supabase

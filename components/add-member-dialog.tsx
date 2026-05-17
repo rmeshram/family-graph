@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2 } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash } from 'lucide-react'
 
 interface AddMemberDialogProps {
   open: boolean
@@ -60,7 +60,11 @@ export function AddMemberDialog({
       setBirthYear(editingMember.birthYear?.toString() ?? '')
       setDeathYear(editingMember.deathYear?.toString() ?? '')
       setBirthPlace(editingMember.birthPlace ?? '')
+      setCurrentPlace(editingMember.currentPlace ?? '')
       setOccupation(editingMember.occupation ?? '')
+      setGotra(editingMember.gotra ?? '')
+      setPhone(editingMember.phone ?? '')
+      setEmail(editingMember.email ?? '')
       setInstagramHandle(editingMember.instagramHandle ?? '')
       setRelationship(editingMember.relationship ?? '')
       setBio(editingMember.bio ?? '')
@@ -69,13 +73,18 @@ export function AddMemberDialog({
       setNetworkGroup((editingMember.networkGroup as 'core' | 'extended' | 'affiliated') ?? 'core')
       setAffiliatedFamilyName(editingMember.affiliatedFamilyName ?? '')
       setAffiliatedJunctionId(editingMember.affiliatedJunctionId ?? '')
+      setGender((editingMember.gender as 'male' | 'female' | 'other' | '') ?? '')
       setPhotoPreview(editingMember.photoUrl ?? null)
     }
   }, [editingMember, open])
   const [birthYear, setBirthYear] = useState('')
   const [deathYear, setDeathYear] = useState('')
   const [birthPlace, setBirthPlace] = useState('')
+  const [currentPlace, setCurrentPlace] = useState('')
   const [occupation, setOccupation] = useState('')
+  const [gotra, setGotra] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [instagramHandle, setInstagramHandle] = useState('')
   const [relationship, setRelationship] = useState('')
   const [bio, setBio] = useState('')
@@ -84,6 +93,7 @@ export function AddMemberDialog({
   const [networkGroup, setNetworkGroup] = useState<'core' | 'extended' | 'affiliated'>('core')
   const [affiliatedFamilyName, setAffiliatedFamilyName] = useState('')
   const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
+  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const validate = () => {
@@ -149,10 +159,15 @@ export function AddMemberDialog({
       birthYear: birthYear ? parseInt(birthYear) : undefined,
       deathYear: deathYear ? parseInt(deathYear) : undefined,
       birthPlace: birthPlace || undefined,
+      currentPlace: currentPlace || undefined,
       occupation: occupation || undefined,
+      gotra: gotra || undefined,
+      phone: phone || undefined,
+      email: email || undefined,
       instagramHandle: instagramHandle ? instagramHandle.replace(/^@/, '') : undefined,
       relationship,
       bio,
+      gender: gender || undefined,
       parentIds,
       spouseIds,
       generation,
@@ -180,7 +195,11 @@ export function AddMemberDialog({
     setBirthYear('')
     setDeathYear('')
     setBirthPlace('')
+    setCurrentPlace('')
     setOccupation('')
+    setGotra('')
+    setPhone('')
+    setEmail('')
     setInstagramHandle('')
     setRelationship('')
     setBio('')
@@ -190,6 +209,7 @@ export function AddMemberDialog({
     setAffiliatedFamilyName('')
     setErrors({})
     setAffiliatedJunctionId('')
+    setGender('')
     if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoFile(null)
     setPhotoPreview(null)
@@ -282,16 +302,35 @@ export function AddMemberDialog({
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Gender</Label>
+                  <div className="flex gap-2">
+                    {([['male', '♂ Male'], ['female', '♀ Female'], ['other', '⚥ Other']] as const).map(([g, label]) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setGender(prev => prev === g ? '' : g)}
+                        className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-all ${gender === g
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70'
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
             <Separator className="bg-border/50" />
 
-            {/* Dates & Places */}
+            {/* Dates & Locations */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Calendar className="h-4 w-4" />
-                Dates & Places
+                Dates &amp; Locations
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -318,8 +357,6 @@ export function AddMemberDialog({
                   />
                   {errors.deathYear && <p className="text-xs text-destructive">{errors.deathYear}</p>}
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="birthPlace" className="flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
@@ -330,6 +367,19 @@ export function AddMemberDialog({
                     value={birthPlace}
                     onChange={(e) => setBirthPlace(e.target.value)}
                     placeholder="City, Country"
+                    className="bg-muted/30 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="currentPlace" className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    Current Location
+                  </Label>
+                  <Input
+                    id="currentPlace"
+                    value={currentPlace}
+                    onChange={(e) => setCurrentPlace(e.target.value)}
+                    placeholder="City they live in now"
                     className="bg-muted/30 border-border/50"
                   />
                 </div>
@@ -426,6 +476,59 @@ export function AddMemberDialog({
                   rows={4}
                   className="bg-muted/30 border-border/50 resize-none"
                 />
+              </div>
+            </div>
+
+            <Separator className="bg-border/50" />
+
+            {/* Heritage & Contact */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Hash className="h-4 w-4" />
+                Heritage &amp; Contact
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="gotra" className="flex items-center gap-1">
+                    <Hash className="h-3 w-3" />
+                    Gotra
+                  </Label>
+                  <Input
+                    id="gotra"
+                    value={gotra}
+                    onChange={(e) => setGotra(e.target.value)}
+                    placeholder="e.g., Bharadwaj"
+                    className="bg-muted/30 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    Phone
+                  </Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="bg-muted/30 border-border/50"
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="email" className="flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="bg-muted/30 border-border/50"
+                  />
+                </div>
               </div>
             </div>
 

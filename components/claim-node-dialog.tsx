@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { UserCheck, Lock, Globe, Users } from 'lucide-react'
+import { UserCheck, Lock, Globe, Users, AlertCircle, ShieldCheck } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { FamilyMember } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -20,7 +22,7 @@ interface ClaimNodeDialogProps {
   userId: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onClaim: (memberId: string, userId: string) => Promise<void>
+  onClaim: (memberId: string, userId: string, opts?: { submittedName?: string; submittedBirthYear?: number }) => Promise<void>
   onSetVisibility?: (memberId: string, visibility: 'public' | 'family' | 'private') => Promise<void>
 }
 

@@ -2,12 +2,15 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
-import { FamilyMember, Story } from '@/lib/types'
-import { sampleFamilyMembers, familyFeed } from '@/lib/sample-data'
+import { FamilyMember, Story, FamilyEvent } from '@/lib/types'
+import { sampleFamilyMembers } from '@/lib/sample-data'
 import { filterByDegree, computeProfileCompleteness } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers, useStories } from '@/hooks/use-members'
 import { useInvites } from '@/hooks/use-invites'
+import { useLinkedFamilies } from '@/hooks/use-linked-families'
+import { LinkFamilyDialog } from '@/components/link-family-dialog'
+import { FamilyLinkRequestsBanner } from '@/components/family-link-requests-banner'
 import { FamilyTree } from '@/components/family-tree'
 import { MemberListSidebar } from '@/components/member-list-sidebar'
 import { MemberDetail } from '@/components/member-detail'
@@ -18,6 +21,7 @@ import { AddStoryDialog } from '@/components/add-story-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-feed'
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
+import { RelationshipUniverse } from '@/components/relationship-universe'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,6 +40,7 @@ import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
+  Link2, TreePine,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -77,7 +82,7 @@ function FamilyTreeSkeleton() {
 }
 
 
-type TreeViewMode = 'graph' | 'orgchart' | 'list'
+type TreeViewMode = 'graph' | 'orgchart' | 'list' | 'universe'
 
 // ─── AI Quick-response engine ──────────────────────────────────────────────────
 
@@ -260,6 +265,10 @@ function ListView({ members, onSelect, selectedId }: {
 // ─── AI Widget ─────────────────────────────────────────────────────────────────
 
 function AIWidget({ members, onClose }: { members: FamilyMember[]; onClose: () => void }) {
+  const { profile } = useAuth()
+  const userInitials = (profile as any)?.full_name
+    ? (profile as any).full_name.trim().split(/\s+/).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'Me'
   const [msgs, setMsgs] = useState<{ role: 'user' | 'ai'; text: string }[]>([
     { role: 'ai', text: `🙏 Namaste! Ask me anything about your **${members.length}-member** family tree.` }
   ])
@@ -298,7 +307,7 @@ function AIWidget({ members, onClose }: { members: FamilyMember[]; onClose: () =
           {msgs.map((m, i) => (
             <div key={i} className={cn('flex gap-2', m.role === 'user' && 'flex-row-reverse')}>
               <div className={cn('h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold', m.role === 'ai' ? 'bg-violet-500/20 text-violet-400' : 'bg-primary/20 text-primary')}>
-                {m.role === 'ai' ? '🤖' : 'R'}
+                {m.role === 'ai' ? '🤖' : userInitials}
               </div>
               <div className={cn('rounded-xl px-3 py-1.5 text-xs max-w-[85%] leading-relaxed', m.role === 'ai' ? 'bg-muted text-foreground' : 'bg-primary/15 text-foreground')}>
                 {m.text.split('**').map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}
@@ -417,8 +426,17 @@ export default function FamilyGraphApp() {
 
   const isDemoMode = !authLoading && !user
 
+  const {
+    linkedMembers,
+    linkedFamilies,
+    newMemberAlert,
+    clearNewMemberAlert,
+    sendLinkRequest,
+  } = useLinkedFamilies(isDemoMode ? null : familyId)
+
   const [maxDegree, setMaxDegree] = useState(10)
   const [showExtended, setShowExtended] = useState(true)
+  const [isLinkFamilyOpen, setIsLinkFamilyOpen] = useState(false)
   useEffect(() => {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
@@ -434,7 +452,7 @@ export default function FamilyGraphApp() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
-  const [viewMode, setViewMode] = useState<TreeViewMode>('graph')
+  const [viewMode, setViewMode] = useState<TreeViewMode>('universe')
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
 
@@ -442,14 +460,53 @@ export default function FamilyGraphApp() {
     if (isDemoMode) return sampleFamilyMembers
     if (authLoading || dbLoading) return []
     if (!familyId) return []
-    return dbMembers.map(m => ({
+    const core = dbMembers.map(m => ({
       ...m,
       stories: storiesByMember[m.id] ?? [],
     }))
-  }, [isDemoMode, authLoading, familyId, dbLoading, dbMembers, storiesByMember])
+    // Merge linked family members as affiliated nodes (shown as Community cluster)
+    return [...core, ...linkedMembers]
+  }, [isDemoMode, authLoading, familyId, dbLoading, dbMembers, storiesByMember, linkedMembers])
 
-  // The "self" member is the root for degree calculations
-  const selfMember = members.find(m => m.relationship === 'self') ?? members[0] ?? null
+  // ── Activity feed — derived from real member + story data for logged-in users ─
+  const feedItems = useMemo<FamilyEvent[]>(() => {
+    if (isDemoMode) return []
+    const memberEvents: FamilyEvent[] = members
+      .filter(m => m.addedAt)
+      .map(m => ({
+        id: `member-${m.id}`,
+        type: 'member_added' as const,
+        actorName: 'Family Admin',
+        subjectName: m.name,
+        subjectId: m.id,
+        message: `added ${m.name} to the family tree`,
+        timestamp: m.addedAt!,
+        emoji: m.gender === 'female' ? '👩' : m.gender === 'male' ? '👨' : '👤',
+      }))
+    const storyEvents: FamilyEvent[] = Object.entries(storiesByMember).flatMap(([memberId, stories]) => {
+      const member = members.find(m => m.id === memberId)
+      if (!member) return []
+      return stories.map(s => ({
+        id: `story-${s.id}`,
+        type: 'story_added' as const,
+        actorName: s.author ?? 'Family Member',
+        subjectName: member.name,
+        subjectId: memberId,
+        message: `shared a story about ${member.name}: "${s.title}"`,
+        timestamp: s.createdAt,
+        emoji: '📖',
+      }))
+    })
+    return [...memberEvents, ...storyEvents]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 30)
+  }, [isDemoMode, members, storiesByMember])
+
+  // The "self" member — use profile.member_id (authoritative), then relationship, then claimed node
+  const selfMember = members.find(m => m.id === (profile as any)?.member_id)
+    ?? members.find(m => m.relationship === 'self')
+    ?? members.find(m => m.claimedByUserId === user?.id)
+    ?? null
   const filteredMembers = useMemo(() => {
     let base = maxDegree < 10 && selfMember
       ? filterByDegree(members, selfMember.id, maxDegree)
@@ -581,6 +638,7 @@ export default function FamilyGraphApp() {
     { key: 'graph', label: 'Graph', icon: Network },
     { key: 'orgchart', label: 'Org Chart', icon: GitBranch },
     { key: 'list', label: 'List', icon: List },
+    { key: 'universe', label: 'Universe', icon: Sparkles },
   ]
 
   return (
@@ -665,6 +723,22 @@ export default function FamilyGraphApp() {
               <span className="hidden sm:inline">Invite</span>
             </Button>
 
+            {/* Link another family tree */}
+            {user && (
+              <Button variant="ghost" size="sm"
+                onClick={() => setIsLinkFamilyOpen(true)}
+                className={cn('h-8 gap-1.5 text-xs relative text-teal-400 hover:bg-teal-500/10')}
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Link Family</span>
+                {linkedFamilies.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-500 text-[9px] font-bold text-white">
+                    {linkedFamilies.length}
+                  </span>
+                )}
+              </Button>
+            )}
+
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
             <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
@@ -690,7 +764,7 @@ export default function FamilyGraphApp() {
             <div className="flex items-center gap-3 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="font-medium text-amber-400">{score}% complete</span>
-                <span className="text-muted-foreground hidden sm:inline">— missing: {missing.slice(0, 3).join(', ')}{missing.length > 3 ? ` +${missing.length - 3} more` : ''}</span>
+                <span className="text-muted-foreground hidden sm:inline">— add: {missing.join(', ')}</span>
               </div>
               <Button
                 size="sm"
@@ -704,11 +778,33 @@ export default function FamilyGraphApp() {
           )
         })()}
 
+        {/* ── Pending family link requests banner ────────────────── */}
+        <div className="px-4 pt-3 space-y-2">
+          <FamilyLinkRequestsBanner familyId={familyId ?? null} />
+        </div>
+
+        {/* ── "Their tree just grew" real-time alert ───────────────── */}
+        {newMemberAlert && (
+          <div className="flex items-center gap-3 border-b border-teal-500/25 bg-teal-500/8 px-4 py-2.5 text-sm animate-in slide-in-from-top-1 duration-300">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-500/20 text-base">🌱</span>
+            <p className="flex-1 min-w-0 text-teal-300 text-xs">
+              <span className="font-semibold">{newMemberAlert.familyName}</span> just added{' '}
+              <span className="font-semibold text-white">{newMemberAlert.member.name}</span> to their tree — they appear in your universe now!
+            </p>
+            <button
+              onClick={clearNewMemberAlert}
+              className="text-teal-400/60 hover:text-teal-300 shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* ── Content Area ─────────────────────────────────────────── */}
         <div className="flex flex-1 overflow-hidden">
 
-          {/* Member list (graph mode, xl+ only) */}
-          {viewMode === 'graph' && (
+          {/* Member list sidebar — visible in graph + universe modes */}
+          {(viewMode === 'graph' || viewMode === 'universe') && (
             <aside
               className={cn(
                 'hidden shrink-0 border-r border-border/40 backdrop-blur-xl xl:block transition-all duration-200',
@@ -758,6 +854,14 @@ export default function FamilyGraphApp() {
             {viewMode === 'list' && (
               <ListView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
             )}
+            {viewMode === 'universe' && (
+              <RelationshipUniverse
+                members={filteredMembers}
+                selfMemberId={selfMember?.id ?? null}
+                selectedMemberId={selectedMemberId}
+                onSelectMember={handleSelectMember}
+              />
+            )}
 
             {/* Presence avatars — top right of canvas */}
             {viewMode === 'graph' && (
@@ -790,7 +894,7 @@ export default function FamilyGraphApp() {
 
           {/* Member Detail */}
           {selectedMember && !showAIWidget && !showInviteWidget && (
-            <aside className="w-80 shrink-0 xl:w-96">
+            <aside className="w-80 shrink-0 xl:w-96 h-full overflow-hidden">
               <MemberDetail
                 member={selectedMember}
                 allMembers={members}
@@ -816,7 +920,7 @@ export default function FamilyGraphApp() {
           {/* Feed panel */}
           {showFeed && !selectedMember && !showAIWidget && !showInviteWidget && (
             <aside className="w-80 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
-              <FamilyFeedPanel onClose={() => setShowFeed(false)} />
+              <FamilyFeedPanel onClose={() => setShowFeed(false)} feedItems={feedItems} />
             </aside>
           )}
         </div>
@@ -836,6 +940,14 @@ export default function FamilyGraphApp() {
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
       <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} onExport={handleExport} onImport={handleImport} />
+      <LinkFamilyDialog
+        open={isLinkFamilyOpen}
+        onOpenChange={setIsLinkFamilyOpen}
+        myFamilyName={(profile as any)?.family_name ?? 'My Family'}
+        linkedFamilies={linkedFamilies}
+        members={members.filter(m => m.networkGroup !== 'affiliated')}
+        onSendRequest={sendLinkRequest}
+      />
       <ClaimNodeDialog
         member={members.find(m => m.id === claimTargetId) ?? null}
         userId={user?.id ?? null}
@@ -868,9 +980,7 @@ export default function FamilyGraphApp() {
 
 // ─── Family Feed Panel ─────────────────────────────────────────────────────────
 
-function FamilyFeedPanel({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth()
-  const feedItems = !user ? familyFeed : []
+function FamilyFeedPanel({ onClose, feedItems }: { onClose: () => void; feedItems: FamilyEvent[] }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center justify-between border-b border-border/50 px-4">

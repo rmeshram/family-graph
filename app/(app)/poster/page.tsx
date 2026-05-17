@@ -109,7 +109,31 @@ export default function PosterPage() {
     }
   }, [familyName, toast])
 
-  const handleWhatsAppShare = useCallback(() => {
+  const handleWhatsAppShare = useCallback(async () => {
+    // Try to share the actual image via Web Share API (mobile)
+    try {
+      if (posterRef.current) {
+        const html2canvas = (await import('html2canvas')).default
+        const canvas = await html2canvas(posterRef.current!, {
+          backgroundColor: '#0F172A',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
+        })
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
+        if (blob && navigator.share) {
+          await navigator.share({
+            files: [new File([blob], `${familyName}-family-poster.png`, { type: 'image/png' })],
+            title: `${familyName} Family Tree`,
+          })
+          return
+        }
+      }
+    } catch {
+      // fall through to text link share
+    }
+    // Fallback: share link via WhatsApp
     const text = encodeURIComponent(
       `🌳 The ${familyName} Family Tree — explore our heritage at ${window.location.origin}/dashboard`
     )
@@ -120,7 +144,7 @@ export default function PosterPage() {
     <div className="flex flex-col min-h-screen bg-background overflow-x-hidden">
       <DemoBanner />
       {/* Controls */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-md px-6 py-3">
+      <div data-html2canvas-ignore className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-md px-6 py-3">
         <div className="flex items-center gap-2">
           <TreePine className="h-5 w-5 text-primary" />
           <span className="font-semibold">Family Poster</span>
@@ -160,14 +184,14 @@ export default function PosterPage() {
           {/* Header */}
           <div className="relative text-center mb-10">
             <div className="inline-flex items-center gap-2 mb-3">
-              <Heart className="h-5 w-5 text-rose-400" />
-              <span className="text-xs uppercase tracking-widest text-rose-400/80 font-medium">Family Tree</span>
-              <Heart className="h-5 w-5 text-rose-400" />
+              <Heart style={{ height: 20, width: 20, color: '#fb7185' }} />
+              <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.15em', color: 'rgba(251,113,133,0.8)', fontWeight: 500 }}>Family Tree</span>
+              <Heart style={{ height: 20, width: 20, color: '#fb7185' }} />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-1">
+            <h1 style={{ fontSize: 36, fontWeight: 700, color: '#ffffff', marginBottom: 4 }}>
               The {familyName} Family
             </h1>
-            <p className="text-sm text-white/50">
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
               {members.length} members across {generations.length} generations
             </p>
           </div>
@@ -177,15 +201,15 @@ export default function PosterPage() {
             {generations.map(([gen, genMembers]) => (
               <div key={gen}>
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="h-px flex-1 bg-white/10" />
-                  <span className="text-[10px] uppercase tracking-widest text-white/40 font-medium">
+                  <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.1)' }} />
+                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
                     {gen < 0
                       ? `${Math.abs(gen)} generation${Math.abs(gen) > 1 ? 's' : ''} back`
                       : gen === 0
                         ? 'Your generation'
                         : `Generation +${gen}`}
                   </span>
-                  <div className="h-px flex-1 bg-white/10" />
+                  <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.1)' }} />
                 </div>
                 <div className="flex flex-wrap justify-center gap-2">
                   {genMembers.map((m) => (
@@ -198,8 +222,8 @@ export default function PosterPage() {
 
           {/* Footer */}
           <div className="relative mt-10 text-center">
-            <div className="flex items-center justify-center gap-2 text-white/30 text-[10px]">
-              <Users className="h-3 w-3" />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
+              <Users style={{ height: 12, width: 12 }} />
               <span>Made with Family Graph • family-graph-app-phi.vercel.app</span>
             </div>
           </div>

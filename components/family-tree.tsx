@@ -889,7 +889,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                               : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
                       )}>{initials}</AvatarFallback>
                     </Avatar>
-                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: isUnclaimed ? 'rgba(148,163,184,0.7)' : 'var(--tree-node-name)' }}>
+                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: isUnclaimed ? 'rgba(148,163,184,0.7)' : 'var(--tree-node-text)' }}>
                       {member.name.split(' ')[0]}
                     </p>
                   </button>
