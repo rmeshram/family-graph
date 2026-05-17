@@ -428,10 +428,11 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   }, [view.x, view.y])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!drag.current) return
-    const dx = e.clientX - drag.current.sx, dy = e.clientY - drag.current.sy
+    const d = drag.current
+    if (!d) return
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy
     if (Math.hypot(dx, dy) > 3) isPanning.current = true
-    setView(v => ({ ...v, x: drag.current!.vx + dx, y: drag.current!.vy + dy }))
+    setView(v => ({ ...v, x: d.vx + dx, y: d.vy + dy }))
   }, [])
 
   const onPointerUp = useCallback(() => { drag.current = null }, [])
