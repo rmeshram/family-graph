@@ -28,7 +28,8 @@ async function authedClient() {
 
 // POST /api/family-links/[id]/revoke
 // Either side admin can revoke an accepted (or pending) link.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: link } = await admin
     .from('family_links')
     .select('id, family_a_id, family_b_id, status')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
 
   if (!link) return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { error } = await admin
     .from('family_links')
     .update({ status: 'revoked', updated_at: new Date().toISOString() } as any)
-    .eq('id', params.id)
+    .eq('id', id)
 
   if (error) {
     console.error('[revoke] update error:', error)
