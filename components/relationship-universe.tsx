@@ -47,6 +47,8 @@ interface UPerson {
   verified: boolean
   depth: number
   hasChildren: boolean
+  isBirthday: boolean
+  birthdayDaysAway: number | null  // 0 = today, 1-6 = upcoming this week
 }
 
 interface UEdge {
@@ -101,6 +103,25 @@ function deterministicJitter(id: string): number {
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
   return ((h % (JITTER_SCALE * 2 + 1)) - JITTER_SCALE)
+}
+
+/** Returns days until this person's next birthday (0 = today, null = unknown). */
+function daysUntilBirthday(m: FamilyMember): number | null {
+  let month: number | undefined, day: number | undefined
+  if (m.dateOfBirth) {
+    const d = new Date(m.dateOfBirth)
+    if (!isNaN(d.getTime())) { month = d.getMonth() + 1; day = d.getDate() }
+  } else {
+    month = m.birthMonth; day = m.birthDay
+  }
+  if (!month || !day) return null
+  const now = new Date()
+  const thisYear = new Date(now.getFullYear(), month - 1, day)
+  const diff = Math.ceil((thisYear.getTime() - now.setHours(0, 0, 0, 0)) / 86_400_000)
+  if (diff >= 0) return diff
+  // already passed this year — next birthday is next year
+  const nextYear = new Date(now.getFullYear() + 1, month - 1, day)
+  return Math.ceil((nextYear.getTime() - Date.now()) / 86_400_000)
 }
 
 /**
@@ -303,6 +324,7 @@ export function buildUniverse(
       : m.name.substring(0, 2).toUpperCase()
 
     const size = d === 0 ? 1.7 : d === 1 ? 1.28 : d === 2 ? 1.0 : d === 3 ? 0.82 : 0.68
+    const daysAway = daysUntilBirthday(m)
 
     people.push({
       id: m.id, name: m.name, initials, category: cat,
@@ -313,6 +335,8 @@ export function buildUniverse(
       verified: !!m.claimedByUserId,
       depth: d,
       hasChildren: parentOf.has(m.id),
+      isBirthday: daysAway !== null && daysAway <= 6,
+      birthdayDaysAway: daysAway,
     })
   }
 
@@ -403,6 +427,43 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   const [size, setSize] = useState({ w: 1200, h: 800 })
   const drag = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null)
   const isPanning = useRef(false)
+  // Inertia
+  const velRef = useRef({ vx: 0, vy: 0 })
+  const lastPosRef = useRef({ x: 0, y: 0, t: 0 })
+  const inertiaRaf = useRef<number | null>(null)
+
+  // ── Path-finding ─────────────────────────────────────────────────────────
+  const [pathFrom, setPathFrom] = useState<string | null>(null)
+  const [pathNodes, setPathNodes] = useState<Set<string>>(new Set())
+  const [pathEdges, setPathEdges] = useState<Set<string>>(new Set())
+
+  const findPath = useCallback((fromId: string, toId: string) => {
+    if (fromId === toId) { setPathNodes(new Set([fromId])); setPathEdges(new Set()); return }
+    const parent = new Map<string, string>([[fromId, '']])
+    const queue = [fromId]
+    let found = false
+    outer: while (queue.length > 0) {
+      const cur = queue.shift()!
+      for (const nid of (adjacencyMap.get(cur) ?? new Set())) {
+        if (!parent.has(nid)) {
+          parent.set(nid, cur)
+          if (nid === toId) { found = true; break outer }
+          queue.push(nid)
+        }
+      }
+    }
+    if (!found) { setPathNodes(new Set()); setPathEdges(new Set()); return }
+    const nodes: string[] = [], edgeKeys = new Set<string>()
+    let cur = toId
+    while (cur) {
+      nodes.unshift(cur)
+      const prev = parent.get(cur)!
+      if (prev) edgeKeys.add([prev, cur].sort().join('|'))
+      cur = prev
+    }
+    setPathNodes(new Set(nodes))
+    setPathEdges(edgeKeys)
+  }, [adjacencyMap])
 
   useEffect(() => {
     const update = () => {
@@ -415,6 +476,9 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
     return () => window.removeEventListener('resize', update)
   }, [])
 
+  // Cancel any in-flight inertia animation on unmount
+  useEffect(() => () => { if (inertiaRaf.current) cancelAnimationFrame(inertiaRaf.current) }, [])
+
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     const factor = e.deltaY < 0 ? 1.08 : 0.92
@@ -422,8 +486,11 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   }, [])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (inertiaRaf.current) { cancelAnimationFrame(inertiaRaf.current); inertiaRaf.current = null }
     ; (e.target as Element).setPointerCapture?.(e.pointerId)
     drag.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }
+    velRef.current = { vx: 0, vy: 0 }
+    lastPosRef.current = { x: e.clientX, y: e.clientY, t: Date.now() }
     isPanning.current = false
   }, [view.x, view.y])
 
@@ -432,12 +499,32 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
     if (!d) return
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy
     if (Math.hypot(dx, dy) > 3) isPanning.current = true
-    // Capture both values as primitives so the updater has no ref dependency
+    // Track velocity for inertia
+    const now = Date.now(), dt = now - lastPosRef.current.t
+    if (dt > 0 && dt < 80) {
+      velRef.current.vx = (e.clientX - lastPosRef.current.x) / dt * 14
+      velRef.current.vy = (e.clientY - lastPosRef.current.y) / dt * 14
+    }
+    lastPosRef.current = { x: e.clientX, y: e.clientY, t: now }
     const nx = d.vx + dx, ny = d.vy + dy
     setView(v => ({ ...v, x: nx, y: ny }))
   }, [])
 
-  const onPointerUp = useCallback(() => { drag.current = null }, [])
+  const onPointerUp = useCallback(() => {
+    drag.current = null
+    const { vx, vy } = velRef.current
+    if (Math.hypot(vx, vy) < 0.8) return
+    const step = () => {
+      velRef.current.vx *= 0.90
+      velRef.current.vy *= 0.90
+      if (Math.hypot(velRef.current.vx, velRef.current.vy) < 0.4) {
+        inertiaRaf.current = null; return
+      }
+      setView(v => ({ ...v, x: v.x + velRef.current.vx, y: v.y + velRef.current.vy }))
+      inertiaRaf.current = requestAnimationFrame(step)
+    }
+    inertiaRaf.current = requestAnimationFrame(step)
+  }, [])
 
   const cx = size.w / 2 + view.x
   const cy = size.h / 2 + view.y
@@ -481,6 +568,7 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   // ── Opacity helpers ──────────────────────────────────────────────────────
   // Visual noise reduction: edges ~8% by default; connections emerge on interaction.
   function nodeOpacity(p: UPerson): number {
+    if (pathNodes.size > 0) return pathNodes.has(p.id) ? 1 : 0.18
     if (selectedMemberId) {
       if (p.id === selectedMemberId) return 1
       if (adjacentToFocus.has(p.id)) return 0.82
@@ -495,6 +583,7 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   }
 
   function edgeOpacity(e: UEdge): number {
+    if (pathEdges.size > 0) return pathEdges.has(e.id) ? 1 : 0.04
     const fid = selectedMemberId ?? hoveredId
     if (fid) {
       const connected = e.from === fid || e.to === fid
@@ -545,6 +634,7 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
       onPointerCancel={onPointerUp}
+      onClick={() => { setPathNodes(new Set()); setPathEdges(new Set()) }}
     >
 
       {/* ── SVG: atmospheric depth blooms + edges ──────────────────── */}
@@ -590,9 +680,10 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
             const qx = mx + nx * curve, qy = my + ny * curve
 
             const opacity = edgeOpacity(e)
-            const stroke = EDGE_COLOR[e.kind]
-            const dash = e.kind === 'suggested' ? '3 8' : e.kind === 'community' ? '2 6' : 'none'
-            const strokeW = e.kind === 'marriage' ? 1.6 : 1.0
+            const isPathEdge = pathEdges.has(e.id)
+            const stroke = isPathEdge ? '#facc15' : EDGE_COLOR[e.kind]
+            const dash = isPathEdge ? 'none' : (e.kind === 'suggested' ? '3 8' : e.kind === 'community' ? '2 6' : 'none')
+            const strokeW = isPathEdge ? 2.5 : (e.kind === 'marriage' ? 1.6 : 1.0)
 
             return (
               <g key={e.id} opacity={opacity} style={{ transition: 'opacity 0.42s ease' }}>
@@ -655,7 +746,14 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                   )}
                   onClick={ev => {
                     ev.stopPropagation()
-                    if (!isPanning.current) onSelectMember(p.id)
+                    if (isPanning.current) return
+                    if (ev.shiftKey && selectedMemberId && selectedMemberId !== p.id) {
+                      findPath(selectedMemberId, p.id)
+                    } else {
+                      onSelectMember(p.id)
+                      setPathNodes(new Set())
+                      setPathEdges(new Set())
+                    }
                   }}
                   onMouseEnter={() => setHoveredId(p.id)}
                   onMouseLeave={() => setHoveredId(null)}
@@ -672,6 +770,29 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                   {p.verified && (
                     <span className="absolute -inset-[3px] rounded-full border-2 opacity-68"
                       style={{ borderColor: 'oklch(0.95 0.03 230 / 0.72)' }} />
+                  )}
+                  {/* Birthday pulse ring */}
+                  {p.isBirthday && (
+                    <span
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        inset: `-${Math.round(r * 0.20)}px`,
+                        border: '2px solid #facc15',
+                        boxShadow: '0 0 10px rgba(250,204,21,0.85), 0 0 22px rgba(250,204,21,0.4)',
+                        animation: 'birthdayPulse 2s ease-in-out infinite',
+                      }}
+                    />
+                  )}
+                  {/* Path highlight ring */}
+                  {pathNodes.has(p.id) && pathNodes.size > 1 && (
+                    <span
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        inset: `-${Math.round(r * 0.14)}px`,
+                        border: '2px solid #facc15',
+                        opacity: 0.88,
+                      }}
+                    />
                   )}
                   {/* Selected orbit ring */}
                   {isSelected && (
@@ -706,6 +827,13 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                           {label}{showCity && p.city ? ` · ${p.city}` : ''}
                         </span>
                       )}
+                      {/* Birthday badge */}
+                      {p.isBirthday && (
+                        <span className="block leading-tight mt-0.5"
+                          style={{ fontSize: Math.max(8, Math.min(11, r * 0.34)), color: '#facc15' }}>
+                          {p.birthdayDaysAway === 0 ? '🎂 Today!' : `🎂 in ${p.birthdayDaysAway}d`}
+                        </span>
+                      )}
                     </span>
                   )}
                 </button>
@@ -714,6 +842,16 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
           })}
         </AnimatePresence>
       </div>
+
+      {/* ── Path overlay pill ──────────────────────────────────────── */}
+      {pathNodes.size > 1 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+          <span className="px-3 py-1.5 rounded-full text-sm font-semibold text-black"
+            style={{ background: '#facc15', boxShadow: '0 2px 12px rgba(250,204,21,0.6)' }}>
+            {pathNodes.size - 1} step{pathNodes.size - 1 !== 1 ? 's' : ''} apart
+          </span>
+        </div>
+      )}
 
       {/* ── Filter chips ───────────────────────────────────────────── */}
       <div className="absolute top-4 left-4 z-30 flex flex-col gap-1.5" style={{ zIndex: 10 }}>
