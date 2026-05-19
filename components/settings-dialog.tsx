@@ -18,10 +18,11 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2,
+  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2, Copy, Share2, AlertCircle, UserCheck,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 
 interface FamilyProfile {
   id: string
@@ -86,23 +87,39 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
   const respondToLink = async (id: string, action: 'accept' | 'reject') => {
     setRespondingId(id)
     try {
-      await fetch(`/api/family-links/${id}/respond`, {
+      const res = await fetch(`/api/family-links/${id}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.message ?? data.error ?? `Failed to ${action} link`)
+      }
       await fetchLinkedData()
-    } catch { }
-    setRespondingId(null)
+      toast.success(action === 'accept' ? 'Family link accepted' : 'Family link rejected')
+    } catch (err: any) {
+      toast.error(err?.message ?? `Could not ${action} link`)
+    } finally {
+      setRespondingId(null)
+    }
   }
 
   const revokeLink = async (id: string) => {
     setRevokingId(id)
     try {
-      await fetch(`/api/family-links/${id}/revoke`, { method: 'POST' })
+      const res = await fetch(`/api/family-links/${id}/revoke`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.message ?? data.error ?? 'Failed to revoke link')
+      }
       await fetchLinkedData()
-    } catch { }
-    setRevokingId(null)
+      toast.success('Family link revoked')
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not revoke link')
+    } finally {
+      setRevokingId(null)
+    }
   }
 
   // Privacy mode
@@ -122,6 +139,114 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
     await supabase.from('families').update({ privacy_mode: mode } as any).eq('id', familyId)
     setSavingPrivacy(false)
   }
+
+  // ── Invite code ─────────────────────────────────────────────────────────
+  const [familyInviteCode, setFamilyInviteCode] = useState<string | null>(null)
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [loadingInvite, setLoadingInvite] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState(false)
+
+  const fetchInviteCode = useCallback(async () => {
+    if (!familyId) return
+    setLoadingInvite(true)
+    try {
+      const { data } = await (supabase as any)
+        .from('invite_links')
+        .select('code, expires_at')
+        .eq('family_id', familyId)
+        .is('node_id', null)
+        .is('consumed_at', null)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data?.code) {
+        setFamilyInviteCode(data.code)
+        setInviteLink(`${window.location.origin}/join/${data.code}`)
+      } else {
+        setFamilyInviteCode(null)
+        setInviteLink(null)
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not load invite link')
+    } finally {
+      setLoadingInvite(false)
+    }
+  }, [familyId, supabase])
+
+  const generateInviteCode = useCallback(async () => {
+    if (!familyId || !user) return
+    setLoadingInvite(true)
+    try {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+      const code = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      const { error } = await supabase.from('invite_links').insert({
+        family_id: familyId, code, role: 'contributor',
+        created_by: user.id, expires_at: expiresAt, max_uses: 100, invite_type: 'family',
+      } as any)
+      if (error) throw new Error(error.message)
+      setFamilyInviteCode(code)
+      setInviteLink(`${window.location.origin}/join/${code}`)
+      toast.success('New family invite link created')
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not create invite link')
+    } finally {
+      setLoadingInvite(false)
+    }
+  }, [familyId, user, supabase])
+
+  const copyInviteLink = useCallback(() => {
+    if (!inviteLink) return
+    navigator.clipboard.writeText(inviteLink).then(
+      () => {
+        setCopiedInvite(true)
+        setTimeout(() => setCopiedInvite(false), 2000)
+        toast.success('Invite link copied')
+      },
+      () => toast.error('Could not copy to clipboard')
+    )
+  }, [inviteLink])
+
+  // ── Pending claims ───────────────────────────────────────────────────────
+  const [pendingClaims, setPendingClaims] = useState<any[]>([])
+  const [loadingClaims, setLoadingClaims] = useState(false)
+  const [reviewingId, setReviewingId] = useState<string | null>(null)
+
+  const fetchPendingClaims = useCallback(async () => {
+    if (!isAdmin) return
+    setLoadingClaims(true)
+    try {
+      const res = await fetch('/api/claims/pending')
+      if (!res.ok) throw new Error('Failed to load claims')
+      setPendingClaims((await res.json()).claims ?? [])
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not load pending claims')
+    } finally {
+      setLoadingClaims(false)
+    }
+  }, [isAdmin])
+
+  const reviewClaim = useCallback(async (id: string, action: 'approve' | 'reject') => {
+    setReviewingId(id)
+    try {
+      const res = await fetch(`/api/claims/${id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.message ?? data.error ?? `Failed to ${action} claim`)
+      }
+      toast.success(action === 'approve' ? 'Claim approved' : 'Claim rejected')
+      await fetchPendingClaims()
+    } catch (err: any) {
+      toast.error(err?.message ?? `Could not ${action} claim`)
+    } finally {
+      setReviewingId(null)
+    }
+  }, [fetchPendingClaims])
 
   // Family members management
   const [familyProfiles, setFamilyProfiles] = useState<FamilyProfile[]>([])
@@ -150,15 +275,35 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
     if (open && isAdmin) fetchLinkedData()
   }, [open, isAdmin, fetchLinkedData])
 
+  useEffect(() => {
+    if (open) fetchInviteCode()
+  }, [open, fetchInviteCode])
+
+  useEffect(() => {
+    if (open && isAdmin) fetchPendingClaims()
+  }, [open, isAdmin, fetchPendingClaims])
+
   const updateRole = async (userId: string, role: string) => {
-    await supabase.from('profiles').update({ role }).eq('id', userId)
-    setFamilyProfiles(prev => prev.map(p => p.id === userId ? { ...p, role } : p))
+    try {
+      const { error } = await supabase.from('profiles').update({ role }).eq('id', userId)
+      if (error) throw new Error(error.message)
+      setFamilyProfiles(prev => prev.map(p => p.id === userId ? { ...p, role } : p))
+      toast.success('Role updated')
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not update role')
+    }
   }
 
   const removeFromFamily = async (userId: string) => {
     if (userId === user?.id) return // can't remove self
-    await supabase.from('profiles').update({ family_id: null, role: 'viewer' }).eq('id', userId)
-    setFamilyProfiles(prev => prev.filter(p => p.id !== userId))
+    try {
+      const { error } = await supabase.from('profiles').update({ family_id: null, role: 'viewer' }).eq('id', userId)
+      if (error) throw new Error(error.message)
+      setFamilyProfiles(prev => prev.filter(p => p.id !== userId))
+      toast.success('Member removed from family')
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not remove member')
+    }
   }
 
   const roleIcon = (role: string) => {
@@ -186,8 +331,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
             <TabsTrigger value="general" className="flex-1">General</TabsTrigger>
             <TabsTrigger value="team" className="flex-1">
               Family Members
-              {familyProfiles.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5 h-4 text-[10px] px-1">{familyProfiles.length}</Badge>
+              {(familyProfiles.length > 0 || pendingClaims.length > 0) && (
+                <Badge variant="secondary" className="ml-1.5 h-4 text-[10px] px-1">
+                  {pendingClaims.length > 0 ? `${pendingClaims.length}⚠` : familyProfiles.length}
+                </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="privacy" className="flex-1">Privacy</TabsTrigger>
@@ -306,10 +453,139 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                 )}
               </CardContent>
             </Card>
+
+            {/* Share Family card */}
+            <Card className="bg-muted/30 border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Share2 className="h-4 w-4 text-muted-foreground" />
+                  Share Your Family
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {!familyId ? (
+                  <p className="text-xs text-muted-foreground">Sign in and complete onboarding to get an invite link.</p>
+                ) : loadingInvite ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading invite link…
+                  </div>
+                ) : familyInviteCode ? (
+                  <>
+                    <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border/50 px-3 py-2">
+                      <code className="flex-1 text-xs font-mono text-foreground truncate">{inviteLink}</code>
+                      <button
+                        onClick={copyInviteLink}
+                        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy link"
+                      >
+                        {copiedInvite ? <CheckCircle2 className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Code: <span className="font-mono font-bold text-foreground tracking-widest">{familyInviteCode}</span>
+                      {' '}· Share this link with family members to let them join
+                    </p>
+                    <Button size="sm" variant="outline" className="w-full" onClick={copyInviteLink}>
+                      {copiedInvite ? <><CheckCircle2 className="h-3.5 w-3.5 mr-2 text-green-400" />Copied!</> : <><Copy className="h-3.5 w-3.5 mr-2" />Copy Invite Link</>}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">No active invite link. Generate one to share your family.</p>
+                    <Button size="sm" className="w-full" onClick={generateInviteCode} disabled={loadingInvite}>
+                      {loadingInvite ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Share2 className="h-3.5 w-3.5 mr-2" />}
+                      Generate Invite Link
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ── Team / Family Members ─────────────────────────────── */}
-          <TabsContent value="team" className="mt-0">
+          <TabsContent value="team" className="mt-0 space-y-4">
+            {/* Pending Claims — admin only */}
+            {isAdmin && (
+              <Card className="bg-muted/30 border-amber-500/20">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <UserCheck className="h-4 w-4 text-amber-400" />
+                    Pending Claim Requests
+                    {pendingClaims.length > 0 && (
+                      <Badge className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">
+                        {pendingClaims.length} pending
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingClaims ? (
+                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading claims…
+                    </div>
+                  ) : pendingClaims.length === 0 ? (
+                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                      <CheckCircle2 className="h-4 w-4 text-green-400" />
+                      No pending claims — all clear!
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/30">
+                      {pendingClaims.map((c: any) => (
+                        <div key={c.id} className="px-4 py-3 space-y-2">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground">
+                                <span className="text-amber-400">{c.claimantName}</span>
+                                {' '}wants to claim{' '}
+                                <span className="font-semibold">{c.nodeName}</span>
+                              </p>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                                {c.submittedName && (
+                                  <span className="text-[11px] text-muted-foreground">
+                                    Submitted: <span className="text-foreground/70">{c.submittedName}</span>
+                                    {c.submittedBirthYear && ` (${c.submittedBirthYear})`}
+                                  </span>
+                                )}
+                                {c.confidenceScore != null && (
+                                  <span className={`text-[11px] font-medium ${c.confidenceScore >= 60 ? 'text-green-400' : c.confidenceScore >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                                    {c.confidenceScore}% match
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-muted-foreground/60">
+                                  {new Date(c.createdAt).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 pl-7">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10 flex-1"
+                              disabled={reviewingId === c.id}
+                              onClick={() => reviewClaim(c.id, 'reject')}
+                            >
+                              {reviewingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-500 text-white flex-1"
+                              disabled={reviewingId === c.id}
+                              onClick={() => reviewClaim(c.id, 'approve')}
+                            >
+                              {reviewingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Members with access */}
             <Card className="bg-muted/30 border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -513,8 +789,8 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                             key={t}
                             onClick={() => setLinkedTab(t)}
                             className={`text-xs px-2.5 py-1 rounded-full transition-colors capitalize ${linkedTab === t
-                                ? 'bg-primary/20 text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
+                              ? 'bg-primary/20 text-primary'
+                              : 'text-muted-foreground hover:text-foreground'
                               }`}
                           >
                             {t}
@@ -575,8 +851,8 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                                 <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
                               </div>
                               <Badge variant="outline" className={`text-[10px] capitalize ${r.status === 'pending' ? 'border-amber-500/30 text-amber-400' :
-                                  r.status === 'rejected' ? 'border-red-500/30 text-red-400' :
-                                    'border-border/50 text-muted-foreground'
+                                r.status === 'rejected' ? 'border-red-500/30 text-red-400' :
+                                  'border-border/50 text-muted-foreground'
                                 }`}>
                                 {r.status === 'pending' && <Clock className="h-2.5 w-2.5 mr-1" />}
                                 {r.status === 'rejected' && <XCircle className="h-2.5 w-2.5 mr-1" />}

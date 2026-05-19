@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Loader2, CheckCircle2, XCircle, TreePine, ArrowRight, Share2, Heart, Users, User, GitBranch, UserPlus } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, TreePine, ArrowRight, Share2, Heart, Users, User, GitBranch, UserPlus, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'joining' | 'success' | 'error'
+type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'node_claim' | 'joining' | 'success' | 'error'
 type RelType = 'spouse' | 'child' | 'parent' | 'sibling' | 'relative' | 'skip'
 
 interface FamilyPreview {
@@ -52,6 +52,12 @@ export default function JoinPage() {
   const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null) // null = create new
 
+  // node_claim invite state (B2)
+  const [nodeClaim, setNodeClaim] = useState<{ nodeId: string; identityHint: string | null; familyId: string } | null>(null)
+  const [ncName, setNcName] = useState('')
+  const [ncBirthYear, setNcBirthYear] = useState('')
+  const [ncAttempts, setNcAttempts] = useState<number | null>(null)
+
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -68,6 +74,26 @@ export default function JoinPage() {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const inv = invite as any
+
+      // A4: validate expiry, consumption, and max_uses at initial load.
+      if (inv.expires_at && new Date(inv.expires_at) < new Date()) {
+        setStatus('error'); setMessage('This invite link has expired. Ask the sender for a new one.'); return
+      }
+      if (inv.consumed_at) {
+        setStatus('error'); setMessage('This invite has already been used.'); return
+      }
+      if (inv.max_uses && inv.used_count >= inv.max_uses) {
+        setStatus('error'); setMessage('This invite has reached its user limit.'); return
+      }
+
+      // B2: node_claim invites must use the verified-claim flow. Show inline
+      // identity verification (name + birth year) before joining.
+      if (inv.invite_type === 'node_claim' && inv.node_id) {
+        setNodeClaim({ nodeId: inv.node_id, identityHint: inv.identity_hint ?? null, familyId: inv.family_id })
+        setStatus('node_claim')
+        return
+      }
+
       const familyName = inv.families?.name ?? 'this family'
 
       // Inviter name
@@ -155,6 +181,57 @@ export default function JoinPage() {
       setTimeout(() => router.push('/dashboard'), 2000)
     } catch (e: unknown) {
       setStatus('error')
+      setMessage(e instanceof Error ? e.message : 'Something went wrong')
+    }
+  }
+
+  // B2: handler for node_claim invites — verifies identity via /api/nodes/[id]/claim,
+  // then sets profile.family_id so the user lands in the family.
+  const handleNodeClaim = async () => {
+    if (!nodeClaim) return
+    if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
+    if (!ncName.trim()) return
+    const by = ncBirthYear.trim() ? parseInt(ncBirthYear.trim(), 10) : undefined
+    if (ncBirthYear.trim() && (Number.isNaN(by!) || by! < 1800 || by! > new Date().getFullYear())) {
+      setMessage('Please enter a valid birth year'); return
+    }
+    setStatus('joining')
+    setMessage('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push(`/auth/signin?next=/join/${code}`); return }
+
+      const res = await fetch(`/api/nodes/${nodeClaim.nodeId}/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submittedName: ncName.trim(), submittedBirthYear: by ?? null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (typeof data.attemptsLeft === 'number') setNcAttempts(data.attemptsLeft)
+        setStatus('node_claim')
+        setMessage(data.message ?? data.error ?? 'Verification failed')
+        return
+      }
+
+      // On success the claim API has updated user_node_links + profiles.member_id.
+      // Also bind this user's profile to the family + role so RLS lets them in.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const profUpdate = supabase.from('profiles') as any
+      await profUpdate.update({ family_id: nodeClaim.familyId, role: 'contributor' }).eq('id', user.id)
+
+      // Consume the single-use node_claim invite
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const inviteUpd = supabase.from('invite_links') as any
+      await inviteUpd
+        .update({ consumed_at: new Date().toISOString(), used_count: 1 })
+        .eq('code', code.toUpperCase())
+        .is('consumed_at', null)
+
+      setStatus('success')
+      setTimeout(() => router.push('/dashboard'), 2000)
+    } catch (e: unknown) {
+      setStatus('node_claim')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
     }
   }
@@ -396,6 +473,70 @@ export default function JoinPage() {
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </div>
+            </div>
+          )}
+
+          {/* ── Node Claim Verification (B2) ──────────────────── */}
+          {status === 'node_claim' && nodeClaim && (
+            <div className="p-6 space-y-5">
+              <div className="text-center">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/30 mb-3">
+                  <Shield className="h-5 w-5 text-blue-400" />
+                </div>
+                <h2 className="text-lg font-bold">Claim your profile</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {nodeClaim.identityHint
+                    ? <>This invite is for <span className="text-foreground font-semibold">{nodeClaim.identityHint}</span>. Confirm your identity to claim this profile.</>
+                    : <>Confirm your identity to claim this profile.</>}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Your full name (as on the tree)</label>
+                  <Input
+                    placeholder="e.g. Rahul Sharma"
+                    value={ncName}
+                    onChange={e => setNcName(e.target.value)}
+                    className="h-10 bg-muted/50 border-border"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Birth year (optional but recommended)</label>
+                  <Input
+                    placeholder="e.g. 1985"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={ncBirthYear}
+                    onChange={e => setNcBirthYear(e.target.value.replace(/\D/g, ''))}
+                    className="h-10 bg-muted/50 border-border"
+                  />
+                </div>
+              </div>
+
+              {message && (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-xs text-destructive">
+                  {message}
+                  {ncAttempts !== null && (
+                    <span className="ml-1 text-destructive/70">({ncAttempts} attempt{ncAttempts === 1 ? '' : 's'} left)</span>
+                  )}
+                </div>
+              )}
+
+              <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-muted-foreground">
+                <Shield className="inline h-3.5 w-3.5 mr-1 text-blue-400" />
+                Identity verification protects family members from impersonation. After 3 failed attempts, this claim is locked.
+              </div>
+
+              <Button
+                onClick={handleNodeClaim}
+                disabled={!ncName.trim()}
+                className="w-full h-11 bg-primary hover:bg-primary/90"
+              >
+                {isAuthed ? 'Verify & Claim Profile' : 'Sign in & Claim'}
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
             </div>
           )}
 

@@ -104,7 +104,18 @@ export function useJoinFamily() {
 
     if (inviteErr || !invite) throw new Error('Invalid or expired invite code')
     if (invite.expires_at && new Date(invite.expires_at) < new Date()) throw new Error('Invite link has expired')
-    if (invite.max_uses && invite.used_count >= invite.max_uses) throw new Error('Invite link is full')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inviteAny = invite as any
+    if (inviteAny.consumed_at) throw new Error('This invite has already been used')
+    if (invite.max_uses && invite.used_count >= invite.max_uses) throw new Error('This invite has reached its user limit')
+
+    // A1: node_claim invites must go through the identity-verification flow.
+    // Only allow joinWithCode if the caller explicitly targets the linked node.
+    if (inviteAny.invite_type === 'node_claim') {
+      if (!opts?.claimMemberId || opts.claimMemberId !== inviteAny.node_id) {
+        throw new Error('This invite requires identity verification — open the claim link from your email')
+      }
+    }
 
     // 2. Update profile with family_id + role
     const { error: profileErr } = await supabase.from('profiles').update({
@@ -126,7 +137,16 @@ export function useJoinFamily() {
         display_name: opts.displayName || undefined,
       }).eq('id', userId)
 
-      await supabase.from('invite_links').update({ used_count: invite.used_count + 1 }).eq('id', invite.id)
+      // Atomic increment with boundary check (A6)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const incrQ = supabase.from('invite_links') as any
+      let chain = incrQ
+        .update({ used_count: invite.used_count + 1, consumed_at: new Date().toISOString() })
+        .eq('id', invite.id)
+        .eq('used_count', invite.used_count)
+      if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
+      const { error: incErr } = await chain
+      if (incErr) throw new Error('This invite was just used by someone else. Please request a new one.')
       return invite.family_id
     }
 
@@ -237,8 +257,19 @@ export function useJoinFamily() {
       }
     }
 
-    // 5. Increment used_count
-    await supabase.from('invite_links').update({ used_count: invite.used_count + 1 }).eq('id', invite.id)
+    // 5. Atomic increment with boundary check (A6) to prevent over-consumption
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const incrQuery = supabase.from('invite_links') as any
+    let incrChain = incrQuery
+      .update({ used_count: invite.used_count + 1 })
+      .eq('id', invite.id)
+      .eq('used_count', invite.used_count)
+    if (invite.max_uses) incrChain = incrChain.lt('used_count', invite.max_uses)
+    const { error: incrErr } = await incrChain
+    if (incrErr) {
+      // Lost the race — another joiner consumed the slot. Surface a retryable error.
+      throw new Error('This invite was just used by someone else. Please request a new one.')
+    }
 
     return invite.family_id
   }, [supabase])
