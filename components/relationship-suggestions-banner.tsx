@@ -24,12 +24,14 @@ const KIND_LABEL: Record<RelationshipSuggestion['kind'], string> = {
   sibling: 'Sibling Detected',
   spouse: 'Possible Couple',
   'in-law': 'In-law Inferred',
+  extended: 'Extended Family',
 }
 
 const KIND_COLOR: Record<RelationshipSuggestion['kind'], string> = {
-  sibling: '#60a5fa',  // blue
-  spouse: '#f472b6',  // pink
-  'in-law': '#a78bfa',  // violet
+  sibling: '#60a5fa',   // blue
+  spouse: '#f472b6',   // pink
+  'in-law': '#a78bfa', // violet
+  extended: '#34d399', // emerald
 }
 
 export function RelationshipSuggestionsBanner({ suggestions, onAccept, onDismiss, onDismissAll }: Props) {
@@ -113,9 +115,15 @@ export function RelationshipSuggestionsBanner({ suggestions, onAccept, onDismiss
 
                 {/* Names */}
                 <p className="text-sm font-semibold text-foreground mb-0.5">
-                  {s.fromName}
-                  <span className="text-muted-foreground font-normal mx-1.5">and</span>
-                  {s.toName}
+                  {hasActions ? (
+                    <>
+                      {s.fromName}
+                      <span className="text-muted-foreground font-normal mx-1.5">and</span>
+                      {s.toName}
+                    </>
+                  ) : (
+                    s.label
+                  )}
                 </p>
 
                 {/* Reason */}
@@ -146,8 +154,8 @@ export function RelationshipSuggestionsBanner({ suggestions, onAccept, onDismiss
                     )}
                   </button>
                 ) : (
-                  <p className="text-[11px] text-muted-foreground/60 italic">
-                    Already visible in the graph — no action needed.
+                  <p className="text-[11px] italic" style={{ color: `${color}99` }}>
+                    ✓ Already traversable in the tree
                   </p>
                 )}
               </motion.div>

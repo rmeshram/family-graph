@@ -28,6 +28,47 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight } from 'lucide-react'
 import { getInverseRelationship } from '@/lib/relationship-engine'
+import { computeRelationLabel } from '@/lib/relation-engine'
+
+// Map verbose BFS labels to dropdown values ("Paternal Uncle (Chacha/Tau)" -> "paternal-uncle")
+function bfsLabelToRelType(label: string): string | null {
+  const l = label.toLowerCase()
+  if (l === 'self') return 'self'
+  if (l.includes('paternal uncle')) return 'paternal-uncle'
+  if (l.includes('paternal aunt')) return 'paternal-aunt'
+  if (l.includes('maternal uncle')) return 'maternal-uncle'
+  if (l.includes('maternal aunt')) return 'maternal-aunt'
+  if (l.includes('father-in-law')) return 'father-in-law'
+  if (l.includes('mother-in-law')) return 'mother-in-law'
+  if (l.includes('son-in-law')) return 'son-in-law'
+  if (l.includes('daughter-in-law')) return 'daughter-in-law'
+  if (l.includes('brother-in-law')) return 'brother-in-law'
+  if (l.includes('sister-in-law')) return 'sister-in-law'
+  if (l.includes('step-father') || l.includes('step father')) return 'step-father'
+  if (l.includes('step-mother') || l.includes('step mother')) return 'step-mother'
+  if (l.includes('great-grandfather') || l.includes('great grandfather')) return 'great-grandfather'
+  if (l.includes('great-grandmother') || l.includes('great grandmother')) return 'great-grandmother'
+  if (l.startsWith('grandfather')) return 'grandfather'
+  if (l.startsWith('grandmother')) return 'grandmother'
+  if (l.startsWith('grandson')) return 'grandson'
+  if (l.startsWith('granddaughter')) return 'granddaughter'
+  if (l.includes('first cousin')) return 'first-cousin'
+  if (l.includes('second cousin')) return 'second-cousin'
+  if (l.startsWith('father')) return 'father'
+  if (l.startsWith('mother')) return 'mother'
+  if (l.startsWith('son')) return 'son'
+  if (l.startsWith('daughter')) return 'daughter'
+  if (l.startsWith('husband')) return 'husband'
+  if (l.startsWith('wife')) return 'wife'
+  if (l.startsWith('brother')) return 'brother'
+  if (l.startsWith('sister')) return 'sister'
+  if (l.startsWith('uncle')) return 'uncle'
+  if (l.startsWith('aunt')) return 'aunt'
+  if (l.startsWith('nephew')) return 'nephew'
+  if (l.startsWith('niece')) return 'niece'
+  if (l.startsWith('cousin')) return 'cousin'
+  return null
+}
 
 interface AddMemberDialogProps {
   open: boolean
@@ -115,6 +156,53 @@ export function AddMemberDialog({
   const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // ── Smart co-parent auto-fill ───────────────────────────────────────────
+  const handleFatherChange = (value: string) => {
+    setFatherId(value)
+    if (value && value !== 'none') {
+      const father = existingMembers.find(m => m.id === value)
+      if (father?.spouseIds.length) {
+        const autoMother = existingMembers.find(
+          m => father.spouseIds.includes(m.id) && m.gender !== 'male'
+        )
+        if (autoMother && !motherId) setMotherId(autoMother.id)
+      }
+    }
+  }
+
+  const handleMotherChange = (value: string) => {
+    setMotherId(value)
+    if (value && value !== 'none') {
+      const mother = existingMembers.find(m => m.id === value)
+      if (mother?.spouseIds.length) {
+        const autoFather = existingMembers.find(
+          m => mother.spouseIds.includes(m.id) && m.gender !== 'female'
+        )
+        if (autoFather && !fatherId) setFatherId(autoFather.id)
+      }
+    }
+  }
+
+  // ── Auto-compute “Relationship to you” via BFS when parent / spouse is selected ──
+  // Only fills when the field is currently empty (never overwrites a manual pick).
+  useEffect(() => {
+    const self = existingMembers.find(m => m.relationship === 'self')
+    if (!self) return
+    const tempParentIds = [fatherId, motherId].filter(id => id && id !== 'none')
+    const tempSpouseIds = spouseId && spouseId !== 'none' ? [spouseId] : []
+    if (!tempParentIds.length && !tempSpouseIds.length) return
+    const TEMP_ID = '__temp_compute__'
+    const tempMember: FamilyMember = {
+      id: TEMP_ID, name: '', parentIds: tempParentIds, spouseIds: tempSpouseIds, generation: 0,
+    }
+    const computed = computeRelationLabel(TEMP_ID, self.id, [...existingMembers, tempMember])
+    if (computed) {
+      const normalized = bfsLabelToRelType(computed)
+      if (normalized && !relationship) setRelationship(normalized)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fatherId, motherId, spouseId])
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -569,7 +657,7 @@ export function AddMemberDialog({
                     <Users className="h-3 w-3" />
                     Father
                   </Label>
-                  <Select value={fatherId} onValueChange={setFatherId}>
+                  <Select value={fatherId} onValueChange={handleFatherChange}>
                     <SelectTrigger className="bg-muted/30 border-border/50">
                       <SelectValue placeholder="Select father" />
                     </SelectTrigger>
@@ -591,7 +679,7 @@ export function AddMemberDialog({
                     <Users className="h-3 w-3" />
                     Mother
                   </Label>
-                  <Select value={motherId} onValueChange={setMotherId}>
+                  <Select value={motherId} onValueChange={handleMotherChange}>
                     <SelectTrigger className="bg-muted/30 border-border/50">
                       <SelectValue placeholder="Select mother" />
                     </SelectTrigger>
