@@ -44,6 +44,7 @@ import {
   Pencil,
   Check,
   Square,
+  Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -79,8 +80,8 @@ const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryI
 export default function MemoryPage() {
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
-  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory, updateMemory: dbUpdateMemory, uploadPhoto } = useMemories(familyId)
-  const { voiceNotes: dbVoiceNotes, loading: voiceLoading, addVoiceNote: dbAddVoiceNote, uploadVoiceBlob } = useVoiceNotes(familyId)
+  const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory, updateMemory: dbUpdateMemory, deleteMemory: dbDeleteMemory, uploadPhoto } = useMemories(familyId)
+  const { voiceNotes: dbVoiceNotes, loading: voiceLoading, addVoiceNote: dbAddVoiceNote, uploadVoiceBlob, deleteVoiceNote: dbDeleteVoiceNote } = useVoiceNotes(familyId)
 
   const isDemoMode = !authLoading && !user
   const [localDemoMemories, setLocalDemoMemories] = useState<MemoryItem[]>([])
@@ -118,6 +119,27 @@ export default function MemoryPage() {
   const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null)
   const [editForm, setEditForm] = useState({ title: '', description: '', taggedMemberIds: [] as string[], year: undefined as number | undefined })
   const [editSaving, setEditSaving] = useState(false)
+
+  const handleDeleteMemory = async (memoryId: string) => {
+    if (isDemoMode) {
+      setLocalDemoMemories(prev => prev.filter(m => m.id !== memoryId))
+      return
+    }
+    try {
+      await dbDeleteMemory(memoryId)
+    } catch (err) {
+      toast({ title: 'Delete failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' })
+    }
+  }
+
+  const handleDeleteVoiceNote = async (noteId: string) => {
+    if (isDemoMode) return
+    try {
+      await dbDeleteVoiceNote(noteId)
+    } catch (err) {
+      toast({ title: 'Delete failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' })
+    }
+  }
 
   const openEdit = (memory: MemoryItem) => {
     setEditingMemory(memory)
@@ -404,6 +426,7 @@ export default function MemoryPage() {
                       members={allMembers}
                       onClick={() => setSelectedMemory(memory)}
                       onEdit={() => openEdit(memory)}
+                      onDelete={() => handleDeleteMemory(memory.id)}
                     />
                   ))}
                   {/* Add Memory Card */}
@@ -443,6 +466,7 @@ export default function MemoryPage() {
                   members={allMembers}
                   isPlaying={playingVoice === voice.id}
                   onPlay={() => setPlayingVoice(playingVoice === voice.id ? null : voice.id)}
+                  onDelete={() => handleDeleteVoiceNote(voice.id)}
                 />
               ))}
 
@@ -513,6 +537,12 @@ export default function MemoryPage() {
                   })}
                 </div>
               </div>
+            )}
+            {isDemoMode && (
+              <p className="text-xs text-amber-500/80 text-right">⚠ Demo mode — <a href="/auth/signin" className="underline hover:text-amber-400">sign in</a> to save permanently</p>
+            )}
+            {!isDemoMode && !familyId && (
+              <p className="text-xs text-destructive text-right">⚠ No family set up yet — complete onboarding first</p>
             )}
             <div className="flex gap-2 justify-end">
               <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
@@ -642,17 +672,22 @@ export default function MemoryPage() {
 
 // ─── Memory Card ──────────────────────────────────────────────────────────────
 
-function MemoryCard({ memory, members, onClick, onEdit }: { memory: MemoryItem; members: typeof sampleFamilyMembers; onClick: () => void; onEdit?: () => void }) {
+function MemoryCard({ memory, members, onClick, onEdit, onDelete }: { memory: MemoryItem; members: typeof sampleFamilyMembers; onClick: () => void; onEdit?: () => void; onDelete?: () => void }) {
   const Icon = EVENT_ICONS[memory.eventType] || Camera
   const colorClass = EVENT_COLORS[memory.eventType] || EVENT_COLORS.other
   const uploaderName = members.find(m => m.claimedByUserId === memory.uploadedBy)?.name ?? (memory.uploadedBy ? 'Family Member' : undefined)
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5">
-      {/* Edit button */}
+      {/* Edit / Delete buttons */}
       {onEdit && (
         <button onClick={e => { e.stopPropagation(); onEdit() }} className="absolute top-2 left-2 z-10 rounded-full bg-black/60 p-1.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80">
           <Pencil className="h-3 w-3" />
+        </button>
+      )}
+      {onDelete && (
+        <button onClick={e => { e.stopPropagation(); onDelete() }} className="absolute top-2 right-2 z-10 rounded-full bg-black/60 p-1.5 text-red-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600/80">
+          <Trash2 className="h-3 w-3" />
         </button>
       )}
       <button onClick={onClick} className="flex flex-col flex-1 text-left">
@@ -801,7 +836,7 @@ function MemoryDetail({ memory, members, onBack }: { memory: MemoryItem; members
 
 // ─── Voice Card ───────────────────────────────────────────────────────────────
 
-function VoiceCard({ voice, members, isPlaying, onPlay }: { voice: VoiceNote; members: typeof sampleFamilyMembers; isPlaying: boolean; onPlay: () => void }) {
+function VoiceCard({ voice, members, isPlaying, onPlay, onDelete }: { voice: VoiceNote; members: typeof sampleFamilyMembers; isPlaying: boolean; onPlay: () => void; onDelete?: () => void }) {
   const member = members.find(m => m.id === voice.memberId)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const onPlayRef = useRef(onPlay)
@@ -854,7 +889,14 @@ function VoiceCard({ voice, members, isPlaying, onPlay }: { voice: VoiceNote; me
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-semibold text-sm leading-tight">{voice.title}</h3>
-            <span className="shrink-0 text-xs text-muted-foreground font-mono">{formatDuration(voice.durationSeconds)}</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-xs text-muted-foreground font-mono">{formatDuration(voice.durationSeconds)}</span>
+              {onDelete && (
+                <button onClick={onDelete} className="rounded-full p-1 text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {member && (

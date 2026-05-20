@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect, memo } from 'react'
 import { FamilyMember } from '@/lib/types'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { ZoomIn, ZoomOut, Maximize2, Grid3X3, ChevronDown, ChevronRight, Lock, ShieldCheck, ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -882,6 +882,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                     <Avatar className={cn('border-2 h-8 w-8',
                       isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
                     )}>
+                      {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                       <AvatarFallback className={cn('text-[9px] font-semibold',
                         isUnclaimed ? 'bg-slate-700/40 text-slate-400'
                           : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
@@ -974,6 +975,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                                   : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
                           )}
                         >
+                          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                           <AvatarFallback
                             className={cn(
                               'font-bold text-lg transition-colors',

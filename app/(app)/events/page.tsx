@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -12,7 +12,7 @@ import { useMembers } from "@/hooks/use-members"
 import { useEvents } from "@/hooks/use-events"
 import {
   ArrowLeft, Plus, Calendar, MapPin, Users, X,
-  PartyPopper, Church, Home, Coffee, Clock,
+  PartyPopper, Church, Home, Coffee, Clock, Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
@@ -108,32 +108,84 @@ function getDaysUntil(dateStr: string) {
 }
 
 export default function EventsPage() {
-  const { familyId, user, loading: authLoading } = useAuth()
+  const { familyId, user, profile, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
-  const { events: dbEvents, loading: eventsLoading, createEvent: dbCreateEvent, updateRSVP } = useEvents(familyId)
+  const { events: dbEvents, loading: eventsLoading, createEvent: dbCreateEvent, updateRSVP, deleteEvent: dbDeleteEvent } = useEvents(familyId)
   const isDemoMode = !authLoading && !user
   const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !membersLoading ? dbMembers : [])
 
   // Map DB events to the local FamilyEventItem shape for unified rendering
-  const dbMappedEvents: FamilyEventItem[] = dbEvents.map(e => ({
-    id: e.id,
-    title: e.title,
-    type: "other" as EventType,
-    date: e.eventDate.split("T")[0],
-    time: e.eventDate.includes("T") ? new Date(e.eventDate).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : undefined,
-    location: e.location ?? "",
-    description: e.description,
-    organizer: e.createdBy ?? "",
-    invitedMemberIds: allMembers.map(m => m.id),
-    rsvps: (e.rsvps ?? {}) as Record<string, RSVPStatus>,
-  }))
+  // Normalize DB 'cant' → 'not-going' to match the UI RSVPStatus type
+  const dbMappedEvents: FamilyEventItem[] = dbEvents.map(e => {
+    const normalizedRsvps: Record<string, RSVPStatus> = {}
+    for (const [uid, status] of Object.entries(e.rsvps ?? {})) {
+      normalizedRsvps[uid] = (status === 'cant' ? 'not-going' : status) as RSVPStatus
+    }
+    return {
+      id: e.id,
+      title: e.title,
+      type: "other" as EventType,
+      date: e.eventDate.split("T")[0],
+      time: e.eventDate.includes("T") ? new Date(e.eventDate).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : undefined,
+      location: e.location ?? "",
+      description: e.description,
+      organizer: e.createdBy ?? "",
+      invitedMemberIds: allMembers.map(m => m.id),
+      rsvps: normalizedRsvps,
+    }
+  })
 
   const [localEvents, setLocalEvents] = useState<FamilyEventItem[]>(SAMPLE_EVENTS)
   const events = isDemoMode ? localEvents : (familyId && !eventsLoading ? dbMappedEvents : [])
-  const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>({})
+
+  // Pre-populate myRSVPs from persisted DB data for the current user
+  const [myRSVPs, setMyRSVPs] = useState<Record<string, RSVPStatus>>(() => {
+    if (!user) return {}
+    const initial: Record<string, RSVPStatus> = {}
+    for (const e of dbMappedEvents) {
+      const persisted = e.rsvps[user.id]
+      if (persisted) initial[e.id] = persisted
+    }
+    return initial
+  })
+
+  // Sync myRSVPs when DB events load/change (handles page refresh)
+  useEffect(() => {
+    if (!user) return
+    setMyRSVPs(prev => {
+      const next = { ...prev }
+      for (const e of dbMappedEvents) {
+        const persisted = e.rsvps[user.id]
+        if (persisted && !next[e.id]) next[e.id] = persisted
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbEvents, user])
+
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newEvent, setNewEvent] = useState({ title: "", type: "reunion" as EventType, date: "", time: "", location: "", description: "" })
   const [filter, setFilter] = useState<"all" | "upcoming" | "mine">("upcoming")
+
+  // Apply filter — this is what was broken (filter was stored but never applied)
+  const filteredEvents = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    switch (filter) {
+      case "upcoming":
+        return events
+          .filter(e => new Date(e.date) >= today)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      case "mine":
+        // In demo mode match the first sample member; in real mode match current user
+        return events.filter(e => isDemoMode
+          ? e.organizer === allMembers[0]?.id
+          : e.organizer === user?.id
+        )
+      default:
+        return events
+    }
+  }, [events, filter, isDemoMode, user, allMembers])
 
   const rsvp = (eventId: string, status: RSVPStatus) => {
     setMyRSVPs(prev => ({ ...prev, [eventId]: status }))
@@ -142,6 +194,7 @@ export default function EventsPage() {
 
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [createdEventShare, setCreatedEventShare] = useState<{ title: string; date: string; time?: string; location: string; description?: string } | null>(null)
 
   const createEvent = async () => {
     const missing = []
@@ -158,6 +211,7 @@ export default function EventsPage() {
       if (familyId && user) {
         const eventDate = newEvent.time ? `${newEvent.date}T${newEvent.time}:00` : newEvent.date
         await dbCreateEvent(familyId, { title: newEvent.title, description: newEvent.description, eventDate, location: newEvent.location }, user.id)
+        setCreatedEventShare({ title: newEvent.title, date: newEvent.date, time: newEvent.time || undefined, location: newEvent.location, description: newEvent.description || undefined })
       } else {
         // Demo mode: add to local state
         const ev: FamilyEventItem = {
@@ -168,6 +222,7 @@ export default function EventsPage() {
           rsvps: {},
         }
         setLocalEvents(prev => [ev, ...prev])
+        setCreatedEventShare({ title: newEvent.title, date: newEvent.date, time: newEvent.time || undefined, location: newEvent.location, description: newEvent.description || undefined })
       }
       setShowCreateForm(false)
       setNewEvent({ title: "", type: "reunion", date: "", time: "", location: "", description: "" })
@@ -285,14 +340,28 @@ export default function EventsPage() {
         </div>
 
         {/* Events */}
-        {events.map(event => {
+        {filteredEvents.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <Calendar className="h-10 w-10 text-muted-foreground/30 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              {filter === 'upcoming' ? 'No upcoming events' : filter === 'mine' ? 'You haven\'t created any events yet' : 'No events'}
+            </p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Click "Create Event" to add one</p>
+          </div>
+        )}
+        {filteredEvents.map(event => {
           const myStatus = myRSVPs[event.id] || "pending"
           const Icon = EVENT_TYPE_ICONS[event.type]
           const goingIds = Object.entries(event.rsvps).filter(([, s]) => s === "going").map(([id]) => id)
           const maybeIds = Object.entries(event.rsvps).filter(([, s]) => s === "maybe").map(([id]) => id)
           const cantIds = Object.entries(event.rsvps).filter(([, s]) => s === "not-going").map(([id]) => id)
-          const toName = (id: string) => allMembers.find(m => m.id === id)?.name.split(" ")[0] ?? id
+          const toName = (id: string) => {
+            if (id === user?.id) return profile?.display_name?.split(' ')[0] ?? 'You'
+            const m = allMembers.find(m => m.id === id || (m as any).claimedByUserId === id)
+            return m?.name.split(' ')[0] ?? 'Family Member'
+          }
           const invited = allMembers.filter(m => event.invitedMemberIds.includes(m.id))
+          const isOwner = isDemoMode ? event.organizer === allMembers[0]?.id : event.organizer === user?.id
           const whatsappText = encodeURIComponent(
             `📅 *${event.title}*\n🗓️ ${formatDate(event.date)}${event.time ? ` · ${event.time}` : ""}\n📍 ${event.location}${event.description ? `\n\n${event.description}` : ""}\n\nRSVP on Family Graph: ${typeof window !== "undefined" ? window.location.origin : ""}/events`
           )
@@ -306,6 +375,22 @@ export default function EventsPage() {
                   {event.type}
                 </Badge>
                 <span className="ml-auto text-xs font-medium">{getDaysUntil(event.date)}</span>
+                {isOwner && (
+                  <button
+                    onClick={() => {
+                      if (!confirm(`Delete "${event.title}"?`)) return
+                      if (isDemoMode) {
+                        setLocalEvents(prev => prev.filter(e => e.id !== event.id))
+                      } else {
+                        dbDeleteEvent(event.id).catch(() => { })
+                      }
+                    }}
+                    className="ml-1 text-current/50 hover:text-destructive transition-colors"
+                    title="Delete event"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
 
               <div className="p-5 space-y-4">
@@ -404,6 +489,61 @@ export default function EventsPage() {
           )
         })}
       </div>
+
+      {/* ── Post-create share sheet ──────────────────────────────── */}
+      {createdEventShare && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-green-500/30 bg-card p-6 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-500/10 text-green-500 text-xl">🎉</div>
+              <div>
+                <p className="font-semibold">Event Created!</p>
+                <p className="text-sm text-muted-foreground">Share it with your family so they can RSVP.</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted/40 p-3 space-y-1 text-sm">
+              <p className="font-medium">{createdEventShare.title}</p>
+              <p className="text-xs text-muted-foreground">
+                {formatDate(createdEventShare.date)}{createdEventShare.time ? ` · ${createdEventShare.time}` : ''} · {createdEventShare.location}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `📅 *${createdEventShare.title}*\n🗓️ ${formatDate(createdEventShare.date)}${createdEventShare.time ? ` · ${createdEventShare.time}` : ''}\n📍 ${createdEventShare.location}${createdEventShare.description ? `\n\n${createdEventShare.description}` : ''}\n\nRSVP on Family Graph: ${typeof window !== 'undefined' ? window.location.origin : ''}/events`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2.5 transition-colors"
+              >
+                💬 WhatsApp
+              </a>
+              <button
+                onClick={() => {
+                  const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/events`
+                  if (navigator.share) {
+                    navigator.share({ title: createdEventShare.title, url }).catch(() => { })
+                  } else {
+                    navigator.clipboard?.writeText(url)
+                  }
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl border border-border bg-muted hover:bg-muted/70 text-foreground text-sm font-medium py-2.5 transition-colors"
+              >
+                🔗 Copy Link
+              </button>
+            </div>
+
+            <button
+              onClick={() => setCreatedEventShare(null)}
+              className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -23,6 +23,7 @@ import {
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
 interface FamilyProfile {
   id: string
@@ -378,14 +379,18 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                 ) : (
                   <p className="text-sm text-muted-foreground">Not signed in</p>
                 )}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Free Plan</p>
-                    <p className="text-xs text-muted-foreground">Up to 50 family members</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-primary/20 text-primary">Free</Badge>
-                </div>
-                <Button variant="outline" size="sm" className="w-full">Upgrade to Pro</Button>
+                {FEATURE_FLAGS.enableUpgradeFlow && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Free Plan</p>
+                        <p className="text-xs text-muted-foreground">Up to 50 family members</p>
+                      </div>
+                      <Badge variant="secondary" className="bg-primary/20 text-primary">Free</Badge>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full">Upgrade to Pro</Button>
+                  </>
+                )}
               </CardContent>
             </Card>
 

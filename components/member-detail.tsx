@@ -1,7 +1,7 @@
 'use client'
 
 import { FamilyMember } from '@/lib/types'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -124,6 +124,7 @@ export function MemberDetail({
           <div className="flex items-center gap-4">
             <div className="relative">
               <Avatar className="h-16 w-16 border-2 border-amber-400/30 ring-2 ring-amber-400/10">
+                {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                 <AvatarFallback className="bg-gradient-to-br from-amber-600/20 to-indigo-600/25 text-xl font-bold" style={{ color: 'var(--accent)' }}>
                   {initials}
                 </AvatarFallback>

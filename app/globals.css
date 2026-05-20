@@ -113,6 +113,34 @@
   --warning: #F59E0B;
   --error: #EF4444;
   --info: #38BDF8;
+
+  /* ── Universe canvas tokens (dark defaults) ── */
+  --universe-chip-bg: rgba(15, 20, 40, 0.72);
+  --universe-chip-bg-active: rgba(99, 102, 241, 0.14);
+  --universe-chip-border: rgba(148, 163, 184, 0.18);
+  --universe-chip-text: #94A3B8;
+  --universe-panel-bg: rgba(10, 13, 22, 0.88);
+  --universe-panel-border: rgba(148, 163, 184, 0.14);
+  --universe-label-name: rgba(232, 237, 251, 0.92);
+  --universe-label-meta: rgba(136, 149, 179, 0.88);
+  --universe-trail-bg: rgba(10, 13, 22, 0.82);
+  --universe-trail-border: rgba(148, 163, 184, 0.20);
+  --universe-trail-text: rgba(148, 163, 184, 0.90);
+  --universe-trail-active: #818CF8;
+  --ambient-bloom-1: rgba(99, 102, 241, 0.06);
+  --ambient-bloom-2: rgba(139, 92, 246, 0.04);
+  --ambient-bloom-center: rgba(34, 211, 238, 0.07);
+  --ambient-pat-bloom: rgba(59, 130, 246, 0.04);
+  --ambient-mat-bloom: rgba(245, 158, 11, 0.03);
+  --star-color-1: rgba(255, 255, 255, 0.55);
+  --star-color-2: rgba(99, 102, 241, 0.65);
+  --star-color-3: rgba(34, 211, 238, 0.45);
+
+  /* Demo banner */
+  --demo-banner-bg: rgba(251, 191, 36, 0.07);
+  --demo-banner-border: rgba(251, 191, 36, 0.20);
+  --demo-banner-text: rgba(251, 191, 36, 0.90);
+  --demo-banner-link: rgba(251, 191, 36, 0.90);
 }
 
 @keyframes edgeFlow {
@@ -321,6 +349,34 @@
   --universe-trail-text: #1B2230;
   --universe-trail-active: #B45309;
 
+  /* ── Universe canvas tokens (light overrides) ── */
+  --universe-chip-bg: rgba(255, 255, 255, 0.78);
+  --universe-chip-bg-active: rgba(67, 56, 202, 0.10);
+  --universe-chip-border: rgba(100, 116, 139, 0.22);
+  --universe-chip-text: #374151;
+  --universe-panel-bg: rgba(255, 255, 255, 0.92);
+  --universe-panel-border: rgba(203, 213, 225, 0.60);
+  --universe-label-name: #1E293B;
+  --universe-label-meta: #475569;
+  --universe-trail-bg: rgba(255, 255, 255, 0.88);
+  --universe-trail-border: rgba(203, 213, 225, 0.55);
+  --universe-trail-text: #475569;
+  --universe-trail-active: #4338CA;
+  --ambient-bloom-1: rgba(67, 56, 202, 0.07);
+  --ambient-bloom-2: rgba(124, 58, 237, 0.05);
+  --ambient-bloom-center: rgba(34, 211, 238, 0.06);
+  --ambient-pat-bloom: rgba(59, 130, 246, 0.06);
+  --ambient-mat-bloom: rgba(245, 158, 11, 0.05);
+  --star-color-1: rgba(100, 116, 139, 0.30);
+  --star-color-2: rgba(67, 56, 202, 0.35);
+  --star-color-3: rgba(34, 211, 238, 0.25);
+
+  /* Demo banner — higher contrast in light */
+  --demo-banner-bg: rgba(120, 53, 15, 0.07);
+  --demo-banner-border: rgba(146, 64, 14, 0.28);
+  --demo-banner-text: #92400e;
+  --demo-banner-link: #7c2d12;
+
   color-scheme: light;
   background-color: var(--background);
   color: var(--foreground);
@@ -335,6 +391,22 @@
 }
 
 /* Constellation field — adapts intensity to theme via star-color tokens */
+.light-theme .universe-canvas {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(67, 56, 202, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 45% at 72% 65%, rgba(124, 58, 237, 0.05) 0%, transparent 70%),
+    #EEF2FA;
+}
+
+.light-theme .universe-canvas::before {
+  background-image:
+    radial-gradient(circle, rgba(100, 116, 139, 0.25) 1px, transparent 1px),
+    radial-gradient(circle, rgba(67, 56, 202, 0.18) 1px, transparent 1px),
+    radial-gradient(circle, rgba(124, 58, 237, 0.12) 1px, transparent 1px);
+  background-size: 330px 330px, 200px 200px, 130px 130px;
+  background-position: 0 0, 85px 65px, 42px 115px;
+}
+
 .universe-canvas::before {
   content: '';
   position: absolute;

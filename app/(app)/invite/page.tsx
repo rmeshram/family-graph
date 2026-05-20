@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth"
 import { useInvites } from "@/hooks/use-invites"
 import { useToast } from "@/hooks/use-toast"
+import { DemoBanner } from "@/components/demo-banner"
 
 const ROLES = [
   {
@@ -153,6 +154,7 @@ export default function InvitePage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
+      <DemoBanner />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-card/95 backdrop-blur-md">
         <div className="flex h-16 items-center gap-3 px-4">

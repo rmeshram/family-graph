@@ -45,7 +45,7 @@ export function useMemories(familyId: string | null) {
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
-      .channel(`memories:${familyId}:${Date.now()}`)
+      .channel(`memories:${familyId}:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'memories', filter: `family_id=eq.${familyId}` }, () => fetchRef.current())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -65,6 +65,22 @@ export function useMemories(familyId: string | null) {
     memory: Omit<MemoryItem, 'id' | 'uploadedAt'>,
     userId: string
   ) => {
+    // Optimistic insert
+    const optimisticId = `optimistic-${Date.now()}`
+    const optimistic: MemoryItem = {
+      id: optimisticId,
+      title: memory.title,
+      description: memory.description,
+      photoUrl: memory.photoUrl,
+      eventType: memory.eventType,
+      year: memory.year,
+      date: memory.date,
+      taggedMemberIds: memory.taggedMemberIds ?? [],
+      uploadedBy: userId,
+      uploadedAt: new Date().toISOString(),
+    }
+    setMemories(prev => [optimistic, ...prev])
+
     const { data, error } = await supabase.from('memories').insert({
       family_id: familyId,
       title: memory.title,
@@ -76,7 +92,16 @@ export function useMemories(familyId: string | null) {
       tagged_member_ids: (memory.taggedMemberIds ?? []) as string[],
       uploaded_by: userId,
     }).select().single()
-    if (error) throw new Error(error.message)
+
+    if (error) {
+      setMemories(prev => prev.filter(m => m.id !== optimisticId))
+      throw new Error(error.message)
+    }
+    // Replace optimistic entry with real persisted record
+    setMemories(prev => prev.map(m => m.id === optimisticId
+      ? { ...optimistic, id: data.id, uploadedAt: data.created_at }
+      : m
+    ))
     return data
   }, [supabase])
 
@@ -84,16 +109,42 @@ export function useMemories(familyId: string | null) {
     memoryId: string,
     updates: Partial<Pick<MemoryItem, 'title' | 'description' | 'taggedMemberIds' | 'year'>>
   ) => {
+    // Optimistic update — capture snapshot inside the setter for safe rollback
+    let snapshot: MemoryItem | undefined
+    setMemories(prev => {
+      snapshot = prev.find(m => m.id === memoryId)
+      return prev.map(m => m.id === memoryId ? { ...m, ...updates } : m)
+    })
+
     const { error } = await supabase.from('memories').update({
       title: updates.title,
       description: updates.description ?? null,
       tagged_member_ids: updates.taggedMemberIds ?? undefined,
       year: updates.year ?? null,
     }).eq('id', memoryId)
-    if (error) throw new Error(error.message)
+
+    if (error) {
+      if (snapshot) setMemories(prev => prev.map(m => m.id === memoryId ? snapshot! : m))
+      throw new Error(error.message)
+    }
   }, [supabase])
 
-  return { memories, loading, addMemory, updateMemory, uploadPhoto, refetch: fetch }
+  const deleteMemory = useCallback(async (memoryId: string) => {
+    // Optimistic delete
+    let snapshot: MemoryItem | undefined
+    setMemories(prev => {
+      snapshot = prev.find(m => m.id === memoryId)
+      return prev.filter(m => m.id !== memoryId)
+    })
+
+    const { error } = await supabase.from('memories').delete().eq('id', memoryId)
+    if (error) {
+      if (snapshot) setMemories(prev => [snapshot!, ...prev])
+      throw new Error(error.message)
+    }
+  }, [supabase])
+
+  return { memories, loading, addMemory, updateMemory, deleteMemory, uploadPhoto, refetch: fetch }
 }
 
 // ─── useVoiceNotes ────────────────────────────────────────────────────────────
@@ -146,6 +197,22 @@ export function useVoiceNotes(familyId: string | null) {
     note: Omit<VoiceNote, 'id' | 'recordedAt'>,
     userId: string
   ) => {
+    // Optimistic insert
+    const optimisticId = `optimistic-${Date.now()}`
+    const optimistic: VoiceNote = {
+      id: optimisticId,
+      title: note.title,
+      durationSeconds: note.durationSeconds,
+      fileUrl: note.fileUrl,
+      transcription: note.transcription,
+      translation: note.translation,
+      language: note.language,
+      recordedBy: userId,
+      recordedAt: new Date().toISOString(),
+      memberId: note.memberId,
+    }
+    setVoiceNotes(prev => [optimistic, ...prev])
+
     const { data, error } = await supabase.from('voice_notes').insert({
       family_id: familyId,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,9 +225,30 @@ export function useVoiceNotes(familyId: string | null) {
       language: note.language ?? null,
       recorded_by: userId,
     }).select().single()
-    if (error) throw new Error(error.message)
+
+    if (error) {
+      setVoiceNotes(prev => prev.filter(v => v.id !== optimisticId))
+      throw new Error(error.message)
+    }
+    setVoiceNotes(prev => prev.map(v => v.id === optimisticId
+      ? { ...optimistic, id: data.id, recordedAt: data.created_at }
+      : v
+    ))
     return data
   }, [supabase])
 
-  return { voiceNotes, loading, addVoiceNote, uploadVoiceBlob, refetch: fetch }
+  const deleteVoiceNote = useCallback(async (noteId: string) => {
+    let snapshot: VoiceNote | undefined
+    setVoiceNotes(prev => {
+      snapshot = prev.find(v => v.id === noteId)
+      return prev.filter(v => v.id !== noteId)
+    })
+    const { error } = await supabase.from('voice_notes').delete().eq('id', noteId)
+    if (error) {
+      if (snapshot) setVoiceNotes(prev => [snapshot!, ...prev])
+      throw new Error(error.message)
+    }
+  }, [supabase])
+
+  return { voiceNotes, loading, addVoiceNote, uploadVoiceBlob, deleteVoiceNote, refetch: fetch }
 }

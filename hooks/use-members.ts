@@ -171,7 +171,7 @@ export function useMembers(familyId: string | null) {
     if (!familyId) return
     // Unique name per mount prevents collision when React remounts (StrictMode, navigation)
     const channel = supabase
-      .channel(`family_members:${familyId}:${Date.now()}`)
+      .channel(`family_members:${familyId}:${crypto.randomUUID()}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
@@ -373,7 +373,7 @@ export function useStories(familyId: string | null) {
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
-      .channel(`stories:${familyId}:${Date.now()}`)
+      .channel(`stories:${familyId}:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stories', filter: `family_id=eq.${familyId}` }, () => fetchRef.current())
       .subscribe()
     return () => { supabase.removeChannel(ch) }

@@ -47,7 +47,7 @@ export function useEvents(familyId: string | null) {
   useEffect(() => {
     if (!familyId) return
     const ch = supabase
-      .channel(`events:${familyId}:${Date.now()}`)
+      .channel(`events:${familyId}:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `family_id=eq.${familyId}` }, () => fetchRef.current())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -95,5 +95,15 @@ export function useEvents(familyId: string | null) {
     }
   }, [supabase, events])
 
-  return { events, loading, createEvent, updateRSVP, refetch: fetch }
+  const deleteEvent = useCallback(async (eventId: string) => {
+    setEvents(prev => prev.filter(e => e.id !== eventId)) // optimistic
+    const { error } = await supabase.from('events').delete().eq('id', eventId)
+    if (error) {
+      // Rollback: refetch on failure
+      await fetch()
+      throw new Error(error.message)
+    }
+  }, [supabase, fetch])
+
+  return { events, loading, createEvent, updateRSVP, deleteEvent, refetch: fetch }
 }
