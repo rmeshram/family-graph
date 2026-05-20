@@ -396,6 +396,8 @@ interface Props {
   onOpenPathFinder?: (fromMemberId?: string) => void
   /** Whether the external path finder panel is currently open (for legend button state) */
   pathFinderOpen?: boolean
+  /** Called when the user taps "Add first member" in the empty state */
+  onAddMember?: () => void
 }
 
 export function RelationshipUniverse({
@@ -406,6 +408,7 @@ export function RelationshipUniverse({
   pathHighlight,
   onOpenPathFinder,
   pathFinderOpen = false,
+  onAddMember,
 }: Props) {
   const effectiveSelfId = selfMemberId ?? members[0]?.id ?? ''
 
@@ -431,7 +434,9 @@ export function RelationshipUniverse({
   useEffect(() => {
     setVisibleDepth(1)
     const timers: ReturnType<typeof setTimeout>[] = []
-    for (let i = 2; i <= maxDepth; i++) timers.push(setTimeout(() => setVisibleDepth(i), (i - 1) * 520))
+    // Auto-reveal up to depth 3 (self + 2 rings ≈ immediate family).
+    // Beyond that the user expands via the Network button — avoids first-load overwhelm.
+    for (let i = 2; i <= Math.min(maxDepth, 3); i++) timers.push(setTimeout(() => setVisibleDepth(i), (i - 1) * 520))
     return () => timers.forEach(clearTimeout)
   }, [people.length, maxDepth])
 
@@ -723,6 +728,15 @@ export function RelationshipUniverse({
     })
   }, [peopleById])
 
+  // Pan to "You" node on first load so the user is always centred in their universe
+  const hasMountedPan = useRef(false)
+  useEffect(() => {
+    if (!effectiveSelfId || hasMountedPan.current || people.length === 0) return
+    hasMountedPan.current = true
+    const t = setTimeout(() => panToPerson(effectiveSelfId, isMobileView ? 0.72 : 0.92), 750)
+    return () => clearTimeout(t)
+  }, [effectiveSelfId, people.length, panToPerson, isMobileView])
+
   const runMarriagePortal = useCallback(() => {
     if (!selectedMemberId || marriageNeighbors.length === 0) return
     const spouseId = marriageNeighbors[0]
@@ -925,6 +939,57 @@ export function RelationshipUniverse({
       onPointerCancel={releasePointer}
       onClick={() => { setPathNodes(new Set()); setPathEdges(new Set()) }}
     >
+
+      {/* ── Empty state — shown when no family members exist yet ─── */}
+      {members.length === 0 && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none select-none">
+          {/* Pulsing concentric rings */}
+          <div className="relative flex items-center justify-center mb-8">
+            {[80, 150, 230].map((sz, i) => (
+              <div
+                key={i}
+                className="absolute rounded-full border"
+                style={{
+                  width: sz, height: sz,
+                  borderColor: '#22d3ee',
+                  opacity: 0.12 - i * 0.03,
+                  animation: `selfPulse ${2.6 + i * 0.7}s ease-in-out infinite ${i * 0.65}s`,
+                }}
+              />
+            ))}
+            <div
+              className="relative z-10 w-16 h-16 rounded-full flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, #22d3eecc, #22d3ee33)',
+                boxShadow: '0 0 36px #22d3ee44, 0 0 70px #22d3ee22',
+              }}
+            >
+              <span style={{ fontSize: 28 }}>🌳</span>
+            </div>
+          </div>
+          <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--foreground)' }}>
+            Your family universe awaits
+          </h3>
+          <p className="text-sm text-center max-w-[280px] mb-6 leading-relaxed px-4" style={{ color: 'var(--muted-foreground)' }}>
+            Add your first member and watch your tree bloom — generation by generation
+          </p>
+          {onAddMember && (
+            <button
+              onClick={onAddMember}
+              className="pointer-events-auto px-6 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-105 active:scale-95"
+              style={{
+                background: 'linear-gradient(135deg, #22d3ee1a, #22d3ee0d)',
+                border: '1.5px solid #22d3ee55',
+                color: '#22d3ee',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+              }}
+            >
+              + Add first member
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── SVG: atmospheric depth blooms + edges (theme-aware via CSS vars) ── */}
       <svg width={size.w} height={size.h} className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
@@ -1162,6 +1227,29 @@ export function RelationshipUniverse({
                     <span className="absolute rounded-full border border-white/18"
                       style={{ inset: `-${r * 0.28}px`, animation: 'orbitRing 8s linear infinite' }} />
                   )}
+                  {/* "You" permanent double-pulse ring */}
+                  {p.category === 'self' && (
+                    <>
+                      <span
+                        className="absolute rounded-full pointer-events-none"
+                        style={{
+                          inset: `-${Math.round(r * 0.32)}px`,
+                          border: '2px solid #22d3ee',
+                          boxShadow: '0 0 14px #22d3ee99, 0 0 28px #22d3ee33',
+                          animation: 'selfPulse 3s ease-in-out infinite',
+                        }}
+                      />
+                      <span
+                        className="absolute rounded-full pointer-events-none"
+                        style={{
+                          inset: `-${Math.round(r * 0.66)}px`,
+                          border: '1px solid #22d3ee',
+                          opacity: 0.2,
+                          animation: 'selfPulse 3s ease-in-out infinite 1.5s',
+                        }}
+                      />
+                    </>
+                  )}
                   {/* Avatar disc */}
                   <span
                     className="absolute inset-0 rounded-full grid place-items-center font-semibold text-white"
@@ -1197,7 +1285,21 @@ export function RelationshipUniverse({
                           {p.birthdayDaysAway === 0 ? '🎂 Today!' : `🎂 in ${p.birthdayDaysAway}d`}
                         </span>
                       )}
+                      {/* "You" badge inline with name label */}
+                      {p.category === 'self' && (
+                        <span className="block leading-tight mt-0.5 font-bold tracking-widest uppercase"
+                          style={{ fontSize: Math.max(7, Math.min(10, r * 0.30)), color: '#22d3ee', textShadow: '0 0 6px #22d3ee88', letterSpacing: '0.2em' }}>
+                          You
+                        </span>
+                      )}
                     </span>
+                  )}
+                  {/* "You" at cluster zoom (name hidden) */}
+                  {p.category === 'self' && !showName && (
+                    <span
+                      className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap font-bold tracking-widest uppercase pointer-events-none"
+                      style={{ top: r * 2 + 3, fontSize: 8, color: '#22d3ee', textShadow: '0 0 6px #22d3ee88', letterSpacing: '0.2em' }}
+                    >You</span>
                   )}
                 </button>
               </motion.div>
@@ -1290,75 +1392,123 @@ export function RelationshipUniverse({
       </AnimatePresence>
 
       {/* ── Contextual actions for selected node ─────────────────────────── */}
-      {selectedMemberId && selectedAnchor && (
-        <motion.div
-          key={selectedMemberId}
-          initial={{ opacity: 0, scale: 0.86, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.88, y: 4 }}
-          transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-          className="absolute z-40 rounded-2xl border backdrop-blur-2xl shadow-2xl"
-          style={{
-            left: Math.min(size.w - 220, Math.max(8, selectedAnchor.x + 32)),
-            top: Math.max(56, selectedAnchor.y - 72),
-            background: 'var(--universe-panel-bg)',
-            borderColor: 'var(--universe-panel-border)',
-            minWidth: 196,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Person header */}
-          <div className="flex items-center gap-2.5 px-3.5 pt-3.5 pb-2.5">
-            <span
-              className="w-8 h-8 rounded-full shrink-0 grid place-items-center text-[11px] font-bold shadow-sm"
-              style={{ background: CATEGORY_COLOR[selectedPerson?.category ?? 'paternal'], color: 'white' }}
-            >{selectedPerson?.initials}</span>
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold truncate" style={{ color: 'var(--foreground)' }}>{selectedPerson?.name}</div>
-              <div className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>
-                {selectedPerson?.relation || selectedPerson?.category}
-                {selectedPerson?.city ? ` · ${selectedPerson.city}` : ''}
-              </div>
-            </div>
-          </div>
-          <div className="h-px mx-3.5" style={{ background: 'var(--border)' }} />
+      <AnimatePresence>
+        {selectedMemberId && selectedPerson && (
+          <motion.div
+            key={selectedMemberId}
+            initial={{ opacity: 0, y: isMobileView ? -20 : 24, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: isMobileView ? -12 : 16, scale: 0.88 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+            className="absolute z-40 overflow-hidden"
+            style={{
+              ...(isMobileView
+                ? { top: 52, left: 16, right: 16 }
+                : { bottom: 72, left: '50%', transform: 'translateX(-50%)', width: 300 }),
+              borderRadius: 20,
+              background: 'var(--universe-panel-bg)',
+              border: `1px solid ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}55`,
+              backdropFilter: 'blur(40px)',
+              WebkitBackdropFilter: 'blur(40px)',
+              boxShadow: `0 0 0 1px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}18, 0 24px 64px rgba(0,0,0,0.6), 0 0 48px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}16`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Left category accent bar */}
+            <div
+              className="absolute left-0 top-0 bottom-0 w-[3px]"
+              style={{
+                borderRadius: '20px 0 0 20px',
+                background: `linear-gradient(180deg, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'} 0%, transparent 100%)`,
+              }}
+            />
 
-          {/* Compact 4-action icon grid */}
-          <div className="p-2.5 pt-2">
-            <div className="grid grid-cols-4 gap-1.5">
+            {/* Header */}
+            <div className="flex items-center gap-3 pl-5 pr-2.5 pt-3 pb-2.5">
+              {/* Avatar with category glow */}
+              <div
+                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[13px] font-bold"
+                style={{
+                  background: `linear-gradient(135deg, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}cc, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}55)`,
+                  boxShadow: `0 0 0 2px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}44, 0 0 16px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}33`,
+                  color: '#fff',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                {selectedPerson.initials}
+              </div>
+
+              {/* Name + relation badge */}
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-bold leading-tight truncate" style={{ color: 'var(--foreground)' }}>
+                  {selectedPerson.name}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span
+                    className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: `${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}22`,
+                      color: CATEGORY_COLOR[selectedPerson.category] ?? 'var(--muted-foreground)',
+                    }}
+                  >
+                    {selectedPerson.relation || selectedPerson.category}
+                  </span>
+                  {selectedPerson.city && (
+                    <span className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>
+                      {selectedPerson.city}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Dismiss */}
+              <button
+                onClick={(e) => { e.stopPropagation(); onSelectMember(selectedMemberId) }}
+                className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all hover:bg-white/10 active:scale-90"
+                style={{ color: 'var(--muted-foreground)' }}
+                title="Dismiss"
+              >
+                <span style={{ fontSize: 13, lineHeight: 1 }}>✕</span>
+              </button>
+            </div>
+
+            <div className="mx-5 h-px" style={{ background: 'var(--border)' }} />
+
+            {/* Action grid */}
+            <div className="grid grid-cols-4 gap-2 p-3">
               <button
                 onClick={(e) => { e.stopPropagation(); panToPerson(selectedMemberId, 1.6) }}
-                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80"
-                style={{ color: 'var(--foreground)', background: 'var(--universe-chip-bg)' }}
-                title="Zoom in & center on this person"
+                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-105 active:scale-95"
+                style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
+                title="Zoom in & center"
               >
-                <span className="text-[18px] leading-none">🔍</span>
-                <span className="text-[9px] font-medium">Focus</span>
+                <span className="text-xl leading-none">🔍</span>
+                <span className="text-[9px] font-semibold tracking-widest uppercase">Focus</span>
               </button>
 
               <button
                 onClick={(e) => { e.stopPropagation(); setVisibleDepth(maxDepth); panToPerson(effectiveSelfId, 0.58) }}
-                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80"
-                style={{ color: 'var(--foreground)', background: 'var(--universe-chip-bg)' }}
-                title="Reveal all generations"
+                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-105 active:scale-95"
+                style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
+                title="Show full network"
               >
-                <span className="text-[18px] leading-none">🌐</span>
-                <span className="text-[9px] font-medium">Network</span>
+                <span className="text-xl leading-none">🌐</span>
+                <span className="text-[9px] font-semibold tracking-widest uppercase">Network</span>
               </button>
 
               <button
                 disabled={marriageNeighbors.length === 0}
                 onClick={(e) => { e.stopPropagation(); if (marriageNeighbors.length > 0) runMarriagePortal() }}
-                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 style={{
                   color: marriageNeighbors.length > 0 ? 'var(--marriage)' : 'var(--muted-foreground)',
                   background: marriageNeighbors.length > 0 ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-                  outline: marriageNeighbors.length > 0 ? '1px solid var(--marriage)' : 'none',
+                  outline: marriageNeighbors.length > 0 ? '1.5px solid var(--marriage)' : 'none',
                 }}
-                title={marriageNeighbors.length === 0 ? 'No spouse connected' : `${marriageNeighbors.length} spouse connection${marriageNeighbors.length > 1 ? 's' : ''} — explore their family`}
+                title={marriageNeighbors.length === 0 ? 'No spouse connected' : 'Explore spouse\'s family'}
               >
-                <span className="text-[18px] leading-none">💍</span>
-                <span className="text-[9px] font-medium">Portal</span>
+                <span className="text-xl leading-none">💍</span>
+                <span className="text-[9px] font-semibold tracking-widest uppercase">Portal</span>
               </button>
 
               <button
@@ -1367,12 +1517,12 @@ export function RelationshipUniverse({
                   onOpenPathFinder?.(selectedMemberId ?? undefined)
                   setShowAnalytics(false); setShowIntelPanel(false)
                 }}
-                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80"
-                style={{ color: 'var(--primary)', background: 'var(--glow-primary)', outline: '1px solid var(--primary)' }}
-                title="Trace path to any family member"
+                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-105 active:scale-95"
+                style={{ color: 'var(--primary)', background: 'var(--glow-primary)', outline: '1.5px solid var(--primary)' }}
+                title="Trace relationship path"
               >
-                <span className="text-[18px] leading-none">⟷</span>
-                <span className="text-[9px] font-medium">Path</span>
+                <span className="text-xl leading-none">⟷</span>
+                <span className="text-[9px] font-semibold tracking-widest uppercase">Path</span>
               </button>
             </div>
 
@@ -1387,16 +1537,16 @@ export function RelationshipUniverse({
                     panToPerson(marriageNeighbors[0], 0.72)
                     setVisibleDepth(maxDepth)
                   }}
-                  className="w-full mt-1.5 flex items-center justify-center gap-1.5 rounded-xl py-1.5 text-[10px] font-medium transition-all hover:opacity-80"
-                  style={{ color: 'var(--marriage)', background: 'var(--universe-chip-bg-active)', outline: '1px solid var(--marriage)' }}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all hover:opacity-80"
+                  style={{ color: 'var(--marriage)', borderTop: '1px solid var(--border)' }}
                 >
                   <span>↗</span> Explore {spouse.name.split(' ')[0]}&apos;s full family
                 </button>
               )
             })()}
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Filter chips — horizontal scroll on mobile, vertical on desktop ── */}
       {isMobileView ? (
