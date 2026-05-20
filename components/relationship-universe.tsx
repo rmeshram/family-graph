@@ -1398,31 +1398,60 @@ export function RelationshipUniverse({
         </motion.div>
       )}
 
-      {/* ── Filter chips ───────────────────────────────────────────── */}
-      <div className="absolute top-4 right-4 z-30 flex flex-col gap-1.5 items-end" style={{ zIndex: 10 }}>
-        {([
-          { cat: null, label: 'All', color: 'var(--primary)' },
-          { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
-          { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
-          { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
-          { cat: 'community', label: 'Community', color: 'var(--community)' },
-        ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
-          <button
-            key={label}
-            onClick={() => setFilterCat(cat)}
-            className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md shadow-sm"
-            style={{
-              background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-              borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
-              color: filterCat === cat ? color : 'var(--universe-chip-text)',
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* ── Filter chips — horizontal scroll on mobile, vertical on desktop ── */}
+      {isMobileView ? (
+        <div
+          className="absolute top-2 left-2 right-2 z-30 flex flex-row gap-1.5 overflow-x-auto"
+          style={{ zIndex: 10, scrollbarWidth: 'none' }}
+        >
+          {([
+            { cat: null, label: 'All', color: 'var(--primary)' },
+            { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
+            { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
+            { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
+            { cat: 'community', label: 'Community', color: 'var(--community)' },
+          ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
+            <button
+              key={label}
+              onClick={() => setFilterCat(cat)}
+              className="shrink-0 rounded-full px-3 py-1 text-xs font-medium border transition-all backdrop-blur-md shadow-sm"
+              style={{
+                background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
+                color: filterCat === cat ? color : 'var(--universe-chip-text)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="absolute top-4 right-4 z-30 flex flex-col gap-1.5 items-end" style={{ zIndex: 10 }}>
+          {([
+            { cat: null, label: 'All', color: 'var(--primary)' },
+            { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
+            { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
+            { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
+            { cat: 'community', label: 'Community', color: 'var(--community)' },
+          ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
+            <button
+              key={label}
+              onClick={() => setFilterCat(cat)}
+              className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md shadow-sm"
+              style={{
+                background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
+                color: filterCat === cat ? color : 'var(--universe-chip-text)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* ── Intelligence Panel toggle buttons ───────────────────────── */}
+      {/* ── Intelligence Panel toggle buttons — desktop only (mobile: in legend bar) ── */}
+      {!isMobileView && (
       <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
         <button
           onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
@@ -1447,14 +1476,20 @@ export function RelationshipUniverse({
           ✦ Intelligence
         </button>
       </div>
+      )}
 
       {/* ── Overview Analytics Panel ─────────────────────────────────── */}
       <AnimatePresence>
         {showAnalytics && (
           <motion.div
-            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-            className="absolute bottom-14 right-4 z-30 w-72 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto"
-            style={{ zIndex: 10, maxHeight: '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
+            initial={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            animate={isMobileView ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
+            exit={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            className={cn(
+              "absolute z-30 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto",
+              isMobileView ? "bottom-14 left-2 right-2" : "bottom-14 right-4 w-72"
+            )}
+            style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
           >
             <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Family Overview</h3>
             <div className="space-y-3">
@@ -1521,9 +1556,14 @@ export function RelationshipUniverse({
       <AnimatePresence>
         {showIntelPanel && intelligence && (
           <motion.div
-            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-            className="absolute bottom-14 right-4 z-30 w-72 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto"
-            style={{ zIndex: 10, maxHeight: '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
+            initial={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            animate={isMobileView ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
+            exit={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            className={cn(
+              "absolute z-30 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto",
+              isMobileView ? "bottom-14 left-2 right-2" : "bottom-14 right-4 w-72"
+            )}
+            style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
           >
             <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Relationship Intelligence</h3>
             <div className="space-y-4">
@@ -1635,26 +1675,47 @@ export function RelationshipUniverse({
         </div>
       )}
 
-      {/* ── Legend + zoom level indicator ───────────────────────────── */}
+      {/* ── Legend + zoom level + mobile panel toggles ─────────────── */}
       <div
-        className="absolute bottom-4 left-4 right-4 z-30 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border backdrop-blur-md px-4 py-1.5"
+        className="absolute bottom-4 left-4 right-4 z-30 flex items-center gap-x-2 rounded-full border backdrop-blur-md px-3 py-1.5"
         style={{ zIndex: 10, background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)' }}
       >
+        {/* Mobile: Overview + Intelligence icon buttons, then separator */}
+        {isMobileView && (
+          <>
+            <button
+              onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
+              className="shrink-0 text-sm leading-none transition-all"
+              title="Overview"
+              style={{ color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)' }}
+            >◈</button>
+            <button
+              onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
+              className="shrink-0 text-sm leading-none transition-all"
+              title="Intelligence"
+              style={{ color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)' }}
+            >✦</button>
+            <span className="shrink-0 h-3 w-px" style={{ background: 'var(--universe-chip-border)' }} />
+          </>
+        )}
+
+        {/* Legend dots — labels on desktop, dots-only on mobile */}
         {([
           { color: 'var(--paternal)', label: 'Paternal' },
           { color: 'var(--maternal)', label: 'Maternal' },
           { color: 'var(--marriage)', label: 'Marriage' },
           { color: 'var(--community)', label: 'Community' },
         ]).map(({ color, label }) => (
-          <span key={label} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--universe-chip-text)' }}>
-            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 4px ${color}` }} />
-            {label}
+          <span key={label} className="flex items-center gap-1 text-[10px] shrink-0" style={{ color: 'var(--universe-chip-text)' }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 4px ${color}` }} />
+            {!isMobileView && label}
           </span>
         ))}
-        {/* Find Relationship shortcut hint — bottom legend, unobtrusive */}
+
+        {/* Find Relationship — icon-only on mobile, with label on desktop */}
         <button
           onClick={() => onOpenPathFinder?.()}
-          className="flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border transition-all"
+          className="ml-auto flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border shrink-0 transition-all"
           style={{
             borderColor: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-border)',
             color: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-text)',
@@ -1663,11 +1724,15 @@ export function RelationshipUniverse({
           title="Find relationship path between any two people"
         >
           <span>⟷</span>
-          <span>Find Relationship</span>
+          {!isMobileView && <span>Find Relationship</span>}
         </button>
-        <span className="ml-auto text-[10px] shrink-0 hidden sm:block" style={{ color: 'var(--universe-chip-text)', opacity: 0.7 }}>
-          {zoomLevel === 'cluster' ? 'Cluster' : zoomLevel === 'name' ? 'Name' : zoomLevel === 'detail' ? 'Detail' : 'Full'} view · {Math.round(k * 100)}%
-        </span>
+
+        {/* Zoom level — desktop only */}
+        {!isMobileView && (
+          <span className="text-[10px] shrink-0 hidden sm:block" style={{ color: 'var(--universe-chip-text)', opacity: 0.7 }}>
+            {zoomLevel === 'cluster' ? 'Cluster' : zoomLevel === 'name' ? 'Name' : zoomLevel === 'detail' ? 'Detail' : 'Full'} view · {Math.round(k * 100)}%
+          </span>
+        )}
       </div>
     </div >
   )
