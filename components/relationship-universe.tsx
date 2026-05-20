@@ -1452,30 +1452,30 @@ export function RelationshipUniverse({
 
       {/* ── Intelligence Panel toggle buttons — desktop only (mobile: in legend bar) ── */}
       {!isMobileView && (
-      <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
-        <button
-          onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
-          className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
-          style={{
-            background: showAnalytics ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-            borderColor: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-border)',
-            color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)',
-          }}
-        >
-          ◈ Overview
-        </button>
-        <button
-          onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
-          className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
-          style={{
-            background: showIntelPanel ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-            borderColor: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-border)',
-            color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)',
-          }}
-        >
-          ✦ Intelligence
-        </button>
-      </div>
+        <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
+          <button
+            onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
+            className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
+            style={{
+              background: showAnalytics ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+              borderColor: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-border)',
+              color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)',
+            }}
+          >
+            ◈ Overview
+          </button>
+          <button
+            onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
+            className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
+            style={{
+              background: showIntelPanel ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+              borderColor: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-border)',
+              color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)',
+            }}
+          >
+            ✦ Intelligence
+          </button>
+        </div>
       )}
 
       {/* ── Overview Analytics Panel ─────────────────────────────────── */}
