@@ -63,6 +63,7 @@ export default function KulgathaPage() {
 
   return (
     <>
+      <DemoBanner />
       {/* Print stylesheet — inlined so no extra file needed */}
       <style>{`
         @media print {

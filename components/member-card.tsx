@@ -2,7 +2,7 @@
 
 import { FamilyMember } from '@/lib/types'
 import { Card } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { MapPin } from 'lucide-react'
@@ -41,6 +41,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
         )}
       >
         <Avatar className="h-8 w-8 border border-border">
+          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
           <AvatarFallback className={cn(
             'text-xs font-semibold',
             isSelected
@@ -83,6 +84,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
               ? 'border-primary'
               : 'border-border/50 group-hover:border-primary/50'
           )}>
+            {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
             <AvatarFallback className={cn(
               'font-semibold transition-colors',
               isSelected
@@ -115,7 +117,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
                   'text-xs capitalize',
                   isSelected
                     ? 'bg-primary/20 text-primary border-primary/30'
-                    : 'bg-muted/50'
+                    : 'bg-muted/50 text-muted-foreground border-border/50'
                 )}
               >
                 {member.relationship?.replace(/-/g, ' ')}

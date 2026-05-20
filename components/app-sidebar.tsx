@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useMemo } from 'react'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -21,20 +21,22 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
-const NAV_ITEMS = [
-  { icon: GitBranch, label: 'Family Tree', href: '/dashboard', color: 'text-primary' },
-  { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400' },
-  { icon: Camera, label: 'Memory Vault', href: '/memory', color: 'text-amber-400' },
-  { icon: Sparkles, label: 'AI Copilot', href: '/ai-copilot', color: 'text-violet-400' },
-  { icon: UserPlus, label: 'Invite Family', href: '/invite', color: 'text-green-400' },
-  { icon: CalendarDays, label: 'Events', href: '/events', color: 'text-pink-400' },
-  { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500' },
-  { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400' },
-  { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400' },
-  { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400' },
-  { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400' },
+const ALL_NAV_ITEMS = [
+  { icon: GitBranch, label: 'Family Tree', href: '/dashboard', color: 'text-primary', flag: null },
+  { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400', flag: null },
+  { icon: Camera, label: 'Memory Vault', href: '/memory', color: 'text-amber-400', flag: null },
+  { icon: Sparkles, label: 'AI Copilot', href: '/ai-copilot', color: 'text-violet-400', flag: 'enableAICopilot' as const },
+  { icon: UserPlus, label: 'Invite Family', href: '/invite', color: 'text-green-400', flag: null },
+  { icon: CalendarDays, label: 'Events', href: '/events', color: 'text-pink-400', flag: null },
+  { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500', flag: null },
+  { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400', flag: 'enableMigrationMap' as const },
+  { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400', flag: null },
+  { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400', flag: 'enableFamilyPoster' as const },
+  { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400', flag: 'enableKulgathaPDF' as const },
 ]
+const NAV_ITEMS = ALL_NAV_ITEMS.filter(item => item.flag === null || FEATURE_FLAGS[item.flag])
 
 interface AppSidebarProps {
   onInsightsClick?: () => void
@@ -199,6 +201,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
       <div className="shrink-0 border-t border-border/40 p-3 space-y-2">
         <div className="flex items-center gap-2.5 rounded-xl bg-muted/30 border border-border/50 p-2.5">
           <Avatar className="h-8 w-8">
+            {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={displayName} className="object-cover" />}
             <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
               {initials || 'FG'}
             </AvatarFallback>

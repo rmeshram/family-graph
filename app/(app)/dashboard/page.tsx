@@ -37,6 +37,8 @@ import {
 } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
 import { Toaster } from '@/components/ui/toaster'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { Drawer, DrawerContent } from '@/components/ui/drawer'
 import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
@@ -45,6 +47,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
 function FamilyTreeSkeleton() {
@@ -421,6 +424,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function FamilyGraphApp() {
+  const isMobile = useIsMobile()
   const { user, familyId, profile, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
@@ -459,6 +463,7 @@ export default function FamilyGraphApp() {
   const [viewMode, setViewMode] = useState<TreeViewMode>('universe')
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
+  const [memberListOpen, setMemberListOpen] = useState(false)
 
   // ── Path Finder state ──────────────────────────────────────────────────────
   const [pathFinderOpen, setPathFinderOpen] = useState(false)
@@ -747,14 +752,18 @@ export default function FamilyGraphApp() {
 
         {/* Demo mode banner */}
         {!user && (
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-2">
-            <div className="flex items-center gap-2 text-[12px] text-amber-400/90">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <div
+            className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
+            style={{ background: 'var(--demo-banner-bg)', borderColor: 'var(--demo-banner-border)' }}
+          >
+            <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--demo-banner-text)' }}>
+              <span className="h-1.5 w-1.5 rounded-full animate-pulse shrink-0" style={{ background: 'var(--demo-banner-text)' }} />
               <span>You're viewing <strong>demo data</strong> — this is what your family tree could look like</span>
             </div>
             <Link
               href="/auth/signup"
-              className="shrink-0 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors"
+              className="shrink-0 rounded-lg border px-3 py-1 text-[11px] font-semibold transition-colors hover:opacity-80"
+              style={{ background: 'var(--demo-banner-bg)', borderColor: 'var(--demo-banner-border)', color: 'var(--demo-banner-link)' }}
             >
               Get started free →
             </Link>
@@ -808,13 +817,15 @@ export default function FamilyGraphApp() {
 
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
-            <Button variant={showAIWidget ? 'default' : 'ghost'} size="sm"
-              onClick={() => { setShowAIWidget(v => !v); setShowInviteWidget(false) }}
-              className={cn('h-8 gap-1.5 text-xs', showAIWidget ? 'bg-violet-500 text-white hover:bg-violet-600' : 'text-violet-400 hover:bg-violet-500/10')}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">AI</span>
-            </Button>
+            {FEATURE_FLAGS.enableAICopilot && (
+              <Button variant={showAIWidget ? 'default' : 'ghost'} size="sm"
+                onClick={() => { setShowAIWidget(v => !v); setShowInviteWidget(false) }}
+                className={cn('h-8 gap-1.5 text-xs', showAIWidget ? 'bg-violet-500 text-white hover:bg-violet-600' : 'text-violet-400 hover:bg-violet-500/10')}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">AI</span>
+              </Button>
+            )}
             <Button variant={showInviteWidget ? 'default' : 'ghost'} size="sm"
               onClick={() => { setShowInviteWidget(v => !v); setShowAIWidget(false) }}
               className={cn('h-8 gap-1.5 text-xs', showInviteWidget ? 'bg-green-500 text-white hover:bg-green-600' : 'text-green-400 hover:bg-green-500/10')}
@@ -878,10 +889,8 @@ export default function FamilyGraphApp() {
           )
         })()}
 
-        {/* ── Pending family link requests banner ────────────────── */}
-        <div className="px-4 pt-3 space-y-2">
-          <FamilyLinkRequestsBanner familyId={familyId ?? null} />
-        </div>
+        {/* ── Pending family link requests banner (logged-in only) ── */}
+        {!isDemoMode && <FamilyLinkRequestsBanner familyId={familyId ?? null} />}
 
         {/* ── "Their tree just grew" real-time alert ───────────────── */}
         {newMemberAlert && (
@@ -1010,6 +1019,36 @@ export default function FamilyGraphApp() {
               </div>
             )}
 
+            {/* Mobile member list FAB — only on small screens in graph/universe modes */}
+            {isMobile && (viewMode === 'graph' || viewMode === 'universe') && (
+              <button
+                onClick={() => setMemberListOpen(true)}
+                className="absolute bottom-20 left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
+                style={{ background: 'var(--surface-header)' }}
+              >
+                <Users2 className="h-4 w-4" />
+                <span>Members</span>
+              </button>
+            )}
+
+            {/* Mobile member list bottom sheet */}
+            {isMobile && (
+              <Drawer open={memberListOpen} onOpenChange={setMemberListOpen} direction="bottom">
+                <DrawerContent className="max-h-[82vh] overflow-y-auto">
+                  <MemberListSidebar
+                    members={filteredMembers}
+                    selectedMemberId={selectedMemberId}
+                    onSelectMember={(id) => { handleSelectMember(id); setMemberListOpen(false) }}
+                    maxDegree={maxDegree}
+                    onMaxDegreeChange={setMaxDegree}
+                    totalCount={isDemoMode ? members.length : dbTotalCount}
+                    isCollapsed={false}
+                    onToggleCollapse={() => { }}
+                  />
+                </DrawerContent>
+              </Drawer>
+            )}
+
             {/* Presence avatars — top right of canvas */}
             {viewMode === 'graph' && (
               <div className="absolute top-3 right-3 z-20">
@@ -1026,7 +1065,7 @@ export default function FamilyGraphApp() {
           </main>
 
           {/* AI Widget */}
-          {showAIWidget && (
+          {FEATURE_FLAGS.enableAICopilot && showAIWidget && (
             <aside className="w-80 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
               <AIWidget members={members} onClose={() => setShowAIWidget(false)} />
             </aside>
@@ -1063,9 +1102,9 @@ export default function FamilyGraphApp() {
             </aside>
           )}
 
-          {/* Member Detail */}
-          {selectedMember && !showAIWidget && !showInviteWidget && !pathFinderOpen && (
-            <aside className="w-80 shrink-0 xl:w-96 h-full min-h-0 overflow-hidden">
+          {/* Member Detail — aside on desktop, bottom sheet on mobile */}
+          {selectedMember && !showAIWidget && !showInviteWidget && !pathFinderOpen && !isMobile && (
+            <aside className="w-80 shrink-0 xl:w-96 h-full overflow-hidden">
               <MemberDetail
                 member={selectedMember}
                 allMembers={members}
@@ -1088,6 +1127,39 @@ export default function FamilyGraphApp() {
             </aside>
           )}
 
+          {/* Member Detail — mobile bottom sheet */}
+          {isMobile && (
+            <Drawer
+              open={!!selectedMember && !showAIWidget && !showInviteWidget}
+              onOpenChange={(open) => { if (!open) setSelectedMemberId(null) }}
+              direction="bottom"
+            >
+              <DrawerContent className="max-h-[88vh] overflow-y-auto">
+                {selectedMember && (
+                  <MemberDetail
+                    member={selectedMember}
+                    allMembers={members}
+                    onClose={() => setSelectedMemberId(null)}
+                    onEdit={() => setEditingMember(selectedMember)}
+                    onDelete={() => setIsDeleteDialogOpen(true)}
+                    onAddStory={() => setIsStoryDialogOpen(true)}
+                    onInvite={() => { setSelectedMemberId(null); setShowInviteWidget(true) }}
+                    isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
+                    currentUserId={user?.id}
+                    onSetVisibility={async (memberId, v) => {
+                      try {
+                        await setVisibility(memberId, v)
+                        toast({ title: 'Visibility updated' })
+                      } catch (e: unknown) {
+                        toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+                      }
+                    }}
+                  />
+                )}
+              </DrawerContent>
+            </Drawer>
+          )}
+
           {/* Feed panel */}
           {showFeed && !selectedMember && !showAIWidget && !showInviteWidget && (
             <aside className="w-80 shrink-0 border-l border-border/40 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
@@ -1106,6 +1178,7 @@ export default function FamilyGraphApp() {
         onUpdate={handleUpdateMember}
         editingMember={editingMember}
         familyId={familyId ?? undefined}
+        currentUserId={user?.id}
       />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />

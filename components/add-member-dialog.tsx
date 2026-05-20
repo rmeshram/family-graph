@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock } from 'lucide-react'
 
 interface AddMemberDialogProps {
   open: boolean
@@ -34,6 +34,8 @@ interface AddMemberDialogProps {
   onUpdate?: (id: string, updates: Partial<FamilyMember>) => Promise<void>
   editingMember?: FamilyMember | null
   familyId?: string
+  /** The currently authenticated user's ID — used to lock photo on claimed nodes. */
+  currentUserId?: string
 }
 
 export function AddMemberDialog({
@@ -44,6 +46,7 @@ export function AddMemberDialog({
   onUpdate,
   editingMember,
   familyId,
+  currentUserId,
 }: AddMemberDialogProps) {
   const supabase = createClient()
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -52,6 +55,11 @@ export function AddMemberDialog({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [name, setName] = useState('')
+
+  // Photo is locked when editing a node claimed by someone else
+  const photoIsLocked =
+    !!editingMember?.claimedByUserId &&
+    editingMember.claimedByUserId !== currentUserId
 
   // Pre-populate fields when editing an existing member
   useEffect(() => {
@@ -248,17 +256,22 @@ export function AddMemberDialog({
           <form id="add-member-form" onSubmit={handleSubmit} className="p-6 space-y-6">
             {/* Photo Upload */}
             <div className="flex items-center gap-4">
-              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} disabled={photoIsLocked} />
               <div
-                onClick={() => photoInputRef.current?.click()}
-                className="relative flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-border/50 bg-muted/30 hover:border-primary/50 transition-colors overflow-hidden"
+                onClick={() => !photoIsLocked && photoInputRef.current?.click()}
+                className={`relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed transition-colors overflow-hidden ${photoIsLocked
+                    ? 'border-border/30 bg-muted/20 cursor-not-allowed'
+                    : 'border-border/50 bg-muted/30 cursor-pointer hover:border-primary/50'
+                  }`}
               >
                 {photoPreview ? (
                   <img src={photoPreview} alt="preview" className="h-full w-full object-cover" />
                 ) : (
-                  <ImageIcon className="h-7 w-7 text-muted-foreground/50" />
+                  photoIsLocked
+                    ? <Lock className="h-6 w-6 text-muted-foreground/40" />
+                    : <ImageIcon className="h-7 w-7 text-muted-foreground/50" />
                 )}
-                {photoPreview && (
+                {photoPreview && !photoIsLocked && (
                   <button type="button" onClick={clearPhoto} className="absolute top-1 right-1 rounded-full bg-black/60 p-0.5 text-white">
                     <X className="h-3 w-3" />
                   </button>
@@ -266,7 +279,14 @@ export function AddMemberDialog({
               </div>
               <div className="text-sm text-muted-foreground">
                 <p className="font-medium text-foreground">Profile Photo</p>
-                <p className="text-xs">Tap to upload (optional)</p>
+                {photoIsLocked ? (
+                  <p className="text-xs text-amber-400/80 flex items-center gap-1 mt-0.5">
+                    <Lock className="h-3 w-3" />
+                    {editingMember?.name?.split(' ')[0] ?? 'This person'} manages their own photo
+                  </p>
+                ) : (
+                  <p className="text-xs">Tap to upload (optional)</p>
+                )}
               </div>
             </div>
 

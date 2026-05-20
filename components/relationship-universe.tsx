@@ -439,12 +439,53 @@ export function RelationshipUniverse({
   const wrapRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState({ x: 0, y: 0, k: 0.88 })
   const [size, setSize] = useState({ w: 1200, h: 800 })
+  const sizeRef = useRef({ w: 1200, h: 800 })      // always-current, no stale closures in handlers
+  const [isMobileView, setIsMobileView] = useState(false)
+  const [showMobileControls, setShowMobileControls] = useState(true)
+  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Multi-touch tracking
+  const activePointers = useRef(new Map<number, { x: number; y: number }>())
+  const lastPinchDist = useRef<number | null>(null)
   const drag = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null)
   const isPanning = useRef(false)
   // Inertia
   const velRef = useRef({ vx: 0, vy: 0 })
   const lastPosRef = useRef({ x: 0, y: 0, t: 0 })
   const inertiaRaf = useRef<number | null>(null)
+  // Double-tap detection
+  const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null)
+
+  // Cinematic pan: always-current view for animation start
+  const viewRef = useRef({ x: 0, y: 0, k: 0.88 })
+  useEffect(() => { viewRef.current = view }, [view])
+  const panAnimRef = useRef<number | null>(null)
+  // Tracks whether the most recent selection came from an internal node click
+  const internalClickRef = useRef(false)
+
+  // Animate view to center the selected member (only for external/search selections)
+  useEffect(() => {
+    if (!selectedMemberId) return
+    if (internalClickRef.current) { internalClickRef.current = false; return }
+    const p = peopleById.get(selectedMemberId)
+    if (!p) return
+    if (panAnimRef.current) { cancelAnimationFrame(panAnimRef.current); panAnimRef.current = null }
+    const sv = viewRef.current
+    const targetK = Math.max(sv.k, isMobileView ? 0.72 : 0.92)
+    const targetX = -p.x * targetK
+    const targetY = -p.y * targetK
+    const [sx, sy, sk] = [sv.x, sv.y, sv.k]
+    const dur = 480, t0 = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur)
+      const e = 1 - Math.pow(1 - t, 3) // ease-out cubic
+      setView({ x: sx + (targetX - sx) * e, y: sy + (targetY - sy) * e, k: sk + (targetK - sk) * e })
+      if (t < 1) panAnimRef.current = requestAnimationFrame(step)
+      else panAnimRef.current = null
+    }
+    panAnimRef.current = requestAnimationFrame(step)
+  }, [selectedMemberId, peopleById, isMobileView])
+  useEffect(() => () => { if (panAnimRef.current) cancelAnimationFrame(panAnimRef.current) }, [])
 
   // ── Path-finding ─────────────────────────────────────────────────────────
   const [pathFrom, setPathFrom] = useState<string | null>(null)
@@ -490,12 +531,28 @@ export function RelationshipUniverse({
     const update = () => {
       if (!wrapRef.current) return
       const r = wrapRef.current.getBoundingClientRect()
-      setSize({ w: r.width, h: r.height })
+      const next = { w: r.width, h: r.height }
+      setSize(next)
+      sizeRef.current = next
+      const mobile = r.width < 768
+      setIsMobileView(mobile)
     }
     update()
+    // Adaptive initial zoom for mobile
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setView(v => ({ ...v, k: 0.52 }))
+    }
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
+
+  // Mobile controls auto-hide
+  const resetControlsTimer = useCallback(() => {
+    setShowMobileControls(true)
+    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current)
+    controlsTimerRef.current = setTimeout(() => setShowMobileControls(false), 2800)
+  }, [])
+  useEffect(() => () => { if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current) }, [])
 
   // Cancel any in-flight inertia animation on unmount
   useEffect(() => () => { if (inertiaRaf.current) cancelAnimationFrame(inertiaRaf.current) }, [])
@@ -515,42 +572,96 @@ export function RelationshipUniverse({
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (inertiaRaf.current) { cancelAnimationFrame(inertiaRaf.current); inertiaRaf.current = null }
     ; (e.target as Element).setPointerCapture?.(e.pointerId)
-    drag.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }
-    velRef.current = { vx: 0, vy: 0 }
-    lastPosRef.current = { x: e.clientX, y: e.clientY, t: Date.now() }
-    isPanning.current = false
-  }, [view.x, view.y])
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    if (activePointers.current.size === 1) {
+      // Double-tap detection for mobile zoom
+      const now = Date.now()
+      const last = lastTapRef.current
+      if (last && now - last.t < 280 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 44) {
+        setView(v => {
+          const nk = Math.min(3.2, v.k * 1.65)
+          const r = nk / v.k
+          const dx = e.clientX - sizeRef.current.w / 2
+          const dy = e.clientY - sizeRef.current.h / 2
+          return { x: dx * (1 - r) + v.x * r, y: dy * (1 - r) + v.y * r, k: nk }
+        })
+        lastTapRef.current = null
+        return
+      }
+      lastTapRef.current = { t: now, x: e.clientX, y: e.clientY }
+
+      drag.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }
+      velRef.current = { vx: 0, vy: 0 }
+      lastPosRef.current = { x: e.clientX, y: e.clientY, t: Date.now() }
+      isPanning.current = false
+      lastPinchDist.current = null
+    } else {
+      // Second finger — enter pinch mode, disable pan
+      drag.current = null
+      lastPinchDist.current = null
+    }
+    if (isMobileView) resetControlsTimer()
+  }, [view.x, view.y, isMobileView, resetControlsTimer])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const pointers = [...activePointers.current.values()]
+
+    if (pointers.length >= 2) {
+      // Pinch-to-zoom: keep midpoint fixed in world space
+      const [p1, p2] = pointers
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+      if (lastPinchDist.current !== null && lastPinchDist.current > 0) {
+        const ratio = dist / lastPinchDist.current
+        const midX = (p1.x + p2.x) / 2
+        const midY = (p1.y + p2.y) / 2
+        setView(v => {
+          const nk = Math.min(3.2, Math.max(0.2, v.k * ratio))
+          const r = nk / v.k
+          const dx = midX - sizeRef.current.w / 2
+          const dy = midY - sizeRef.current.h / 2
+          return { x: dx * (1 - r) + v.x * r, y: dy * (1 - r) + v.y * r, k: nk }
+        })
+      }
+      lastPinchDist.current = dist
+      drag.current = null
+      return
+    }
+
+    // Single pointer pan
     const d = drag.current
     if (!d) return
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy
     if (Math.hypot(dx, dy) > 3) isPanning.current = true
-    // Track velocity for inertia
     const now = Date.now(), dt = now - lastPosRef.current.t
     if (dt > 0 && dt < 80) {
       velRef.current.vx = (e.clientX - lastPosRef.current.x) / dt * 14
       velRef.current.vy = (e.clientY - lastPosRef.current.y) / dt * 14
     }
     lastPosRef.current = { x: e.clientX, y: e.clientY, t: now }
-    const nx = d.vx + dx, ny = d.vy + dy
-    setView(v => ({ ...v, x: nx, y: ny }))
+    setView(v => ({ ...v, x: d.vx + dx, y: d.vy + dy }))
   }, [])
 
-  const onPointerUp = useCallback(() => {
-    drag.current = null
-    const { vx, vy } = velRef.current
-    if (Math.hypot(vx, vy) < 0.8) return
-    const step = () => {
-      velRef.current.vx *= 0.90
-      velRef.current.vy *= 0.90
-      if (Math.hypot(velRef.current.vx, velRef.current.vy) < 0.4) {
-        inertiaRaf.current = null; return
+  const releasePointer = useCallback((e: React.PointerEvent) => {
+    activePointers.current.delete(e.pointerId)
+    if (activePointers.current.size < 2) lastPinchDist.current = null
+
+    if (activePointers.current.size === 0) {
+      drag.current = null
+      const { vx, vy } = velRef.current
+      if (Math.hypot(vx, vy) < 0.8) return
+      const step = () => {
+        velRef.current.vx *= 0.90
+        velRef.current.vy *= 0.90
+        if (Math.hypot(velRef.current.vx, velRef.current.vy) < 0.4) {
+          inertiaRaf.current = null; return
+        }
+        setView(v => ({ ...v, x: v.x + velRef.current.vx, y: v.y + velRef.current.vy }))
+        inertiaRaf.current = requestAnimationFrame(step)
       }
-      setView(v => ({ ...v, x: v.x + velRef.current.vx, y: v.y + velRef.current.vy }))
       inertiaRaf.current = requestAnimationFrame(step)
     }
-    inertiaRaf.current = requestAnimationFrame(step)
   }, [])
 
   const cx = size.w / 2 + view.x
@@ -809,9 +920,9 @@ export function RelationshipUniverse({
       onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerUp={releasePointer}
+      onPointerLeave={releasePointer}
+      onPointerCancel={releasePointer}
       onClick={() => { setPathNodes(new Set()); setPathEdges(new Set()) }}
     >
 
@@ -986,6 +1097,7 @@ export function RelationshipUniverse({
                     if (ev.shiftKey && selectedMemberId && selectedMemberId !== p.id) {
                       findPath(selectedMemberId, p.id)
                     } else {
+                      internalClickRef.current = true  // skip cinematic pan for direct clicks
                       onSelectMember(p.id)
                       setPathNodes(new Set())
                       setPathEdges(new Set())
@@ -1286,31 +1398,28 @@ export function RelationshipUniverse({
         </motion.div>
       )}
 
-      {/* ── Filter chips — theme-aware glass ─────────────────────── */}
-      <div className="absolute top-4 left-4 z-30 flex flex-col gap-1.5" style={{ zIndex: 10 }}>
+      {/* ── Filter chips ───────────────────────────────────────────── */}
+      <div className="absolute top-4 right-4 z-30 flex flex-col gap-1.5 items-end" style={{ zIndex: 10 }}>
         {([
           { cat: null, label: 'All', color: 'var(--primary)' },
           { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
           { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
           { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
           { cat: 'community', label: 'Community', color: 'var(--community)' },
-        ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => {
-          const active = filterCat === cat
-          return (
-            <button
-              key={label}
-              onClick={() => setFilterCat(cat)}
-              className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md"
-              style={{
-                background: active ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-                borderColor: active ? color : 'var(--universe-chip-border)',
-                color: active ? color : 'var(--universe-chip-text)',
-              }}
-            >
-              {label}
-            </button>
-          )
-        })}
+        ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
+          <button
+            key={label}
+            onClick={() => setFilterCat(cat)}
+            className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md shadow-sm"
+            style={{
+              background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+              borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
+              color: filterCat === cat ? color : 'var(--universe-chip-text)',
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* ── Intelligence Panel toggle buttons ───────────────────────── */}
@@ -1501,13 +1610,35 @@ export function RelationshipUniverse({
         )}
       </AnimatePresence>
 
+      {/* ── Floating mobile controls (zoom + recenter) ────────────── */}
+      {isMobileView && (
+        <div
+          className="absolute bottom-20 right-4 z-40 flex flex-col gap-2 transition-opacity duration-300"
+          style={{ opacity: showMobileControls ? 1 : 0, pointerEvents: showMobileControls ? 'auto' : 'none' }}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setView(v => ({ ...v, k: Math.min(3.2, v.k * 1.3) })); resetControlsTimer() }}
+            className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
+            style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+          >+</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setView(v => ({ ...v, k: Math.max(0.2, v.k * 0.77) })); resetControlsTimer() }}
+            className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
+            style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+          >−</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setView({ x: 0, y: 0, k: 0.52 }); resetControlsTimer() }}
+            className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-base active:scale-95 transition-transform"
+            style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--primary)' }}
+            title="Recenter graph"
+          >⌖</button>
+        </div>
+      )}
+
+      {/* ── Legend + zoom level indicator ───────────────────────────── */}
       <div
         className="absolute bottom-4 left-4 right-4 z-30 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border backdrop-blur-md px-4 py-1.5"
-        style={{
-          zIndex: 10,
-          background: 'var(--universe-chip-bg)',
-          borderColor: 'var(--universe-chip-border)',
-        }}
+        style={{ zIndex: 10, background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)' }}
       >
         {([
           { color: 'var(--paternal)', label: 'Paternal' },

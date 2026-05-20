@@ -259,22 +259,38 @@ CREATE POLICY "members: admin can delete"
   );
 
 -- ─── stories, memories, voice_notes, events, invite_links ────────────────────
-DROP POLICY IF EXISTS "stories: family"  ON public.stories;
-DROP POLICY IF EXISTS "memories: family" ON public.memories;
-DROP POLICY IF EXISTS "vnotes: family"   ON public.voice_notes;
-DROP POLICY IF EXISTS "events: family"   ON public.events;
+DROP POLICY IF EXISTS "stories: family"          ON public.stories;
+DROP POLICY IF EXISTS "memories: family"         ON public.memories;
+DROP POLICY IF EXISTS "memories: family select"  ON public.memories;
+DROP POLICY IF EXISTS "memories: family insert"  ON public.memories;
+DROP POLICY IF EXISTS "memories: family update"  ON public.memories;
+DROP POLICY IF EXISTS "memories: family delete"  ON public.memories;
+DROP POLICY IF EXISTS "vnotes: family"           ON public.voice_notes;
+DROP POLICY IF EXISTS "vnotes: family select"    ON public.voice_notes;
+DROP POLICY IF EXISTS "vnotes: family insert"    ON public.voice_notes;
+DROP POLICY IF EXISTS "vnotes: family update"    ON public.voice_notes;
+DROP POLICY IF EXISTS "vnotes: family delete"    ON public.voice_notes;
+DROP POLICY IF EXISTS "events: family"           ON public.events;
 DROP POLICY IF EXISTS "invites: family"          ON public.invite_links;
 DROP POLICY IF EXISTS "invites: family can manage" ON public.invite_links;
 DROP POLICY IF EXISTS "invites: public can read"   ON public.invite_links;
 
--- Family members can manage their own invite links
+CREATE POLICY "stories: family"   ON public.stories     FOR ALL USING (family_id = public.my_family_id());
+CREATE POLICY "events: family"    ON public.events       FOR ALL USING (family_id = public.my_family_id());
 CREATE POLICY "invites: family can manage" ON public.invite_links FOR ALL    USING (family_id = public.my_family_id());
--- Anyone can read invite links (the code is the security token)
 CREATE POLICY "invites: public can read"   ON public.invite_links FOR SELECT USING (true);
-CREATE POLICY "memories: family" ON public.memories      FOR ALL USING (family_id = public.my_family_id());
-CREATE POLICY "vnotes: family"   ON public.voice_notes   FOR ALL USING (family_id = public.my_family_id());
-CREATE POLICY "events: family"   ON public.events        FOR ALL USING (family_id = public.my_family_id());
-CREATE POLICY "invites: family"  ON public.invite_links  FOR ALL USING (family_id = public.my_family_id());
+
+-- memories — explicit per-operation policies (reliable INSERT WITH CHECK)
+CREATE POLICY "memories: family select" ON public.memories FOR SELECT USING     (family_id = public.my_family_id());
+CREATE POLICY "memories: family insert" ON public.memories FOR INSERT WITH CHECK(family_id = public.my_family_id());
+CREATE POLICY "memories: family update" ON public.memories FOR UPDATE USING     (family_id = public.my_family_id()) WITH CHECK (family_id = public.my_family_id());
+CREATE POLICY "memories: family delete" ON public.memories FOR DELETE USING     (family_id = public.my_family_id());
+
+-- voice_notes — explicit per-operation policies
+CREATE POLICY "vnotes: family select" ON public.voice_notes FOR SELECT USING     (family_id = public.my_family_id());
+CREATE POLICY "vnotes: family insert" ON public.voice_notes FOR INSERT WITH CHECK(family_id = public.my_family_id());
+CREATE POLICY "vnotes: family update" ON public.voice_notes FOR UPDATE USING     (family_id = public.my_family_id()) WITH CHECK (family_id = public.my_family_id());
+CREATE POLICY "vnotes: family delete" ON public.voice_notes FOR DELETE USING     (family_id = public.my_family_id());
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- TRIGGERS
@@ -395,6 +411,29 @@ CREATE POLICY "vnote: family read"
   ON storage.objects FOR SELECT USING (bucket_id = 'voice-notes' AND auth.role() = 'authenticated');
 CREATE POLICY "vnote: family insert"
   ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'voice-notes' AND auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Family members can delete memories"    ON storage.objects;
+DROP POLICY IF EXISTS "Family members can update memories"    ON storage.objects;
+DROP POLICY IF EXISTS "Family members can delete voice notes" ON storage.objects;
+
+CREATE POLICY "Family members can delete memories"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'memories' AND
+    (storage.foldername(name))[1] IN (SELECT family_id::TEXT FROM public.profiles WHERE id = auth.uid())
+  );
+CREATE POLICY "Family members can update memories"
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'memories' AND
+    (storage.foldername(name))[1] IN (SELECT family_id::TEXT FROM public.profiles WHERE id = auth.uid())
+  );
+CREATE POLICY "Family members can delete voice notes"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'voice-notes' AND
+    (storage.foldername(name))[1] IN (SELECT family_id::TEXT FROM public.profiles WHERE id = auth.uid())
+  );
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Migration 009: claim trigger + update policy for claimed users

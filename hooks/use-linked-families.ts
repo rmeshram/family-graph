@@ -80,7 +80,7 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
     )
 
     const channel = supabase
-      .channel(`linked-family-members:${familyId}:${Date.now()}`)
+      .channel(`linked-family-members:${familyId}:${crypto.randomUUID()}`)
       .on(
         'postgres_changes',
         {
