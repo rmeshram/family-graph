@@ -22,6 +22,7 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-feed'
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipUniverse } from '@/components/relationship-universe'
+import { PathFinderPanel } from '@/components/path-finder-panel'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -441,6 +442,9 @@ export default function FamilyGraphApp() {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  // Phase 2.5 — relationship exploration trail ("You → Brother → Brother's Wife → …")
+  // Capped at 8 hops so the breadcrumb stays readable.
+  const [explorationTrail, setExplorationTrail] = useState<string[]>([])
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
@@ -455,6 +459,82 @@ export default function FamilyGraphApp() {
   const [viewMode, setViewMode] = useState<TreeViewMode>('universe')
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
+
+  // ── Path Finder state ──────────────────────────────────────────────────────
+  const [pathFinderOpen, setPathFinderOpen] = useState(false)
+  const [pfFrom, setPfFrom] = useState('')
+  const [pfTo, setPfTo] = useState('')
+  const [pfFromSearch, setPfFromSearch] = useState('')
+  const [pfToSearch, setPfToSearch] = useState('')
+  const [pfPathNodes, setPfPathNodes] = useState<Set<string>>(new Set())
+  const [pfPathEdges, setPfPathEdges] = useState<Set<string>>(new Set())
+  const [pfPathSequence, setPfPathSequence] = useState<string[]>([])
+
+  // ── Path Finder BFS helpers ──────────────────────────────────────────────
+  const dashboardAdjacencyMap = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    const add = (a: string, b: string) => {
+      if (!map.has(a)) map.set(a, new Set())
+      if (!map.has(b)) map.set(b, new Set())
+      map.get(a)!.add(b); map.get(b)!.add(a)
+    }
+    // Use the raw dbMembers for adjacency so filtering doesn't break paths
+    const base = isDemoMode ? sampleFamilyMembers : dbMembers
+    base.forEach(m => {
+      m.parentIds.forEach(pid => add(m.id, pid))
+      m.spouseIds.forEach(sid => add(m.id, sid))
+    })
+    return map
+  }, [isDemoMode, dbMembers])
+
+  const findExternalPath = useCallback((fromId: string, toId: string) => {
+    if (!fromId || !toId || fromId === toId) {
+      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+      return
+    }
+    const parent = new Map<string, string>([[fromId, '']])
+    const queue = [fromId]
+    let found = false
+    outer: while (queue.length > 0) {
+      const cur = queue.shift()!
+      for (const nid of (dashboardAdjacencyMap.get(cur) ?? new Set())) {
+        if (!parent.has(nid)) {
+          parent.set(nid, cur)
+          if (nid === toId) { found = true; break outer }
+          queue.push(nid)
+        }
+      }
+    }
+    if (!found) { setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([]); return }
+    const nodes: string[] = []; const edgeKeys = new Set<string>()
+    let cur = toId
+    while (cur) {
+      nodes.unshift(cur)
+      const prev = parent.get(cur)!
+      if (prev) edgeKeys.add([prev, cur].sort().join('|'))
+      cur = prev
+    }
+    setPfPathNodes(new Set(nodes)); setPfPathEdges(edgeKeys); setPfPathSequence(nodes)
+  }, [dashboardAdjacencyMap])
+
+  useEffect(() => {
+    if (pfFrom && pfTo && pfFrom !== pfTo) findExternalPath(pfFrom, pfTo)
+    else { setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([]) }
+  }, [pfFrom, pfTo, findExternalPath])
+
+  const handleOpenPathFinder = useCallback((fromMemberId?: string) => {
+    if (!fromMemberId && pathFinderOpen) {
+      setPathFinderOpen(false); return
+    }
+    setPathFinderOpen(true)
+    if (fromMemberId) {
+      setPfFrom(fromMemberId)
+      const m = (isDemoMode ? sampleFamilyMembers : dbMembers).find(x => x.id === fromMemberId)
+      if (m) setPfFromSearch(m.name)
+      setPfTo(''); setPfToSearch('')
+      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+    }
+  }, [isDemoMode, dbMembers, pathFinderOpen])
 
   const members = useMemo(() => {
     if (isDemoMode) return sampleFamilyMembers
@@ -522,6 +602,26 @@ export default function FamilyGraphApp() {
 
   const handleSelectMember = useCallback((id: string) => {
     setSelectedMemberId((prev) => (prev === id ? null : id))
+    setExplorationTrail((trail) => {
+      if (trail[trail.length - 1] === id) return trail
+      // If this id is already in the trail, truncate back to it (navigating "back")
+      const existingIdx = trail.indexOf(id)
+      if (existingIdx !== -1) return trail.slice(0, existingIdx + 1)
+      return [...trail, id].slice(-8)
+    })
+  }, [])
+
+  const handleTrailJump = useCallback((id: string) => {
+    setSelectedMemberId(id)
+    setExplorationTrail((trail) => {
+      const idx = trail.indexOf(id)
+      return idx !== -1 ? trail.slice(0, idx + 1) : [id]
+    })
+  }, [])
+
+  const handleTrailClear = useCallback(() => {
+    setExplorationTrail([])
+    setSelectedMemberId(null)
   }, [])
 
   const handleAddMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>) => {
@@ -801,7 +901,7 @@ export default function FamilyGraphApp() {
         )}
 
         {/* ── Content Area ─────────────────────────────────────────── */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* Member list sidebar — visible in graph + universe modes */}
           {(viewMode === 'graph' || viewMode === 'universe') && (
@@ -826,7 +926,7 @@ export default function FamilyGraphApp() {
           )}
 
           {/* Main canvas */}
-          <main className="flex-1 overflow-hidden relative">
+          <main className="flex-1 min-h-0 overflow-hidden relative">
             {/* RLS / DB error banner */}
             {!isDemoMode && !dbLoading && dbError && (
               <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-3 bg-destructive/90 px-4 py-2.5 text-sm text-white backdrop-blur">
@@ -860,7 +960,54 @@ export default function FamilyGraphApp() {
                 selfMemberId={selfMember?.id ?? null}
                 selectedMemberId={selectedMemberId}
                 onSelectMember={handleSelectMember}
+                pathHighlight={pfPathSequence.length > 0 ? { nodes: pfPathNodes, edges: pfPathEdges, sequence: pfPathSequence } : undefined}
+                onOpenPathFinder={handleOpenPathFinder}
+                pathFinderOpen={pathFinderOpen}
               />
+            )}
+
+            {/* Phase 2.5 — Relationship exploration trail (breadcrumb GPS) */}
+            {viewMode === 'universe' && explorationTrail.length > 0 && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 max-w-[90vw] pointer-events-auto">
+                <div
+                  className="flex items-center gap-1.5 rounded-full border backdrop-blur-md px-3 py-1.5 shadow-lg overflow-x-auto"
+                  style={{
+                    background: 'var(--universe-trail-bg)',
+                    borderColor: 'var(--universe-trail-border)',
+                    color: 'var(--universe-trail-text)',
+                    maxWidth: '90vw',
+                  }}
+                >
+                  <button
+                    onClick={handleTrailClear}
+                    className="text-[11px] font-medium whitespace-nowrap opacity-70 hover:opacity-100 transition-opacity px-1"
+                    title="Clear exploration trail"
+                  >
+                    You
+                  </button>
+                  {explorationTrail.map((id, idx) => {
+                    const m = members.find((mm) => mm.id === id)
+                    if (!m) return null
+                    const isLast = idx === explorationTrail.length - 1
+                    return (
+                      <div key={`${id}-${idx}`} className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] opacity-40">›</span>
+                        <button
+                          onClick={() => handleTrailJump(id)}
+                          className="text-[11px] font-medium whitespace-nowrap transition-all px-1 rounded"
+                          style={{
+                            color: isLast ? 'var(--universe-trail-active)' : 'var(--universe-trail-text)',
+                            fontWeight: isLast ? 600 : 500,
+                          }}
+                          title={`Jump to ${m.name}`}
+                        >
+                          {m.name.split(' ')[0]}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             )}
 
             {/* Presence avatars — top right of canvas */}
@@ -892,9 +1039,33 @@ export default function FamilyGraphApp() {
             </aside>
           )}
 
+          {/* Path Finder Panel */}
+          {pathFinderOpen && viewMode === 'universe' && !showAIWidget && !showInviteWidget && (
+            <aside className="w-80 shrink-0 xl:w-96 h-full min-h-0 overflow-hidden border-l border-border/40">
+              <PathFinderPanel
+                members={filteredMembers}
+                pfFrom={pfFrom}
+                pfTo={pfTo}
+                pfFromSearch={pfFromSearch}
+                pfToSearch={pfToSearch}
+                pathSequence={pfPathSequence}
+                onPfFromChange={setPfFrom}
+                onPfToChange={setPfTo}
+                onPfFromSearchChange={setPfFromSearch}
+                onPfToSearchChange={setPfToSearch}
+                onSelectMember={handleSelectMember}
+                onClose={() => {
+                  setPathFinderOpen(false)
+                  setPfFrom(''); setPfTo(''); setPfFromSearch(''); setPfToSearch('')
+                  setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+                }}
+              />
+            </aside>
+          )}
+
           {/* Member Detail */}
-          {selectedMember && !showAIWidget && !showInviteWidget && (
-            <aside className="w-80 shrink-0 xl:w-96 h-full overflow-hidden">
+          {selectedMember && !showAIWidget && !showInviteWidget && !pathFinderOpen && (
+            <aside className="w-80 shrink-0 xl:w-96 h-full min-h-0 overflow-hidden">
               <MemberDetail
                 member={selectedMember}
                 allMembers={members}

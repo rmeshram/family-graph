@@ -256,12 +256,18 @@ export function useMembers(familyId: string | null) {
     if ('instagramHandle' in updates) patch.instagram_handle = (updates as any).instagramHandle ?? null
     if ('visibility' in updates) patch.visibility = updates.visibility
 
-    const { error } = await (supabase.from('family_members') as any).update(patch).eq('id', id)
-    if (error) throw new Error(error.message)
-
-    // Optimistically update local state so UI reflects immediately
+    // Snapshot for rollback
+    const previous = members
+    // Optimistic update first so UI reflects immediately
     setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m))
-  }, [supabase])
+
+    const { error } = await (supabase.from('family_members') as any).update(patch).eq('id', id)
+    if (error) {
+      // Rollback on failure
+      setMembers(previous)
+      throw new Error(error.message)
+    }
+  }, [supabase, members])
 
   const deleteMember = useCallback(async (id: string) => {
     // Remove from other members' parent_ids/spouse_ids first

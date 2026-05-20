@@ -34,6 +34,12 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
+
+  // Validate token format BEFORE doing anything (prevents cookie poisoning + DB hits with junk)
+  if (!token || !/^[A-Z0-9]{4,16}$/.test(token.toUpperCase())) {
+    return NextResponse.json({ error: 'INVALID_TOKEN' }, { status: 400 })
+  }
+
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
 

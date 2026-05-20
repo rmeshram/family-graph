@@ -66,7 +66,7 @@ const milestoneColors: Record<string, string> = {
   career: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   education: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   achievement: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  other: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  other: 'bg-muted text-muted-foreground border-border',
 }
 
 export function MemberDetail({
@@ -118,13 +118,13 @@ export function MemberDetail({
     : null
 
   return (
-    <Card className="flex flex-col h-full overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
+    <Card className="flex flex-col h-full min-h-0 overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
       <CardHeader className="pb-4 border-b border-border/40">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div className="relative">
               <Avatar className="h-16 w-16 border-2 border-amber-400/30 ring-2 ring-amber-400/10">
-                <AvatarFallback className="bg-gradient-to-br from-amber-600/20 to-indigo-600/25 text-amber-200 text-xl font-bold">
+                <AvatarFallback className="bg-gradient-to-br from-amber-600/20 to-indigo-600/25 text-xl font-bold" style={{ color: 'var(--accent)' }}>
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -138,7 +138,7 @@ export function MemberDetail({
               <h2 className="text-xl font-bold text-foreground">{member.name}</h2>
               <div className="flex items-center gap-2 flex-wrap">
                 {member.relationship && (
-                  <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20">
+                  <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
                     {member.relationship}
                   </Badge>
                 )}
@@ -162,7 +162,7 @@ export function MemberDetail({
         </div>
       </CardHeader>
 
-      <ScrollArea className="flex-1 overflow-auto">
+      <ScrollArea className="flex-1 min-h-0 overflow-auto">
         <CardContent className="p-0">
           <Tabs defaultValue="overview" className="w-full">
             <TabsList className="w-full rounded-none border-b border-border/50 bg-transparent h-auto p-0">
@@ -242,16 +242,20 @@ export function MemberDetail({
                     <TrendingUp className="h-3.5 w-3.5 text-primary" />
                     Profile Completeness
                   </h3>
-                  <span className={cn(
-                    "text-xs font-bold",
-                    completeness.score >= 80 ? "text-green-400" : completeness.score >= 50 ? "text-amber-400" : "text-red-400"
-                  )}>{completeness.score}%</span>
+                  <span
+                    className="text-xs font-bold"
+                    style={{
+                      color: completeness.score >= 80 ? 'var(--success)' : completeness.score >= 50 ? 'var(--warning)' : 'var(--error)',
+                    }}
+                  >
+                    {completeness.score}%
+                  </span>
                 </div>
                 <Progress
                   value={completeness.score}
                   className={cn(
                     "h-1.5",
-                    completeness.score >= 80 ? "[&>div]:bg-green-400" : completeness.score >= 50 ? "[&>div]:bg-amber-400" : "[&>div]:bg-red-400"
+                    completeness.score >= 80 ? "[&>div]:bg-green-500" : completeness.score >= 50 ? "[&>div]:bg-amber-500" : "[&>div]:bg-red-500"
                   )}
                 />
                 {completeness.missing.length > 0 && (
@@ -268,15 +272,15 @@ export function MemberDetail({
 
               {/* Relationship Path */}
               {relationPath !== null && (
-                <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3 space-y-2">
-                  <h3 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                <div className="rounded-xl border p-3 space-y-2" style={{ background: 'var(--glow-gold)', borderColor: 'var(--border)' }}>
+                  <h3 className="text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
                     <GitBranch className="h-3.5 w-3.5" />
                     {relationLabel ? relationLabel : `Your Connection · ${relationPath.length - 1} step${relationPath.length !== 2 ? 's' : ''}`}
                   </h3>
                   <div className="flex items-center gap-1 flex-wrap">
                     {relationPath.map((m, i) => (
                       <span key={m.id} className="flex items-center gap-1">
-                        <span className="rounded-full bg-amber-500/10 text-amber-300 text-[10px] px-2 py-0.5 font-medium">
+                        <span className="rounded-full text-[10px] px-2 py-0.5 font-medium border" style={{ background: 'var(--surface-card)', color: 'var(--foreground)', borderColor: 'var(--border)' }}>
                           {m.name.split(' ')[0]}
                         </span>
                         {i < relationPath.length - 1 && (
@@ -356,7 +360,7 @@ export function MemberDetail({
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {spouses.map((s) => (
-                          <Badge key={s.id} variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/25">
+                          <Badge key={s.id} variant="outline" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
                             <Heart className="h-3 w-3 mr-1" />
                             {s.name}
                           </Badge>
@@ -474,12 +478,13 @@ export function MemberDetail({
         </CardContent>
       </ScrollArea>
 
-      <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border/50 bg-card">
+      <div className="shrink-0 p-4 border-t border-border/50" style={{ background: 'var(--surface-panel)' }}>
         {/* Invite nudge for unclaimed members */}
         {!member.isClaimed && member.relationship !== 'self' && onInvite && (
           <button
             onClick={onInvite}
-            className="mb-2 w-full flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-sm text-orange-400 hover:bg-orange-500/10 transition-colors"
+            className="mb-2 w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+            style={{ borderColor: 'var(--border)', background: 'var(--glow-gold)', color: 'var(--accent)' }}
           >
             <UserPlus className="h-4 w-4 shrink-0" />
             <span>Invite {member.name.split(' ')[0]} to join the tree</span>

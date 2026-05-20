@@ -21,6 +21,14 @@ export async function POST(req: NextRequest) {
   if (!name || !inviteCode || !createdBy) {
     return NextResponse.json({ error: 'Missing required fields: name, inviteCode, createdBy' }, { status: 400 })
   }
+  // Input validation
+  const trimmedName = String(name).trim()
+  if (trimmedName.length < 1 || trimmedName.length > 100) {
+    return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
+  }
+  if (!/^[A-Z0-9]{4,16}$/.test(String(inviteCode).toUpperCase())) {
+    return NextResponse.json({ error: 'INVALID_INVITE_CODE' }, { status: 400 })
+  }
 
   // Use service role client — bypasses all RLS policies
   const adminClient = createServerClient(supabaseUrl, serviceRoleKey, {
@@ -30,13 +38,14 @@ export async function POST(req: NextRequest) {
 
   const { data: family, error } = await adminClient
     .from('families')
-    .insert({ name, invite_code: inviteCode, created_by: createdBy })
+    .insert({ name: trimmedName, invite_code: String(inviteCode).toUpperCase(), created_by: createdBy })
     .select()
     .single()
 
   if (error) {
     console.error('create-family error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // Do not leak DB error messages to the client
+    return NextResponse.json({ error: 'CREATE_FAILED' }, { status: 500 })
   }
 
   return NextResponse.json({ family: { id: family.id, invite_code: family.invite_code } })

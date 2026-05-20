@@ -390,9 +390,23 @@ interface Props {
   selfMemberId: string | null
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
+  /** Path highlight injected from the dashboard's PathFinderPanel */
+  pathHighlight?: { nodes: Set<string>; edges: Set<string>; sequence: string[] }
+  /** Called when the user wants to open the path finder (optionally pre-seeded with a member) */
+  onOpenPathFinder?: (fromMemberId?: string) => void
+  /** Whether the external path finder panel is currently open (for legend button state) */
+  pathFinderOpen?: boolean
 }
 
-export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, onSelectMember }: Props) {
+export function RelationshipUniverse({
+  members,
+  selfMemberId,
+  selectedMemberId,
+  onSelectMember,
+  pathHighlight,
+  onOpenPathFinder,
+  pathFinderOpen = false,
+}: Props) {
   const effectiveSelfId = selfMemberId ?? members[0]?.id ?? ''
 
   // ── Graph data ───────────────────────────────────────────────────────────
@@ -436,9 +450,14 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   const [pathFrom, setPathFrom] = useState<string | null>(null)
   const [pathNodes, setPathNodes] = useState<Set<string>>(new Set())
   const [pathEdges, setPathEdges] = useState<Set<string>>(new Set())
+  const [pathSequence, setPathSequence] = useState<string[]>([])
+  const [isPathFindingMode, setIsPathFindingMode] = useState(false)
+  const [showIntelPanel, setShowIntelPanel] = useState(false)
+  const [portalPair, setPortalPair] = useState<{ from: string; to: string } | null>(null)
+  const portalTimers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const findPath = useCallback((fromId: string, toId: string) => {
-    if (fromId === toId) { setPathNodes(new Set([fromId])); setPathEdges(new Set()); return }
+    if (fromId === toId) { setPathNodes(new Set([fromId])); setPathEdges(new Set()); setPathSequence([fromId]); return }
     const parent = new Map<string, string>([[fromId, '']])
     const queue = [fromId]
     let found = false
@@ -452,7 +471,7 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
         }
       }
     }
-    if (!found) { setPathNodes(new Set()); setPathEdges(new Set()); return }
+    if (!found) { setPathNodes(new Set()); setPathEdges(new Set()); setPathSequence([]); return }
     const nodes: string[] = [], edgeKeys = new Set<string>()
     let cur = toId
     while (cur) {
@@ -463,6 +482,8 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
     }
     setPathNodes(new Set(nodes))
     setPathEdges(edgeKeys)
+    setPathSequence(nodes)
+    setPathFrom(fromId)
   }, [adjacencyMap])
 
   useEffect(() => {
@@ -478,6 +499,12 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
 
   // Cancel any in-flight inertia animation on unmount
   useEffect(() => () => { if (inertiaRaf.current) cancelAnimationFrame(inertiaRaf.current) }, [])
+
+  // Cleanup any staged reveal timers used by portal exploration actions.
+  useEffect(() => () => {
+    portalTimers.current.forEach(clearTimeout)
+    portalTimers.current = []
+  }, [])
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
@@ -536,9 +563,156 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
       k < 0.8 ? 'name' :
         k < 1.1 ? 'detail' : 'full'
 
+  // Small deterministic ambient particles to make the canvas feel alive.
+  const ambientParticles = useMemo(() => {
+    return Array.from({ length: 18 }, (_, i) => ({
+      id: `p-${i}`,
+      left: ((i * 37) % 100),
+      top: ((i * 19 + 11) % 100),
+      size: 1.6 + (i % 4) * 0.9,
+      duration: 9 + (i % 5) * 2.4,
+      delay: (i % 6) * 0.55,
+      opacity: 0.14 + (i % 3) * 0.08,
+      color: i % 3 === 0 ? 'var(--star-color-1)' : i % 3 === 1 ? 'var(--star-color-2)' : 'var(--star-color-3)',
+    }))
+  }, [])
+
   // ── Hover / focus state ──────────────────────────────────────────────────
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const focusId = selectedMemberId ?? hoveredId
+  const selectedPerson = selectedMemberId ? peopleById.get(selectedMemberId) : undefined
+
+  const selectedAnchor = useMemo(() => {
+    if (!selectedPerson) return null
+    const sx = cx + selectedPerson.x * k
+    const sy = cy + selectedPerson.y * k
+    if (sx < 24 || sx > size.w - 24 || sy < 24 || sy > size.h - 24) return null
+    return { x: sx, y: sy }
+  }, [selectedPerson, cx, cy, k, size.w, size.h])
+
+  const marriageNeighbors = useMemo(() => {
+    if (!selectedMemberId) return [] as string[]
+    const out: string[] = []
+    for (const e of edges) {
+      if (e.kind !== 'marriage') continue
+      if (e.from === selectedMemberId) out.push(e.to)
+      if (e.to === selectedMemberId) out.push(e.from)
+    }
+    return Array.from(new Set(out))
+  }, [edges, selectedMemberId])
+
+  const panToPerson = useCallback((id: string, nextZoom?: number, biasX = 0) => {
+    const p = peopleById.get(id)
+    if (!p) return
+    setView(v => {
+      const nk = nextZoom ?? v.k
+      const nx = biasX - p.x * nk
+      const ny = -p.y * nk
+      return { x: nx, y: ny, k: nk }
+    })
+  }, [peopleById])
+
+  const runMarriagePortal = useCallback(() => {
+    if (!selectedMemberId || marriageNeighbors.length === 0) return
+    const spouseId = marriageNeighbors[0]
+    const from = peopleById.get(selectedMemberId)
+    const to = peopleById.get(spouseId)
+    if (!from || !to) return
+
+    setPortalPair({ from: selectedMemberId, to: spouseId })
+    findPath(selectedMemberId, spouseId)
+    setPathFrom(selectedMemberId)
+
+    // Cinematic bridge: shift focus toward spouse side while preserving origin in frame.
+    setView(v => {
+      const nk = Math.max(0.9, Math.min(1.2, v.k * 1.06))
+      const midX = (from.x + to.x) / 2
+      const midY = (from.y + to.y) / 2
+      return { x: size.w * 0.08 - midX * nk, y: -midY * nk, k: nk }
+    })
+
+    // Progressive emergence of deeper rings after entering marriage portal.
+    portalTimers.current.forEach(clearTimeout)
+    portalTimers.current = []
+    setVisibleDepth(1)
+    for (let i = 2; i <= maxDepth; i++) {
+      portalTimers.current.push(setTimeout(() => setVisibleDepth(i), 240 + i * 240))
+    }
+  }, [selectedMemberId, marriageNeighbors, peopleById, findPath, size.w, maxDepth])
+
+  // ── Relationship Intelligence Engine ──────────────────────────────────
+  // All computed client-side — no backend required for MVP.
+  const intelligence = useMemo(() => {
+    if (people.length === 0) return null
+
+    // Influence score: direct connections + marriage bridge bonus (2x)
+    const influenceScores = new Map<string, number>()
+    for (const p of people) {
+      let score = adjacencyMap.get(p.id)?.size ?? 0
+      // Marriage bridges worth 2× because they connect ecosystems
+      for (const e of edges) {
+        if (e.kind === 'marriage' && (e.from === p.id || e.to === p.id)) score += 1
+      }
+      influenceScores.set(p.id, score)
+    }
+    const topInfluencers = [...people]
+      .sort((a, b) => (influenceScores.get(b.id) ?? 0) - (influenceScores.get(a.id) ?? 0))
+      .slice(0, 5)
+      .map(p => ({ id: p.id, name: p.name, score: influenceScores.get(p.id) ?? 0 }))
+
+    // Social proximity from self (BFS distance)
+    const distFromSelf = new Map<string, number>()
+    const bfsQueue = [effectiveSelfId]
+    distFromSelf.set(effectiveSelfId, 0)
+    while (bfsQueue.length) {
+      const cur = bfsQueue.shift()!
+      const d = distFromSelf.get(cur)!
+      for (const nid of (adjacencyMap.get(cur) ?? new Set())) {
+        if (!distFromSelf.has(nid)) {
+          distFromSelf.set(nid, d + 1)
+          bfsQueue.push(nid)
+        }
+      }
+    }
+
+    // Relationship strength for selected person
+    const strengthMap = new Map<string, number>()
+    for (const p of people) {
+      if (p.id === effectiveSelfId) continue
+      const dist = distFromSelf.get(p.id) ?? 99
+      const sharedNeighbors = [...(adjacencyMap.get(p.id) ?? new Set())]
+        .filter(nid => adjacencyMap.get(effectiveSelfId)?.has(nid)).length
+      const attrBonus = (
+        (people.find(s => s.id === effectiveSelfId)?.city === p.city ? 1 : 0) +
+        (people.find(s => s.id === effectiveSelfId)?.gotra === p.gotra && p.gotra ? 1 : 0)
+      )
+      strengthMap.set(p.id, Math.max(0, Math.round((10 / Math.max(1, dist)) + sharedNeighbors * 1.5 + attrBonus)))
+    }
+
+    // Suggested connections: people not yet adjacent to self, sharing gotra/city/generation
+    const selfPerson = people.find(p => p.id === effectiveSelfId)
+    const selfAdj = adjacencyMap.get(effectiveSelfId) ?? new Set<string>()
+    const suggestions = people
+      .filter(p => p.id !== effectiveSelfId && !selfAdj.has(p.id) && p.category !== 'self')
+      .map(p => {
+        let reason = ''
+        if (selfPerson?.gotra && p.gotra === selfPerson.gotra) reason = `Same gotra · ${p.gotra}`
+        else if (selfPerson?.city && p.city === selfPerson.city) reason = `Same city · ${p.city}`
+        else if (Math.abs((people.find(s => s.id === effectiveSelfId)?.depth ?? 0) - p.depth) <= 1) reason = 'Same generation'
+        return reason ? { id: p.id, name: p.name, reason } : null
+      })
+      .filter((x): x is { id: string; name: string; reason: string } => x !== null)
+      .slice(0, 4)
+
+    // Trust network: verified connected members
+    const verifiedCount = people.filter(p => p.verified).length
+    const trustScore = people.length > 0 ? Math.round((verifiedCount / people.length) * 100) : 0
+
+    // Marriage bridges: unique marriage connections between clusters
+    const marriagePortals = edges.filter(e => e.kind === 'marriage').length
+
+    return { topInfluencers, distFromSelf, strengthMap, suggestions, trustScore, verifiedCount, marriagePortals }
+  }, [people, adjacencyMap, edges, effectiveSelfId])
 
   const adjacentToFocus = useMemo(() => {
     if (!focusId) return new Set<string>()
@@ -567,8 +741,12 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
 
   // ── Opacity helpers ──────────────────────────────────────────────────────
   // Visual noise reduction: edges ~8% by default; connections emerge on interaction.
+  // Combine internal shift-click path state with external pathHighlight prop from dashboard.
+  const effectivePathNodes = pathHighlight ? pathHighlight.nodes : pathNodes
+  const effectivePathEdges = pathHighlight ? pathHighlight.edges : pathEdges
+
   function nodeOpacity(p: UPerson): number {
-    if (pathNodes.size > 0) return pathNodes.has(p.id) ? 1 : 0.18
+    if (effectivePathNodes.size > 0) return effectivePathNodes.has(p.id) ? 1 : 0.18
     if (selectedMemberId) {
       if (p.id === selectedMemberId) return 1
       if (adjacentToFocus.has(p.id)) return 0.82
@@ -583,7 +761,7 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
   }
 
   function edgeOpacity(e: UEdge): number {
-    if (pathEdges.size > 0) return pathEdges.has(e.id) ? 1 : 0.04
+    if (effectivePathEdges.size > 0) return effectivePathEdges.has(e.id) ? 1 : 0.04
     const fid = selectedMemberId ?? hoveredId
     if (fid) {
       const connected = e.from === fid || e.to === fid
@@ -637,24 +815,24 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
       onClick={() => { setPathNodes(new Set()); setPathEdges(new Set()) }}
     >
 
-      {/* ── SVG: atmospheric depth blooms + edges ──────────────────── */}
+      {/* ── SVG: atmospheric depth blooms + edges (theme-aware via CSS vars) ── */}
       <svg width={size.w} height={size.h} className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
         <defs>
           <radialGradient id="uBgBloom" cx="50%" cy="50%" r="55%">
-            <stop offset="0%" stopColor="rgba(99,102,241,0.18)" />
-            <stop offset="60%" stopColor="rgba(139,92,246,0.06)" />
+            <stop offset="0%" stopColor="var(--ambient-bloom-1)" />
+            <stop offset="60%" stopColor="var(--ambient-bloom-2)" />
             <stop offset="100%" stopColor="transparent" />
           </radialGradient>
           <radialGradient id="uCenterCore" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(34,211,238,0.20)" />
+            <stop offset="0%" stopColor="var(--ambient-bloom-center)" />
             <stop offset="100%" stopColor="transparent" />
           </radialGradient>
           <radialGradient id="uPatBloom" cx="35%" cy="40%" r="38%">
-            <stop offset="0%" stopColor="rgba(59,130,246,0.07)" />
+            <stop offset="0%" stopColor="var(--ambient-pat-bloom)" />
             <stop offset="100%" stopColor="transparent" />
           </radialGradient>
           <radialGradient id="uMatBloom" cx="65%" cy="40%" r="38%">
-            <stop offset="0%" stopColor="rgba(245,158,11,0.06)" />
+            <stop offset="0%" stopColor="var(--ambient-mat-bloom)" />
             <stop offset="100%" stopColor="transparent" />
           </radialGradient>
         </defs>
@@ -681,18 +859,45 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
 
             const opacity = edgeOpacity(e)
             const isPathEdge = pathEdges.has(e.id)
+            const isPortalEdge = !!portalPair &&
+              ((e.from === portalPair.from && e.to === portalPair.to) || (e.from === portalPair.to && e.to === portalPair.from))
+            const isMarriagePortal =
+              e.kind === 'marriage' && ((!!focusId && (e.from === focusId || e.to === focusId)) || isPortalEdge)
             const stroke = isPathEdge ? '#facc15' : EDGE_COLOR[e.kind]
             const dash = isPathEdge ? 'none' : (e.kind === 'suggested' ? '3 8' : e.kind === 'community' ? '2 6' : 'none')
-            const strokeW = isPathEdge ? 2.5 : (e.kind === 'marriage' ? 1.6 : 1.0)
+            const strokeW = isPathEdge ? 2.5 : (e.kind === 'marriage' ? (isMarriagePortal ? 2.8 : 1.8) : 1.0)
 
             return (
               <g key={e.id} opacity={opacity} style={{ transition: 'opacity 0.42s ease' }}>
+                {e.kind === 'marriage' && (
+                  <path
+                    d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
+                    stroke={stroke}
+                    strokeOpacity={isMarriagePortal ? 0.34 : 0.20}
+                    strokeWidth={isMarriagePortal ? 8 : 5.2}
+                    fill="none"
+                    strokeLinecap="round"
+                    style={{ filter: `drop-shadow(0 0 ${isMarriagePortal ? 14 : 9}px ${stroke})` }}
+                  />
+                )}
                 <path
                   d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
-                  stroke={stroke} strokeOpacity={0.52}
+                  stroke={stroke} strokeOpacity={e.kind === 'marriage' ? (isMarriagePortal ? 0.78 : 0.62) : 0.52}
                   strokeWidth={strokeW} fill="none"
                   strokeDasharray={dash} strokeLinecap="round"
                 />
+                {e.kind === 'marriage' && opacity > 0.2 && (
+                  <path
+                    d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
+                    stroke={stroke}
+                    strokeOpacity={isMarriagePortal ? 0.58 : 0.38}
+                    strokeWidth={1.25}
+                    fill="none"
+                    strokeDasharray="2 14"
+                    className="edge-flow"
+                    strokeLinecap="round"
+                  />
+                )}
                 {opacity > 0.25 && (
                   <path
                     d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
@@ -707,6 +912,26 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
           })}
         </g>
       </svg>
+
+      {/* Ambient drifting particles for cinematic depth (subtle in light mode). */}
+      <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
+        {ambientParticles.map((p) => (
+          <span
+            key={p.id}
+            className="absolute rounded-full"
+            style={{
+              left: `${p.left}%`,
+              top: `${p.top}%`,
+              width: `${p.size}px`,
+              height: `${p.size}px`,
+              background: p.color,
+              opacity: p.opacity,
+              filter: 'blur(0.35px)',
+              animation: `particleDrift ${p.duration}s ease-in-out ${p.delay}s infinite alternate`,
+            }}
+          />
+        ))}
+      </div>
 
       {/* ── Node layer ──────────────────────────────────────────────── */}
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 2 }}>
@@ -747,12 +972,25 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                   onClick={ev => {
                     ev.stopPropagation()
                     if (isPanning.current) return
+                    // Path-finding mode: first click selects origin, second click finds path
+                    if (isPathFindingMode) {
+                      if (pathFrom && pathFrom !== p.id) {
+                        findPath(pathFrom, p.id)
+                        setIsPathFindingMode(false)
+                      } else {
+                        setPathFrom(p.id)
+                        onSelectMember(p.id)
+                      }
+                      return
+                    }
                     if (ev.shiftKey && selectedMemberId && selectedMemberId !== p.id) {
                       findPath(selectedMemberId, p.id)
                     } else {
                       onSelectMember(p.id)
                       setPathNodes(new Set())
                       setPathEdges(new Set())
+                      setPathSequence([])
+                      setPortalPair(null)
                     }
                   }}
                   onMouseEnter={() => setHoveredId(p.id)}
@@ -794,6 +1032,19 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                       }}
                     />
                   )}
+                  {/* Marriage-portal destination aura */}
+                  {portalPair?.to === p.id && (
+                    <span
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        inset: `-${Math.round(r * 0.34)}px`,
+                        border: '2px solid var(--marriage)',
+                        boxShadow: '0 0 14px color-mix(in oklab, var(--marriage) 60%, transparent), 0 0 34px color-mix(in oklab, var(--marriage) 35%, transparent)',
+                        animation: 'orbitRing 6.5s linear infinite',
+                        opacity: 0.78,
+                      }}
+                    />
+                  )}
                   {/* Selected orbit ring */}
                   {isSelected && (
                     <span className="absolute rounded-full border border-white/18"
@@ -811,19 +1062,19 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                   >
                     {p.initials}
                   </span>
-                  {/* Semantic zoom labels */}
+                  {/* Semantic zoom labels — theme-aware via tokens */}
                   {showName && (
                     <span
                       className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center pointer-events-none"
                       style={{ top: r * 2 + 5 }}
                     >
-                      <span className="block font-medium text-white leading-tight drop-shadow-sm"
-                        style={{ fontSize: Math.max(9, Math.min(13, r * 0.44)) }}>
+                      <span className="block font-medium leading-tight drop-shadow-sm"
+                        style={{ fontSize: Math.max(9, Math.min(13, r * 0.44)), color: 'var(--universe-label-name)' }}>
                         {p.name}
                       </span>
                       {showRelation && (label || showCity) && (
-                        <span className="block text-white/46 leading-tight"
-                          style={{ fontSize: Math.max(8, Math.min(11, r * 0.34)) }}>
+                        <span className="block leading-tight"
+                          style={{ fontSize: Math.max(8, Math.min(11, r * 0.34)), color: 'var(--universe-label-meta)' }}>
                           {label}{showCity && p.city ? ` · ${p.city}` : ''}
                         </span>
                       )}
@@ -843,71 +1094,268 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
         </AnimatePresence>
       </div>
 
-      {/* ── Path overlay pill ──────────────────────────────────────── */}
-      {pathNodes.size > 1 && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
-          <span className="px-3 py-1.5 rounded-full text-sm font-semibold text-black"
-            style={{ background: '#facc15', boxShadow: '0 2px 12px rgba(250,204,21,0.6)' }}>
-            {pathNodes.size - 1} step{pathNodes.size - 1 !== 1 ? 's' : ''} apart
-          </span>
-        </div>
+      {/* ── Path-finding mode overlay banner ─────────────────────── */}
+      <AnimatePresence>
+        {isPathFindingMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto"
+          >
+            <div className="flex items-center gap-2.5 rounded-full border px-4 py-2 shadow-lg backdrop-blur-xl"
+              style={{ background: 'var(--universe-panel-bg)', borderColor: 'var(--primary)', color: 'var(--foreground)' }}>
+              <span className="text-sm font-medium">
+                {pathFrom
+                  ? <>From <span className="font-bold" style={{ color: 'var(--primary)' }}>{people.find(p => p.id === pathFrom)?.name.split(' ')[0]}</span> — click any person to trace the path</>
+                  : <>🧭 Path Finder — click any person to set start, then click destination</>}
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsPathFindingMode(false); setPathFrom(null); setPathNodes(new Set()); setPathEdges(new Set()); setPathSequence([]) }}
+                className="text-xs rounded-full px-2 py-0.5 border transition-colors hover:opacity-80"
+                style={{ borderColor: 'var(--universe-chip-border)', background: 'var(--universe-chip-bg)', color: 'var(--universe-chip-text)' }}
+              >Cancel</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Path Result Panel ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {pathSequence.length > 1 && !isPathFindingMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}
+            className="absolute top-16 left-1/2 -translate-x-1/2 z-40 max-w-[min(560px,88vw)] w-full pointer-events-auto"
+          >
+            <div className="rounded-2xl border shadow-2xl backdrop-blur-2xl p-4"
+              style={{ background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)' }}>
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--muted-foreground)' }}>Relationship Path</p>
+                  <p className="text-sm font-semibold mt-0.5" style={{ color: 'var(--foreground)' }}>
+                    {pathSequence.length - 1} step{pathSequence.length - 1 !== 1 ? 's' : ''} between{' '}
+                    <span style={{ color: 'var(--primary)' }}>{people.find(p => p.id === pathSequence[0])?.name.split(' ')[0]}</span>
+                    {' '}&amp;{' '}
+                    <span style={{ color: 'var(--paternal)' }}>{people.find(p => p.id === pathSequence[pathSequence.length - 1])?.name.split(' ')[0]}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPathNodes(new Set()); setPathEdges(new Set()); setPathSequence([]); setPathFrom(null) }}
+                  className="text-[11px] rounded-full px-2.5 py-1 border"
+                  style={{ borderColor: 'var(--universe-chip-border)', background: 'var(--universe-chip-bg)', color: 'var(--universe-chip-text)' }}
+                >× Clear</button>
+              </div>
+              {/* Ordered path pills — clickable to navigate */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {pathSequence.map((id, idx) => {
+                  const m = people.find(p => p.id === id)
+                  if (!m) return null
+                  const col = CATEGORY_COLOR[m.category]
+                  return (
+                    <span key={id} className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSelectMember(id) }}
+                        className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all hover:opacity-90"
+                        style={{ borderColor: col, background: 'var(--universe-chip-bg-active)', color: 'var(--foreground)' }}
+                        title={m.name}
+                      >
+                        {m.name.split(' ')[0]}
+                      </button>
+                      {idx < pathSequence.length - 1 && (
+                        <span className="text-[12px] font-light" style={{ color: 'var(--muted-foreground)' }}>›</span>
+                      )}
+                    </span>
+                  )
+                })}
+              </div>
+              <p className="mt-2.5 text-[11px] leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
+                {pathSequence.length === 2 && 'Direct relationship — one step apart.'}
+                {pathSequence.length === 3 && 'Connected through one common relative.'}
+                {pathSequence.length >= 4 && `Connected through ${pathSequence.length - 2} intermediate ${pathSequence.length - 2 === 1 ? 'person' : 'people'}.`}
+                {' '}Click any name to navigate there. Shift-click two nodes for quick paths.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Contextual actions for selected node ─────────────────────────── */}
+      {selectedMemberId && selectedAnchor && (
+        <motion.div
+          key={selectedMemberId}
+          initial={{ opacity: 0, scale: 0.86, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.88, y: 4 }}
+          transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+          className="absolute z-40 rounded-2xl border backdrop-blur-2xl shadow-2xl"
+          style={{
+            left: Math.min(size.w - 220, Math.max(8, selectedAnchor.x + 32)),
+            top: Math.max(56, selectedAnchor.y - 72),
+            background: 'var(--universe-panel-bg)',
+            borderColor: 'var(--universe-panel-border)',
+            minWidth: 196,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Person header */}
+          <div className="flex items-center gap-2.5 px-3.5 pt-3.5 pb-2.5">
+            <span
+              className="w-8 h-8 rounded-full shrink-0 grid place-items-center text-[11px] font-bold shadow-sm"
+              style={{ background: CATEGORY_COLOR[selectedPerson?.category ?? 'paternal'], color: 'white' }}
+            >{selectedPerson?.initials}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-bold truncate" style={{ color: 'var(--foreground)' }}>{selectedPerson?.name}</div>
+              <div className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>
+                {selectedPerson?.relation || selectedPerson?.category}
+                {selectedPerson?.city ? ` · ${selectedPerson.city}` : ''}
+              </div>
+            </div>
+          </div>
+          <div className="h-px mx-3.5" style={{ background: 'var(--border)' }} />
+
+          {/* Compact 4-action icon grid */}
+          <div className="p-2.5 pt-2">
+            <div className="grid grid-cols-4 gap-1.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); panToPerson(selectedMemberId, 1.6) }}
+                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80"
+                style={{ color: 'var(--foreground)', background: 'var(--universe-chip-bg)' }}
+                title="Zoom in & center on this person"
+              >
+                <span className="text-[18px] leading-none">🔍</span>
+                <span className="text-[9px] font-medium">Focus</span>
+              </button>
+
+              <button
+                onClick={(e) => { e.stopPropagation(); setVisibleDepth(maxDepth); panToPerson(effectiveSelfId, 0.58) }}
+                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80"
+                style={{ color: 'var(--foreground)', background: 'var(--universe-chip-bg)' }}
+                title="Reveal all generations"
+              >
+                <span className="text-[18px] leading-none">🌐</span>
+                <span className="text-[9px] font-medium">Network</span>
+              </button>
+
+              <button
+                disabled={marriageNeighbors.length === 0}
+                onClick={(e) => { e.stopPropagation(); if (marriageNeighbors.length > 0) runMarriagePortal() }}
+                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{
+                  color: marriageNeighbors.length > 0 ? 'var(--marriage)' : 'var(--muted-foreground)',
+                  background: marriageNeighbors.length > 0 ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                  outline: marriageNeighbors.length > 0 ? '1px solid var(--marriage)' : 'none',
+                }}
+                title={marriageNeighbors.length === 0 ? 'No spouse connected' : `${marriageNeighbors.length} spouse connection${marriageNeighbors.length > 1 ? 's' : ''} — explore their family`}
+              >
+                <span className="text-[18px] leading-none">💍</span>
+                <span className="text-[9px] font-medium">Portal</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenPathFinder?.(selectedMemberId ?? undefined)
+                  setShowAnalytics(false); setShowIntelPanel(false)
+                }}
+                className="flex flex-col items-center gap-1 py-2 rounded-xl transition-all hover:opacity-80"
+                style={{ color: 'var(--primary)', background: 'var(--glow-primary)', outline: '1px solid var(--primary)' }}
+                title="Trace path to any family member"
+              >
+                <span className="text-[18px] leading-none">⟷</span>
+                <span className="text-[9px] font-medium">Path</span>
+              </button>
+            </div>
+
+            {/* Marriage Portal: explore in-laws family */}
+            {portalPair && marriageNeighbors.length > 0 && (() => {
+              const spouse = peopleById.get(marriageNeighbors[0])
+              if (!spouse) return null
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    panToPerson(marriageNeighbors[0], 0.72)
+                    setVisibleDepth(maxDepth)
+                  }}
+                  className="w-full mt-1.5 flex items-center justify-center gap-1.5 rounded-xl py-1.5 text-[10px] font-medium transition-all hover:opacity-80"
+                  style={{ color: 'var(--marriage)', background: 'var(--universe-chip-bg-active)', outline: '1px solid var(--marriage)' }}
+                >
+                  <span>↗</span> Explore {spouse.name.split(' ')[0]}&apos;s full family
+                </button>
+              )
+            })()}
+          </div>
+        </motion.div>
       )}
 
-      {/* ── Filter chips ───────────────────────────────────────────── */}
+      {/* ── Filter chips — theme-aware glass ─────────────────────── */}
       <div className="absolute top-4 left-4 z-30 flex flex-col gap-1.5" style={{ zIndex: 10 }}>
         {([
-          { cat: null, label: 'All', color: '#818cf8' },
+          { cat: null, label: 'All', color: 'var(--primary)' },
           { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
           { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
           { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
           { cat: 'community', label: 'Community', color: 'var(--community)' },
-        ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
-          <button
-            key={label}
-            onClick={() => setFilterCat(cat)}
-            className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium border transition-all text-left',
-              filterCat === cat
-                ? 'bg-white/8 text-white'
-                : 'bg-black/28 border-white/5 text-white/38 hover:text-white/62 hover:bg-black/35',
-            )}
-            style={filterCat === cat ? { borderColor: color, color } : {}}
-          >
-            {label}
-          </button>
-        ))}
+        ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => {
+          const active = filterCat === cat
+          return (
+            <button
+              key={label}
+              onClick={() => setFilterCat(cat)}
+              className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md"
+              style={{
+                background: active ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: active ? color : 'var(--universe-chip-border)',
+                color: active ? color : 'var(--universe-chip-text)',
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
       </div>
 
-      {/* ── Analytics ────────────────────────────────────────────────── */}
-      <button
-        onClick={() => setShowAnalytics(v => !v)}
-        style={{ zIndex: 10 }}
-        className={cn(
-          'absolute bottom-14 left-4 rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all',
-          showAnalytics
-            ? 'bg-indigo-500/15 border-indigo-400/35 text-indigo-300'
-            : 'bg-black/35 border-white/6 text-white/42 hover:text-white/65',
-        )}
-      >
-        ◈ Analytics
-      </button>
+      {/* ── Intelligence Panel toggle buttons ───────────────────────── */}
+      <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
+        <button
+          onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
+          className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
+          style={{
+            background: showAnalytics ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+            borderColor: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-border)',
+            color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)',
+          }}
+        >
+          ◈ Overview
+        </button>
+        <button
+          onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
+          className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
+          style={{
+            background: showIntelPanel ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+            borderColor: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-border)',
+            color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)',
+          }}
+        >
+          ✦ Intelligence
+        </button>
+      </div>
 
+      {/* ── Overview Analytics Panel ─────────────────────────────────── */}
       <AnimatePresence>
         {showAnalytics && (
           <motion.div
             initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-            className="absolute bottom-14 right-4 z-30 w-64 rounded-2xl border border-white/10 bg-black/70 backdrop-blur-2xl p-4 shadow-2xl"
-            style={{ zIndex: 10 }}
+            className="absolute bottom-14 right-4 z-30 w-72 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto"
+            style={{ zIndex: 10, maxHeight: '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
           >
-            <h3 className="text-[11px] font-semibold text-white/50 uppercase tracking-widest mb-3">Relationship Intelligence</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Family Overview</h3>
             <div className="space-y-3">
-              <div className="flex justify-between text-sm border-b border-white/5 pb-2">
-                <span className="text-white/45">Total relatives</span>
-                <span className="font-semibold text-white">{analytics.total}</span>
+              <div className="flex justify-between text-sm border-b pb-2" style={{ borderColor: 'var(--border)' }}>
+                <span style={{ color: 'var(--muted-foreground)' }}>Total relatives</span>
+                <span className="font-semibold" style={{ color: 'var(--foreground)' }}>{analytics.total}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-white/42">Generations deep</span>
-                <span className="text-white/68">{analytics.maxDepth}</span>
+                <span style={{ color: 'var(--muted-foreground)' }}>Generations deep</span>
+                <span style={{ color: 'var(--foreground)' }}>{analytics.maxDepth}</span>
               </div>
               <div className="space-y-2 pt-0.5">
                 {([
@@ -921,10 +1369,10 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
                   return (
                     <div key={key} className="space-y-0.5">
                       <div className="flex justify-between text-xs">
-                        <span className="text-white/45">{label}</span>
-                        <span className="text-white/62">{count}</span>
+                        <span style={{ color: 'var(--muted-foreground)' }}>{label}</span>
+                        <span style={{ color: 'var(--foreground)' }}>{count}</span>
                       </div>
-                      <div className="h-[3px] rounded-full bg-white/5 overflow-hidden">
+                      <div className="h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--muted)' }}>
                         <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }}
                           transition={{ delay: 0.15, duration: 0.55 }}
                           className="h-full rounded-full" style={{ background: color }} />
@@ -935,20 +1383,22 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
               </div>
               {analytics.topCities.length > 0 && (
                 <div className="pt-1">
-                  <p className="text-[10px] text-white/32 uppercase tracking-widest mb-1.5">City Spread</p>
+                  <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--muted-foreground)' }}>City Spread</p>
                   <div className="flex flex-wrap gap-1">
                     {analytics.topCities.map(([city, count]) => (
-                      <span key={city} className="rounded-full bg-white/5 border border-white/7 px-2 py-0.5 text-[10px] text-white/52">{city} ({count})</span>
+                      <span key={city} className="rounded-full border px-2 py-0.5 text-[10px]"
+                        style={{ background: 'var(--muted)', borderColor: 'var(--border)', color: 'var(--foreground)' }}>{city} ({count})</span>
                     ))}
                   </div>
                 </div>
               )}
               {analytics.topGotras.length > 0 && (
                 <div className="pt-1">
-                  <p className="text-[10px] text-white/32 uppercase tracking-widest mb-1.5">Gotra / Community</p>
+                  <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--muted-foreground)' }}>Gotra / Community</p>
                   <div className="flex flex-wrap gap-1">
                     {analytics.topGotras.map(([g, count]) => (
-                      <span key={g} className="rounded-full bg-amber-500/8 border border-amber-500/14 px-2 py-0.5 text-[10px] text-amber-300/62">{g} ({count})</span>
+                      <span key={g} className="rounded-full border px-2 py-0.5 text-[10px]"
+                        style={{ background: 'var(--glow-gold)', borderColor: 'var(--border)', color: 'var(--accent)' }}>{g} ({count})</span>
                     ))}
                   </div>
                 </div>
@@ -958,10 +1408,106 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
         )}
       </AnimatePresence>
 
-      {/* ── Legend + zoom level indicator ───────────────────────────── */}
+      {/* ── Relationship Intelligence Panel ──────────────────────────── */}
+      <AnimatePresence>
+        {showIntelPanel && intelligence && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+            className="absolute bottom-14 right-4 z-30 w-72 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto"
+            style={{ zIndex: 10, maxHeight: '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
+          >
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Relationship Intelligence</h3>
+            <div className="space-y-4">
+
+              {/* Trust Network */}
+              <div className="rounded-xl border p-3 space-y-1.5" style={{ background: 'var(--muted)', borderColor: 'var(--border)' }}>
+                <div className="flex justify-between text-xs">
+                  <span style={{ color: 'var(--muted-foreground)' }}>Trust Network Score</span>
+                  <span className="font-bold" style={{ color: intelligence.trustScore >= 60 ? 'var(--success)' : 'var(--warning)' }}>
+                    {intelligence.trustScore}%
+                  </span>
+                </div>
+                <div className="h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${intelligence.trustScore}%`, background: intelligence.trustScore >= 60 ? 'var(--success)' : 'var(--warning)' }} />
+                </div>
+                <p className="text-[10px]" style={{ color: 'var(--muted-foreground)' }}>
+                  {intelligence.verifiedCount} of {people.length} members verified · {intelligence.marriagePortals} marriage bridge{intelligence.marriagePortals !== 1 ? 's' : ''}
+                </p>
+              </div>
+
+              {/* Influence Map */}
+              {intelligence.topInfluencers.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>Most Connected</p>
+                  <div className="space-y-1.5">
+                    {intelligence.topInfluencers.map((inf, i) => (
+                      <button
+                        key={inf.id}
+                        onClick={(e) => { e.stopPropagation(); onSelectMember(inf.id) }}
+                        className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:opacity-90"
+                        style={{ background: i === 0 ? 'var(--glow-primary)' : 'transparent', border: `1px solid ${i === 0 ? 'var(--primary)' : 'var(--border)'}` }}
+                      >
+                        <span className="text-[10px] font-bold w-4 shrink-0" style={{ color: 'var(--muted-foreground)' }}>#{i + 1}</span>
+                        <span className="flex-1 text-[11px] font-medium text-left truncate" style={{ color: 'var(--foreground)' }}>{inf.name}</span>
+                        <span className="text-[10px] shrink-0" style={{ color: 'var(--primary)' }}>{inf.score} links</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Suggested Connections */}
+              {intelligence.suggestions.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>People You May Know</p>
+                  <div className="space-y-1.5">
+                    {intelligence.suggestions.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={(e) => { e.stopPropagation(); onSelectMember(s.id) }}
+                        className="w-full flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors hover:opacity-90"
+                        style={{ borderColor: 'var(--border)', background: 'var(--muted)' }}
+                      >
+                        <span className="flex-1 text-[11px] font-medium truncate" style={{ color: 'var(--foreground)' }}>{s.name}</span>
+                        <span className="text-[10px] shrink-0 rounded-full px-1.5 py-0.5 border" style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)', background: 'var(--surface-card)' }}>{s.reason}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Path Intelligence hint */}
+              {selectedMemberId && intelligence.distFromSelf.has(selectedMemberId) && (
+                <div className="rounded-xl border p-3" style={{ background: 'var(--muted)', borderColor: 'var(--border)' }}>
+                  <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--muted-foreground)' }}>Social Proximity</p>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                    {intelligence.distFromSelf.get(selectedMemberId) === 1
+                      ? 'Direct connection'
+                      : `${intelligence.distFromSelf.get(selectedMemberId)} degrees away`}
+                  </p>
+                  {intelligence.strengthMap.has(selectedMemberId) && (
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
+                      Relationship strength: {intelligence.strengthMap.get(selectedMemberId)}/10
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {intelligence.suggestions.length === 0 && intelligence.topInfluencers.length === 0 && (
+                <p className="text-xs text-center py-4" style={{ color: 'var(--muted-foreground)' }}>Add more family members to unlock relationship intelligence</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div
-        className="absolute bottom-4 left-4 right-4 z-30 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-white/5 bg-black/32 backdrop-blur-md px-4 py-1.5"
-        style={{ zIndex: 10 }}
+        className="absolute bottom-4 left-4 right-4 z-30 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border backdrop-blur-md px-4 py-1.5"
+        style={{
+          zIndex: 10,
+          background: 'var(--universe-chip-bg)',
+          borderColor: 'var(--universe-chip-border)',
+        }}
       >
         {([
           { color: 'var(--paternal)', label: 'Paternal' },
@@ -969,15 +1515,29 @@ export function RelationshipUniverse({ members, selfMemberId, selectedMemberId, 
           { color: 'var(--marriage)', label: 'Marriage' },
           { color: 'var(--community)', label: 'Community' },
         ]).map(({ color, label }) => (
-          <span key={label} className="flex items-center gap-1.5 text-[10px] text-white/38">
+          <span key={label} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--universe-chip-text)' }}>
             <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 4px ${color}` }} />
             {label}
           </span>
         ))}
-        <span className="ml-auto text-[10px] text-white/25 shrink-0 hidden sm:block">
+        {/* Find Relationship shortcut hint — bottom legend, unobtrusive */}
+        <button
+          onClick={() => onOpenPathFinder?.()}
+          className="flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border transition-all"
+          style={{
+            borderColor: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-border)',
+            color: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-text)',
+            background: pathFinderOpen ? 'var(--glow-primary)' : 'transparent',
+          }}
+          title="Find relationship path between any two people"
+        >
+          <span>⟷</span>
+          <span>Find Relationship</span>
+        </button>
+        <span className="ml-auto text-[10px] shrink-0 hidden sm:block" style={{ color: 'var(--universe-chip-text)', opacity: 0.7 }}>
           {zoomLevel === 'cluster' ? 'Cluster' : zoomLevel === 'name' ? 'Name' : zoomLevel === 'detail' ? 'Detail' : 'Full'} view · {Math.round(k * 100)}%
         </span>
       </div>
-    </div>
+    </div >
   )
 }

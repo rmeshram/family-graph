@@ -74,23 +74,63 @@ export default function BiodataPage() {
   const handleSavePDF = useCallback(async () => {
     if (!member || !biodataRef.current) return
     try {
-      const html2canvas = (await import('html2canvas')).default
-      const canvas = await html2canvas(biodataRef.current, {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const node = biodataRef.current
+      const canvas = await html2canvas(node, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
+        windowWidth: node.scrollWidth,
+        windowHeight: node.scrollHeight,
         ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
       })
-      const link = document.createElement('a')
-      link.download = `${member.name.replace(/\s+/g, '-')}-biodata.png`
-      link.href = canvas.toDataURL('image/png')
-      link.click()
+      const imgData = canvas.toDataURL('image/jpeg', 0.95)
+      // A4 portrait: 210 × 297 mm
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const margin = 8
+      const imgW = pageW - margin * 2
+      const imgH = (canvas.height * imgW) / canvas.width
+      if (imgH <= pageH - margin * 2) {
+        pdf.addImage(imgData, 'JPEG', margin, margin, imgW, imgH, undefined, 'FAST')
+      } else {
+        // Slice the canvas into pages
+        const pxPerMm = canvas.width / imgW
+        const pagePxH = (pageH - margin * 2) * pxPerMm
+        let y = 0
+        let pageIdx = 0
+        while (y < canvas.height) {
+          const sliceH = Math.min(pagePxH, canvas.height - y)
+          const slice = document.createElement('canvas')
+          slice.width = canvas.width
+          slice.height = sliceH
+          const ctx = slice.getContext('2d')!
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, slice.width, slice.height)
+          ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH)
+          const sliceImg = slice.toDataURL('image/jpeg', 0.95)
+          if (pageIdx > 0) pdf.addPage()
+          pdf.addImage(sliceImg, 'JPEG', margin, margin, imgW, sliceH / pxPerMm, undefined, 'FAST')
+          y += sliceH
+          pageIdx += 1
+        }
+      }
+      pdf.save(`${member.name.replace(/\s+/g, '-')}-biodata.pdf`)
+      toast({ title: 'PDF ready', description: `${member.name}-biodata.pdf has been downloaded.` })
     } catch (err) {
-      console.error('Save PNG failed:', err)
-      toast({ title: 'Download failed', description: 'Could not capture biodata. Please try again.', variant: 'destructive' })
+      console.error('Save PDF failed:', err)
+      toast({
+        title: 'Download failed',
+        description: 'Could not generate PDF. Please try again or use Print instead.',
+        variant: 'destructive',
+      })
     }
-  }, [member])
+  }, [member, toast])
 
   const handleWhatsAppShare = () => {
     if (!member) return
@@ -273,41 +313,60 @@ export default function BiodataPage() {
                     </Button>
                   </div>
 
-                  {/* Biodata Card */}
-                  <div ref={biodataRef} className="rounded-2xl border-2 border-amber-200 bg-white shadow-xl overflow-hidden print:shadow-none">
-                    {/* Header — inline styles needed for html2canvas (can't resolve oklch CSS vars) */}
-                    <div style={{ background: 'linear-gradient(to right, #F59E0B, #F97316)' }} className="p-6 text-white text-center">
-                      <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/30 bg-white/20 text-3xl font-bold text-white">
+                  {/* Biodata Card — all colors INLINED so export is identical in dark/light mode */}
+                  <div
+                    ref={biodataRef}
+                    className="rounded-2xl overflow-hidden print:shadow-none"
+                    style={{
+                      background: '#ffffff',
+                      color: '#111827',
+                      border: '1px solid #FCD34D',
+                      boxShadow: '0 20px 50px -25px rgba(180, 83, 9, 0.35)',
+                      fontFamily: '"Inter", "Helvetica Neue", Arial, sans-serif',
+                    }}
+                  >
+                    {/* Header */}
+                    <div style={{ background: 'linear-gradient(135deg, #B45309 0%, #D97706 45%, #F59E0B 100%)' }} className="p-7 text-white text-center">
+                      <div
+                        className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-full text-3xl font-bold"
+                        style={{
+                          border: '3px solid rgba(255,255,255,0.55)',
+                          background: 'rgba(255,255,255,0.18)',
+                          boxShadow: '0 8px 24px -8px rgba(0,0,0,0.35)',
+                          color: '#fff',
+                          letterSpacing: '0.02em',
+                        }}
+                      >
                         {member.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                       </div>
-                      <h2 className="text-2xl font-bold">{member.name}</h2>
-                      <p className="text-amber-100 text-sm mt-1">Marriage Biodata</p>
-                      <div className="flex justify-center gap-3 mt-3 flex-wrap">
+                      <h2 style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: '28px', fontWeight: 700, letterSpacing: '0.01em' }}>{member.name}</h2>
+                      <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '12px', letterSpacing: '0.18em', marginTop: '6px', textTransform: 'uppercase' }}>Marriage Biodata</p>
+                      <div className="flex justify-center gap-2 mt-4 flex-wrap">
                         {member.gotra && (
-                          <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
-                            Gotra: {member.gotra}
-                          </Badge>
+                          <span style={{ background: 'rgba(255,255,255,0.18)', color: '#fff', border: '1px solid rgba(255,255,255,0.32)', borderRadius: '999px', padding: '4px 12px', fontSize: '11px', fontWeight: 500 }}>
+                            Gotra · {member.gotra}
+                          </span>
                         )}
                         {member.religion && (
-                          <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
+                          <span style={{ background: 'rgba(255,255,255,0.18)', color: '#fff', border: '1px solid rgba(255,255,255,0.32)', borderRadius: '999px', padding: '4px 12px', fontSize: '11px', fontWeight: 500 }}>
                             {member.religion}
-                          </Badge>
+                          </span>
                         )}
                         {member.caste && (
-                          <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/20">
+                          <span style={{ background: 'rgba(255,255,255,0.18)', color: '#fff', border: '1px solid rgba(255,255,255,0.32)', borderRadius: '999px', padding: '4px 12px', fontSize: '11px', fontWeight: 500 }}>
                             {member.caste}
-                          </Badge>
+                          </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="p-6 grid gap-6 sm:grid-cols-2">
+                    <div className="p-7 grid gap-7 sm:grid-cols-2" style={{ background: '#FFFBF2' }}>
                       {/* Personal Details */}
                       <section>
-                        <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                        <h3 style={{ color: '#92400E', fontSize: '11px', letterSpacing: '0.18em', fontWeight: 700, borderBottom: '1px solid #FDE68A', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
                           Personal Details
                         </h3>
-                        <dl className="space-y-2">
+                        <dl className="space-y-2.5">
                           {[
                             ["Full Name", member.name],
                             ["Year of Birth", member.birthYear ? String(member.birthYear) : "–"],
@@ -317,9 +376,9 @@ export default function BiodataPage() {
                             ["Current City", member.currentPlace ?? "–"],
                             ["Mother Tongue", member.nativeLanguage ?? "–"],
                           ].map(([label, value]) => (
-                            <div key={label} className="flex gap-2 text-sm">
-                              <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
-                              <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                            <div key={label} className="flex gap-2" style={{ fontSize: '13px' }}>
+                              <dt style={{ color: '#6B7280', width: '112px', flexShrink: 0, fontWeight: 500 }}>{label}</dt>
+                              <dd style={{ color: '#111827', fontWeight: 600, flex: 1 }}>{value}</dd>
                             </div>
                           ))}
                         </dl>
@@ -328,10 +387,10 @@ export default function BiodataPage() {
                       {/* Professional + Family Details */}
                       <section className="space-y-5">
                         <div>
-                          <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                          <h3 style={{ color: '#92400E', fontSize: '11px', letterSpacing: '0.18em', fontWeight: 700, borderBottom: '1px solid #FDE68A', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
                             Professional
                           </h3>
-                          <dl className="space-y-2">
+                          <dl className="space-y-2.5">
                             {[
                               ["Occupation", member.occupation ?? "–"],
                               [
@@ -339,19 +398,19 @@ export default function BiodataPage() {
                                 member.milestones?.find(ms => ms.type === "education")?.title ?? "–",
                               ],
                             ].map(([label, value]) => (
-                              <div key={label} className="flex gap-2 text-sm">
-                                <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
-                                <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                              <div key={label} className="flex gap-2" style={{ fontSize: '13px' }}>
+                                <dt style={{ color: '#6B7280', width: '112px', flexShrink: 0, fontWeight: 500 }}>{label}</dt>
+                                <dd style={{ color: '#111827', fontWeight: 600, flex: 1 }}>{value}</dd>
                               </div>
                             ))}
                           </dl>
                         </div>
 
                         <div>
-                          <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                          <h3 style={{ color: '#92400E', fontSize: '11px', letterSpacing: '0.18em', fontWeight: 700, borderBottom: '1px solid #FDE68A', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
                             Family Details
                           </h3>
-                          <dl className="space-y-2">
+                          <dl className="space-y-2.5">
                             {[
                               ["Father", father?.name ?? "–"],
                               ["Father's Occ.", father?.occupation ?? "–"],
@@ -368,9 +427,9 @@ export default function BiodataPage() {
                                 member.hometown ?? member.birthPlace?.split(",")[0] ?? "–",
                               ],
                             ].map(([label, value]) => (
-                              <div key={label} className="flex gap-2 text-sm">
-                                <dt className="text-muted-foreground w-28 shrink-0">{label}</dt>
-                                <dd className="font-medium flex-1 text-foreground">{value}</dd>
+                              <div key={label} className="flex gap-2" style={{ fontSize: '13px' }}>
+                                <dt style={{ color: '#6B7280', width: '112px', flexShrink: 0, fontWeight: 500 }}>{label}</dt>
+                                <dd style={{ color: '#111827', fontWeight: 600, flex: 1 }}>{value}</dd>
                               </div>
                             ))}
                           </dl>
@@ -380,17 +439,17 @@ export default function BiodataPage() {
                       {/* About */}
                       {member.bio && (
                         <div className="sm:col-span-2">
-                          <h3 className="font-bold text-sm text-amber-700 uppercase tracking-wide border-b border-amber-100 pb-1 mb-3">
+                          <h3 style={{ color: '#92400E', fontSize: '11px', letterSpacing: '0.18em', fontWeight: 700, borderBottom: '1px solid #FDE68A', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
                             About
                           </h3>
-                          <p className="text-sm text-muted-foreground leading-relaxed">{member.bio}</p>
+                          <p style={{ color: '#374151', fontSize: '13px', lineHeight: 1.65 }}>{member.bio}</p>
                         </div>
                       )}
 
                       {/* Contact footer */}
-                      <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-100 p-4 text-center">
-                        <p className="text-xs text-amber-700 font-medium">Contact via Family Admin</p>
-                        <p className="text-sm text-muted-foreground mt-1">
+                      <div className="sm:col-span-2" style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
+                        <p style={{ color: '#92400E', fontSize: '11px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Contact via Family Admin</p>
+                        <p style={{ color: '#6B7280', fontSize: '12px', marginTop: '4px' }}>
                           Generated by Family Graph · familygraph.app
                         </p>
                       </div>

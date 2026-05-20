@@ -106,6 +106,13 @@ export async function POST(
   if (!submittedName?.trim()) {
     return NextResponse.json({ error: 'MISSING_NAME' }, { status: 400 })
   }
+  // Bounds-check to prevent O(m*n) Levenshtein DoS
+  if (submittedName.length > 200) {
+    return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
+  }
+  if (submittedBirthYear !== undefined && (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
+    return NextResponse.json({ error: 'INVALID_BIRTH_YEAR' }, { status: 400 })
+  }
 
   const admin = adminClient()
 
@@ -117,6 +124,53 @@ export async function POST(
     .single()
 
   if (nodeErr || !node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
+
+  // B1: Family boundary check. A user may only claim a node if EITHER (a) they
+  // already belong to the same family, OR (b) an active, unconsumed, non-expired
+  // node_claim invite exists for this specific node. Otherwise reject.
+  const { data: callerProfile } = await admin
+    .from('profiles')
+    .select('family_id')
+    .eq('id', user.id)
+    .maybeSingle()
+  const callerFamilyId = (callerProfile as any)?.family_id as string | null
+
+  let authorized = callerFamilyId && callerFamilyId === (node as any).family_id
+  if (!authorized) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inviteQ = admin.from('invite_links') as any
+    const { data: claimInvite } = await inviteQ
+      .select('id, consumed_at, expires_at, family_id, invite_type, node_id')
+      .eq('node_id', nodeId)
+      .eq('invite_type', 'node_claim')
+      .is('consumed_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .eq('family_id', (node as any).family_id)
+      .maybeSingle()
+    authorized = !!claimInvite
+  }
+  if (!authorized) {
+    return NextResponse.json(
+      { error: 'FORBIDDEN', message: 'You are not authorized to claim this profile.' },
+      { status: 403 }
+    )
+  }
+
+  // B4: Prevent multiple node claims per family. If this user already has a
+  // user_node_link in this family, reject (one-person-per-node-per-family).
+  const { data: existingLink } = await admin
+    .from('user_node_links')
+    .select('node_id')
+    .eq('user_id', user.id)
+    .eq('family_id', (node as any).family_id)
+    .neq('node_id', nodeId)
+    .maybeSingle()
+  if (existingLink) {
+    return NextResponse.json(
+      { error: 'ALREADY_LINKED_IN_FAMILY', message: 'You are already linked to a different profile in this family.' },
+      { status: 409 }
+    )
+  }
 
   const ns = node.claim_status as ClaimStatus
   if ((node as any).is_deceased) {

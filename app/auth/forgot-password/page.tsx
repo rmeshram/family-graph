@@ -24,7 +24,10 @@ export default function ForgotPasswordPage() {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     })
     setIsLoading(false)
-    if (error) { setError(error.message); return }
+    // Always show success — never reveal whether the email is registered (prevents account enumeration)
+    if (error) {
+      console.warn('reset password error:', error.message)
+    }
     setSent(true)
   }
 
