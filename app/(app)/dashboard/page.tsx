@@ -45,6 +45,8 @@ import {
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
   Link2, TreePine,
 } from 'lucide-react'
+import { Drawer, DrawerContent } from '@/components/ui/drawer'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
@@ -1134,7 +1136,11 @@ export default function FamilyGraphApp() {
               onOpenChange={(open) => { if (!open) setSelectedMemberId(null) }}
               direction="bottom"
             >
+<<<<<<< Updated upstream
               <DrawerContent className="max-h-[88vh] overflow-y-auto">
+=======
+              <DrawerContent className="h-[88vh] flex flex-col overflow-hidden">
+>>>>>>> Stashed changes
                 {selectedMember && (
                   <MemberDetail
                     member={selectedMember}

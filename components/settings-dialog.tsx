@@ -8,6 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Drawer, DrawerContent } from '@/components/ui/drawer'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -54,6 +56,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange, onExport, onImport }: SettingsDialogProps) {
+  const isMobile = useIsMobile()
   const { user, profile, familyId, loading: authLoading } = useAuth()
   const supabase = createClient()
   const isAdmin = (profile as any)?.role === 'admin'
@@ -319,32 +322,32 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
     return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[580px] max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Manage your Family Graph preferences and team</DialogDescription>
-        </DialogHeader>
+  const innerContent = (
+    <>
+      <DialogHeader className={isMobile ? 'px-4 pt-2 pb-0 text-left' : ''}>
+        <DialogTitle>Settings</DialogTitle>
+        <DialogDescription>Manage your Family Graph preferences and team</DialogDescription>
+      </DialogHeader>
 
         <Tabs defaultValue="general">
-          <TabsList className="w-full mb-4">
-            <TabsTrigger value="general" className="flex-1">General</TabsTrigger>
-            <TabsTrigger value="team" className="flex-1">
-              Family Members
+          <TabsList className="w-full mb-4 overflow-x-auto flex-nowrap justify-start">
+            <TabsTrigger value="general" className="flex-1 shrink-0 text-xs sm:text-sm">General</TabsTrigger>
+            <TabsTrigger value="team" className="flex-1 shrink-0 text-xs sm:text-sm">
+              <span className="hidden sm:inline">Family Members</span>
+              <span className="sm:hidden">Family</span>
               {(familyProfiles.length > 0 || pendingClaims.length > 0) && (
-                <Badge variant="secondary" className="ml-1.5 h-4 text-[10px] px-1">
+                <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1">
                   {pendingClaims.length > 0 ? `${pendingClaims.length}⚠` : familyProfiles.length}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="privacy" className="flex-1">Privacy</TabsTrigger>
-            <TabsTrigger value="data" className="flex-1">Data</TabsTrigger>
+            <TabsTrigger value="privacy" className="flex-1 shrink-0 text-xs sm:text-sm">Privacy</TabsTrigger>
+            <TabsTrigger value="data" className="flex-1 shrink-0 text-xs sm:text-sm">Data</TabsTrigger>
             {isAdmin && (
-              <TabsTrigger value="connected" className="flex-1">
+              <TabsTrigger value="connected" className="flex-1 shrink-0 text-xs sm:text-sm">
                 Connected
                 {linkedData.incoming.length > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 h-4 text-[10px] px-1 bg-teal-500/30 text-teal-300">{linkedData.incoming.length}</Badge>
+                  <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1 bg-teal-500/30 text-teal-300">{linkedData.incoming.length}</Badge>
                 )}
               </TabsTrigger>
             )}
@@ -900,6 +903,25 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
             </TabsContent>
           )}
         </Tabs>
+    </>
+  )
+
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
+        <DrawerContent className="h-[92vh] flex flex-col">
+          <div className="flex-1 overflow-y-auto px-4 pb-8">
+            {innerContent}
+          </div>
+        </DrawerContent>
+      </Drawer>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[580px] max-h-[85vh] overflow-y-auto">
+        {innerContent}
       </DialogContent>
     </Dialog>
   )
