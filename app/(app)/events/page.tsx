@@ -14,7 +14,7 @@ import {
   ArrowLeft, Plus, Calendar, MapPin, Users, X,
   PartyPopper, Church, Home, Coffee, Clock, Trash2,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
 
 type EventType = "reunion" | "wedding" | "puja" | "birthday" | "funeral" | "other"
@@ -526,7 +526,7 @@ export default function EventsPage() {
                   if (navigator.share) {
                     navigator.share({ title: createdEventShare.title, url }).catch(() => { })
                   } else {
-                    navigator.clipboard?.writeText(url)
+                    copyToClipboard(url)
                   }
                 }}
                 className="flex items-center justify-center gap-2 rounded-xl border border-border bg-muted hover:bg-muted/70 text-foreground text-sm font-medium py-2.5 transition-colors"

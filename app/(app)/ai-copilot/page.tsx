@@ -32,7 +32,7 @@ import {
   User,
   Lightbulb,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 
 // ─── Relationship Engine ─────────────────────────────────────────────────────
 
@@ -519,7 +519,7 @@ function MessageBubble({ message, members }: { message: AIMessage; members: Fami
   const isAI = message.role === 'ai'
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content)
+    copyToClipboard(message.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

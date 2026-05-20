@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { copyToClipboard } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -202,14 +203,15 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
 
   const copyInviteLink = useCallback(() => {
     if (!inviteLink) return
-    navigator.clipboard.writeText(inviteLink).then(
-      () => {
+    copyToClipboard(inviteLink).then(ok => {
+      if (ok) {
         setCopiedInvite(true)
         setTimeout(() => setCopiedInvite(false), 2000)
         toast.success('Invite link copied')
-      },
-      () => toast.error('Could not copy to clipboard')
-    )
+      } else {
+        toast.error('Could not copy to clipboard')
+      }
+    })
   }, [inviteLink])
 
   // ── Pending claims ───────────────────────────────────────────────────────
@@ -329,580 +331,580 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
         <DialogDescription>Manage your Family Graph preferences and team</DialogDescription>
       </DialogHeader>
 
-        <Tabs defaultValue="general">
-          <TabsList className="w-full mb-4 overflow-x-auto flex-nowrap justify-start">
-            <TabsTrigger value="general" className="flex-1 shrink-0 text-xs sm:text-sm">General</TabsTrigger>
-            <TabsTrigger value="team" className="flex-1 shrink-0 text-xs sm:text-sm">
-              <span className="hidden sm:inline">Family Members</span>
-              <span className="sm:hidden">Family</span>
-              {(familyProfiles.length > 0 || pendingClaims.length > 0) && (
-                <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1">
-                  {pendingClaims.length > 0 ? `${pendingClaims.length}⚠` : familyProfiles.length}
-                </Badge>
+      <Tabs defaultValue="general">
+        <TabsList className="w-full mb-4 overflow-x-auto flex-nowrap justify-start">
+          <TabsTrigger value="general" className="flex-1 shrink-0 text-xs sm:text-sm">General</TabsTrigger>
+          <TabsTrigger value="team" className="flex-1 shrink-0 text-xs sm:text-sm">
+            <span className="hidden sm:inline">Family Members</span>
+            <span className="sm:hidden">Family</span>
+            {(familyProfiles.length > 0 || pendingClaims.length > 0) && (
+              <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1">
+                {pendingClaims.length > 0 ? `${pendingClaims.length}⚠` : familyProfiles.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="privacy" className="flex-1 shrink-0 text-xs sm:text-sm">Privacy</TabsTrigger>
+          <TabsTrigger value="data" className="flex-1 shrink-0 text-xs sm:text-sm">Data</TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="connected" className="flex-1 shrink-0 text-xs sm:text-sm">
+              Connected
+              {linkedData.incoming.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1 bg-teal-500/30 text-teal-300">{linkedData.incoming.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="privacy" className="flex-1 shrink-0 text-xs sm:text-sm">Privacy</TabsTrigger>
-            <TabsTrigger value="data" className="flex-1 shrink-0 text-xs sm:text-sm">Data</TabsTrigger>
-            {isAdmin && (
-              <TabsTrigger value="connected" className="flex-1 shrink-0 text-xs sm:text-sm">
-                Connected
-                {linkedData.incoming.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1 bg-teal-500/30 text-teal-300">{linkedData.incoming.length}</Badge>
-                )}
-              </TabsTrigger>
-            )}
-          </TabsList>
+          )}
+        </TabsList>
 
-          {/* ── General ───────────────────────────────────────────── */}
-          <TabsContent value="general" className="space-y-4 mt-0">
-            {/* Account */}
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-muted-foreground" />
-                  Account
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {user ? (
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
-                        {(profile as any)?.display_name?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}
-                      </AvatarFallback>
-                    </Avatar>
+        {/* ── General ───────────────────────────────────────────── */}
+        <TabsContent value="general" className="space-y-4 mt-0">
+          {/* Account */}
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Shield className="h-4 w-4 text-muted-foreground" />
+                Account
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {user ? (
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-9 w-9">
+                    <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
+                      {(profile as any)?.display_name?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-sm font-medium">{(profile as any)?.display_name ?? 'Anonymous'}</p>
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                  </div>
+                  <Badge variant="outline" className={`ml-auto text-xs ${roleBadgeClass((profile as any)?.role ?? 'viewer')}`}>
+                    {(profile as any)?.role ?? 'viewer'}
+                  </Badge>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Not signed in</p>
+              )}
+              {FEATURE_FLAGS.enableUpgradeFlow && (
+                <>
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium">{(profile as any)?.display_name ?? 'Anonymous'}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                      <p className="text-sm font-medium">Free Plan</p>
+                      <p className="text-xs text-muted-foreground">Up to 50 family members</p>
                     </div>
-                    <Badge variant="outline" className={`ml-auto text-xs ${roleBadgeClass((profile as any)?.role ?? 'viewer')}`}>
-                      {(profile as any)?.role ?? 'viewer'}
-                    </Badge>
+                    <Badge variant="secondary" className="bg-primary/20 text-primary">Free</Badge>
                   </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Not signed in</p>
-                )}
-                {FEATURE_FLAGS.enableUpgradeFlow && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Free Plan</p>
-                        <p className="text-xs text-muted-foreground">Up to 50 family members</p>
-                      </div>
-                      <Badge variant="secondary" className="bg-primary/20 text-primary">Free</Badge>
-                    </div>
-                    <Button variant="outline" size="sm" className="w-full">Upgrade to Pro</Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                  <Button variant="outline" size="sm" className="w-full">Upgrade to Pro</Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
-            {/* Display preferences */}
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Palette className="h-4 w-4 text-muted-foreground" />
-                  Display
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm">Show deceased members</Label>
-                    <p className="text-xs text-muted-foreground">Display † indicator for passed members</p>
-                  </div>
-                  <Switch checked={showDeceased} onCheckedChange={setShowDeceased} />
+          {/* Display preferences */}
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Palette className="h-4 w-4 text-muted-foreground" />
+                Display
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Show deceased members</Label>
+                  <p className="text-xs text-muted-foreground">Display † indicator for passed members</p>
                 </div>
-                <Separator className="bg-border/50" />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm">Show birthplaces on cards</Label>
-                    <p className="text-xs text-muted-foreground">Display city on member cards in sidebar</p>
-                  </div>
-                  <Switch checked={showBirthplaces} onCheckedChange={setShowBirthplaces} />
+                <Switch checked={showDeceased} onCheckedChange={setShowDeceased} />
+              </div>
+              <Separator className="bg-border/50" />
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Show birthplaces on cards</Label>
+                  <p className="text-xs text-muted-foreground">Display city on member cards in sidebar</p>
                 </div>
-              </CardContent>
-            </Card>
+                <Switch checked={showBirthplaces} onCheckedChange={setShowBirthplaces} />
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Notifications */}
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Bell className="h-4 w-4 text-muted-foreground" />
-                  Notifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm">Birthday reminders</Label>
-                    <p className="text-xs text-muted-foreground">Morning notification on family birthdays</p>
-                  </div>
-                  <Switch checked={birthdayNotifs} onCheckedChange={setBirthdayNotifs} />
+          {/* Notifications */}
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                Notifications
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Birthday reminders</Label>
+                  <p className="text-xs text-muted-foreground">Morning notification on family birthdays</p>
                 </div>
-                <Separator className="bg-border/50" />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm">Anniversary reminders</Label>
-                    <p className="text-xs text-muted-foreground">Wedding and memorial date reminders</p>
-                  </div>
-                  <Switch checked={anniversaryNotifs} onCheckedChange={setAnniversaryNotifs} />
+                <Switch checked={birthdayNotifs} onCheckedChange={setBirthdayNotifs} />
+              </div>
+              <Separator className="bg-border/50" />
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Anniversary reminders</Label>
+                  <p className="text-xs text-muted-foreground">Wedding and memorial date reminders</p>
                 </div>
-                {(birthdayNotifs || anniversaryNotifs) && typeof Notification !== 'undefined' && Notification.permission === 'default' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
-                    onClick={async () => { await Notification.requestPermission() }}
-                  >
-                    <Bell className="h-3.5 w-3.5 mr-2" />
-                    Enable browser notifications
+                <Switch checked={anniversaryNotifs} onCheckedChange={setAnniversaryNotifs} />
+              </div>
+              {(birthdayNotifs || anniversaryNotifs) && typeof Notification !== 'undefined' && Notification.permission === 'default' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
+                  onClick={async () => { await Notification.requestPermission() }}
+                >
+                  <Bell className="h-3.5 w-3.5 mr-2" />
+                  Enable browser notifications
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Share Family card */}
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Share2 className="h-4 w-4 text-muted-foreground" />
+                Share Your Family
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!familyId ? (
+                <p className="text-xs text-muted-foreground">Sign in and complete onboarding to get an invite link.</p>
+              ) : loadingInvite ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading invite link…
+                </div>
+              ) : familyInviteCode ? (
+                <>
+                  <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border/50 px-3 py-2">
+                    <code className="flex-1 text-xs font-mono text-foreground truncate">{inviteLink}</code>
+                    <button
+                      onClick={copyInviteLink}
+                      className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                      title="Copy link"
+                    >
+                      {copiedInvite ? <CheckCircle2 className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Code: <span className="font-mono font-bold text-foreground tracking-widest">{familyInviteCode}</span>
+                    {' '}· Share this link with family members to let them join
+                  </p>
+                  <Button size="sm" variant="outline" className="w-full" onClick={copyInviteLink}>
+                    {copiedInvite ? <><CheckCircle2 className="h-3.5 w-3.5 mr-2 text-green-400" />Copied!</> : <><Copy className="h-3.5 w-3.5 mr-2" />Copy Invite Link</>}
                   </Button>
-                )}
-              </CardContent>
-            </Card>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">No active invite link. Generate one to share your family.</p>
+                  <Button size="sm" className="w-full" onClick={generateInviteCode} disabled={loadingInvite}>
+                    {loadingInvite ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Share2 className="h-3.5 w-3.5 mr-2" />}
+                    Generate Invite Link
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            {/* Share Family card */}
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
+        {/* ── Team / Family Members ─────────────────────────────── */}
+        <TabsContent value="team" className="mt-0 space-y-4">
+          {/* Pending Claims — admin only */}
+          {isAdmin && (
+            <Card className="bg-muted/30 border-amber-500/20">
+              <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Share2 className="h-4 w-4 text-muted-foreground" />
-                  Share Your Family
+                  <UserCheck className="h-4 w-4 text-amber-400" />
+                  Pending Claim Requests
+                  {pendingClaims.length > 0 && (
+                    <Badge className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">
+                      {pendingClaims.length} pending
+                    </Badge>
+                  )}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {!familyId ? (
-                  <p className="text-xs text-muted-foreground">Sign in and complete onboarding to get an invite link.</p>
-                ) : loadingInvite ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading invite link…
+              <CardContent className="p-0">
+                {loadingClaims ? (
+                  <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading claims…
                   </div>
-                ) : familyInviteCode ? (
-                  <>
-                    <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border/50 px-3 py-2">
-                      <code className="flex-1 text-xs font-mono text-foreground truncate">{inviteLink}</code>
-                      <button
-                        onClick={copyInviteLink}
-                        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy link"
-                      >
-                        {copiedInvite ? <CheckCircle2 className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      Code: <span className="font-mono font-bold text-foreground tracking-widest">{familyInviteCode}</span>
-                      {' '}· Share this link with family members to let them join
-                    </p>
-                    <Button size="sm" variant="outline" className="w-full" onClick={copyInviteLink}>
-                      {copiedInvite ? <><CheckCircle2 className="h-3.5 w-3.5 mr-2 text-green-400" />Copied!</> : <><Copy className="h-3.5 w-3.5 mr-2" />Copy Invite Link</>}
-                    </Button>
-                  </>
+                ) : pendingClaims.length === 0 ? (
+                  <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                    No pending claims — all clear!
+                  </div>
                 ) : (
-                  <>
-                    <p className="text-xs text-muted-foreground">No active invite link. Generate one to share your family.</p>
-                    <Button size="sm" className="w-full" onClick={generateInviteCode} disabled={loadingInvite}>
-                      {loadingInvite ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Share2 className="h-3.5 w-3.5 mr-2" />}
-                      Generate Invite Link
-                    </Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ── Team / Family Members ─────────────────────────────── */}
-          <TabsContent value="team" className="mt-0 space-y-4">
-            {/* Pending Claims — admin only */}
-            {isAdmin && (
-              <Card className="bg-muted/30 border-amber-500/20">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <UserCheck className="h-4 w-4 text-amber-400" />
-                    Pending Claim Requests
-                    {pendingClaims.length > 0 && (
-                      <Badge className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">
-                        {pendingClaims.length} pending
-                      </Badge>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loadingClaims ? (
-                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading claims…
-                    </div>
-                  ) : pendingClaims.length === 0 ? (
-                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                      <CheckCircle2 className="h-4 w-4 text-green-400" />
-                      No pending claims — all clear!
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border/30">
-                      {pendingClaims.map((c: any) => (
-                        <div key={c.id} className="px-4 py-3 space-y-2">
-                          <div className="flex items-start gap-3">
-                            <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground">
-                                <span className="text-amber-400">{c.claimantName}</span>
-                                {' '}wants to claim{' '}
-                                <span className="font-semibold">{c.nodeName}</span>
-                              </p>
-                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                                {c.submittedName && (
-                                  <span className="text-[11px] text-muted-foreground">
-                                    Submitted: <span className="text-foreground/70">{c.submittedName}</span>
-                                    {c.submittedBirthYear && ` (${c.submittedBirthYear})`}
-                                  </span>
-                                )}
-                                {c.confidenceScore != null && (
-                                  <span className={`text-[11px] font-medium ${c.confidenceScore >= 60 ? 'text-green-400' : c.confidenceScore >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
-                                    {c.confidenceScore}% match
-                                  </span>
-                                )}
-                                <span className="text-[10px] text-muted-foreground/60">
-                                  {new Date(c.createdAt).toLocaleDateString()}
+                  <div className="divide-y divide-border/30">
+                    {pendingClaims.map((c: any) => (
+                      <div key={c.id} className="px-4 py-3 space-y-2">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              <span className="text-amber-400">{c.claimantName}</span>
+                              {' '}wants to claim{' '}
+                              <span className="font-semibold">{c.nodeName}</span>
+                            </p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                              {c.submittedName && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  Submitted: <span className="text-foreground/70">{c.submittedName}</span>
+                                  {c.submittedBirthYear && ` (${c.submittedBirthYear})`}
                                 </span>
-                              </div>
+                              )}
+                              {c.confidenceScore != null && (
+                                <span className={`text-[11px] font-medium ${c.confidenceScore >= 60 ? 'text-green-400' : c.confidenceScore >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                                  {c.confidenceScore}% match
+                                </span>
+                              )}
+                              <span className="text-[10px] text-muted-foreground/60">
+                                {new Date(c.createdAt).toLocaleDateString()}
+                              </span>
                             </div>
                           </div>
-                          <div className="flex gap-2 pl-7">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10 flex-1"
-                              disabled={reviewingId === c.id}
-                              onClick={() => reviewClaim(c.id, 'reject')}
-                            >
-                              {reviewingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="h-7 text-xs bg-green-600 hover:bg-green-500 text-white flex-1"
-                              disabled={reviewingId === c.id}
-                              onClick={() => reviewClaim(c.id, 'approve')}
-                            >
-                              {reviewingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
-                            </Button>
-                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Members with access */}
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  Family Members with Access
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-0 p-0">
-                {!familyId && authLoading ? (
-                  <p className="text-sm text-muted-foreground p-4">Loading…</p>
-                ) : !familyId ? (
-                  <p className="text-sm text-muted-foreground p-4">Sign in and create a family to manage members.</p>
-                ) : loadingProfiles ? (
-                  <p className="text-sm text-muted-foreground p-4">Loading...</p>
-                ) : familyProfiles.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-4">No family members have joined yet. Share your invite link!</p>
-                ) : (
-                  <div className="divide-y divide-border/40">
-                    {familyProfiles.map(fp => (
-                      <div key={fp.id} className="flex items-center gap-3 px-4 py-3">
-                        <Avatar className="h-8 w-8 shrink-0">
-                          <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
-                            {fp.display_name?.[0]?.toUpperCase() ?? '?'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
-                          <div className="flex items-center gap-1">
-                            {roleIcon(fp.role)}
-                            <p className="text-[10px] text-muted-foreground capitalize">{fp.role}</p>
-                            {fp.id === user?.id && <span className="text-[10px] text-primary ml-1">(you)</span>}
-                          </div>
+                        <div className="flex gap-2 pl-7">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10 flex-1"
+                            disabled={reviewingId === c.id}
+                            onClick={() => reviewClaim(c.id, 'reject')}
+                          >
+                            {reviewingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs bg-green-600 hover:bg-green-500 text-white flex-1"
+                            disabled={reviewingId === c.id}
+                            onClick={() => reviewClaim(c.id, 'approve')}
+                          >
+                            {reviewingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
+                          </Button>
                         </div>
-                        {isAdmin && fp.id !== user?.id && (
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={fp.role}
-                              onValueChange={v => updateRole(fp.id, v)}
-                            >
-                              <SelectTrigger className="h-7 w-28 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="viewer">Viewer</SelectItem>
-                                <SelectItem value="contributor">Contributor</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeFromFamily(fp.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                        {(!isAdmin || fp.id === user?.id) && (
-                          <Badge variant="outline" className={`text-xs ${roleBadgeClass(fp.role)}`}>
-                            {fp.role}
-                          </Badge>
-                        )}
                       </div>
                     ))}
                   </div>
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+          )}
 
-          {/* ── Privacy ───────────────────────────────────────────── */}
-          <TabsContent value="privacy" className="space-y-4 mt-0">
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-muted-foreground" />
-                  Family Visibility
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {!isAdmin && (
-                  <p className="text-xs text-muted-foreground">Only admins can change family visibility.</p>
-                )}
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    {
-                      key: 'open' as const,
-                      label: 'Open',
-                      icon: Globe,
-                      color: 'border-green-500/40 bg-green-500/10 text-green-400',
-                    },
-                    {
-                      key: 'protected' as const,
-                      label: 'Protected',
-                      icon: Shield,
-                      color: 'border-primary/40 bg-primary/10 text-primary',
-                    },
-                    {
-                      key: 'closed' as const,
-                      label: 'Closed',
-                      icon: Lock,
-                      color: 'border-red-500/40 bg-red-500/10 text-red-400',
-                    },
-                  ]).map(({ key, label, icon: Icon, color }) => {
-                    const active = privacyMode === key
-                    return (
-                      <button
-                        key={key}
-                        disabled={!isAdmin || savingPrivacy}
-                        onClick={() => savePrivacyMode(key)}
-                        className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition-all disabled:opacity-50 ${active ? color : 'border-border/40 text-muted-foreground hover:border-border/60'
-                          }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-2.5">
-                  {privacyMode === 'open' && '🌍 Open — Anyone with the invite link can view the family tree and request to join.'}
-                  {privacyMode === 'protected' && '🔒 Protected — The tree is only visible to joined members. New joiners need admin approval.'}
-                  {privacyMode === 'closed' && '🚫 Closed — Fully invite-only. The public bio-link (/family/code) shows no member data.'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                  Individual Member Privacy
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xs text-muted-foreground">
-                  Set per-member visibility (Public / Family / Private) by selecting a member in the tree and using the Privacy panel in the detail view.
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ── Data ─────────────────────────────────────────────── */}
-          <TabsContent value="data" className="space-y-4 mt-0">
-            <Card className="bg-muted/30 border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Database className="h-4 w-4 text-muted-foreground" />
-                  Data Management
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={onExport}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Family Data (JSON)
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={onImport}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import from JSON
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Danger Zone */}
-            <Card className="bg-destructive/5 border-destructive/20">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2 text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                  Danger Zone
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" size="sm" className="w-full border-destructive/50 text-destructive hover:bg-destructive/10">
-                  Delete All My Data
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          {/* ── Connected Families ───────────────────────────────── */}
-          {isAdmin && (
-            <TabsContent value="connected" className="space-y-4 mt-0">
-              <Card className="bg-muted/30 border-border/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Link2 className="h-4 w-4 text-teal-400" />
-                    Connected Families
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loadingLinked ? (
-                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…
-                    </div>
-                  ) : (
-                    <>
-                      {/* Sub-tabs */}
-                      <div className="flex gap-1 px-4 pt-3 pb-1">
-                        {(['incoming', 'outgoing', 'accepted'] as const).map(t => (
-                          <button
-                            key={t}
-                            onClick={() => setLinkedTab(t)}
-                            className={`text-xs px-2.5 py-1 rounded-full transition-colors capitalize ${linkedTab === t
-                              ? 'bg-primary/20 text-primary'
-                              : 'text-muted-foreground hover:text-foreground'
-                              }`}
-                          >
-                            {t}
-                            {t === 'incoming' && linkedData.incoming.length > 0 && (
-                              <span className="ml-1 text-[10px] bg-teal-500/30 text-teal-300 rounded-full px-1">{linkedData.incoming.length}</span>
-                            )}
-                          </button>
-                        ))}
+          {/* Members with access */}
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                Family Members with Access
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-0 p-0">
+              {!familyId && authLoading ? (
+                <p className="text-sm text-muted-foreground p-4">Loading…</p>
+              ) : !familyId ? (
+                <p className="text-sm text-muted-foreground p-4">Sign in and create a family to manage members.</p>
+              ) : loadingProfiles ? (
+                <p className="text-sm text-muted-foreground p-4">Loading...</p>
+              ) : familyProfiles.length === 0 ? (
+                <p className="text-sm text-muted-foreground p-4">No family members have joined yet. Share your invite link!</p>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {familyProfiles.map(fp => (
+                    <div key={fp.id} className="flex items-center gap-3 px-4 py-3">
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
+                          {fp.display_name?.[0]?.toUpperCase() ?? '?'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
+                        <div className="flex items-center gap-1">
+                          {roleIcon(fp.role)}
+                          <p className="text-[10px] text-muted-foreground capitalize">{fp.role}</p>
+                          {fp.id === user?.id && <span className="text-[10px] text-primary ml-1">(you)</span>}
+                        </div>
                       </div>
-                      <Separator className="bg-border/30 my-2" />
-
-                      {/* Incoming */}
-                      {linkedTab === 'incoming' && (
-                        <div className="divide-y divide-border/30">
-                          {linkedData.incoming.length === 0 ? (
-                            <p className="text-xs text-muted-foreground p-4">No incoming requests.</p>
-                          ) : linkedData.incoming.map((r: any) => (
-                            <div key={r.id} className="px-4 py-3 flex items-center gap-3">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">{r.otherFamilyName}</p>
-                                {r.linkNote && <p className="text-xs text-muted-foreground truncate">{r.linkNote}</p>}
-                                <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
-                              </div>
-                              <div className="flex gap-1.5">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                  disabled={respondingId === r.id}
-                                  onClick={() => respondToLink(r.id, 'reject')}
-                                >
-                                  {respondingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Decline'}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs bg-teal-600 hover:bg-teal-500 text-white"
-                                  disabled={respondingId === r.id}
-                                  onClick={() => respondToLink(r.id, 'accept')}
-                                >
-                                  {respondingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Accept'}
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
+                      {isAdmin && fp.id !== user?.id && (
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={fp.role}
+                            onValueChange={v => updateRole(fp.id, v)}
+                          >
+                            <SelectTrigger className="h-7 w-28 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="viewer">Viewer</SelectItem>
+                              <SelectItem value="contributor">Contributor</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeFromFamily(fp.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       )}
-
-                      {/* Outgoing */}
-                      {linkedTab === 'outgoing' && (
-                        <div className="divide-y divide-border/30">
-                          {linkedData.outgoing.length === 0 ? (
-                            <p className="text-xs text-muted-foreground p-4">No sent requests.</p>
-                          ) : linkedData.outgoing.map((r: any) => (
-                            <div key={r.id} className="px-4 py-3 flex items-center gap-3">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">{r.otherFamilyName}</p>
-                                {r.linkNote && <p className="text-xs text-muted-foreground truncate">{r.linkNote}</p>}
-                                <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
-                              </div>
-                              <Badge variant="outline" className={`text-[10px] capitalize ${r.status === 'pending' ? 'border-amber-500/30 text-amber-400' :
-                                r.status === 'rejected' ? 'border-red-500/30 text-red-400' :
-                                  'border-border/50 text-muted-foreground'
-                                }`}>
-                                {r.status === 'pending' && <Clock className="h-2.5 w-2.5 mr-1" />}
-                                {r.status === 'rejected' && <XCircle className="h-2.5 w-2.5 mr-1" />}
-                                {r.status}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
+                      {(!isAdmin || fp.id === user?.id) && (
+                        <Badge variant="outline" className={`text-xs ${roleBadgeClass(fp.role)}`}>
+                          {fp.role}
+                        </Badge>
                       )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                      {/* Accepted / Linked */}
-                      {linkedTab === 'accepted' && (
-                        <div className="divide-y divide-border/30">
-                          {linkedData.accepted.length === 0 ? (
-                            <p className="text-xs text-muted-foreground p-4">No active family connections yet.</p>
-                          ) : linkedData.accepted.map((r: any) => (
-                            <div key={r.id} className="px-4 py-3 flex items-center gap-3">
-                              <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">{r.otherFamilyName}</p>
-                                <p className="text-[10px] text-muted-foreground">Linked {new Date(r.updatedAt).toLocaleDateString()}</p>
-                              </div>
+        {/* ── Privacy ───────────────────────────────────────────── */}
+        <TabsContent value="privacy" className="space-y-4 mt-0">
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                Family Visibility
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">Only admins can change family visibility.</p>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  {
+                    key: 'open' as const,
+                    label: 'Open',
+                    icon: Globe,
+                    color: 'border-green-500/40 bg-green-500/10 text-green-400',
+                  },
+                  {
+                    key: 'protected' as const,
+                    label: 'Protected',
+                    icon: Shield,
+                    color: 'border-primary/40 bg-primary/10 text-primary',
+                  },
+                  {
+                    key: 'closed' as const,
+                    label: 'Closed',
+                    icon: Lock,
+                    color: 'border-red-500/40 bg-red-500/10 text-red-400',
+                  },
+                ]).map(({ key, label, icon: Icon, color }) => {
+                  const active = privacyMode === key
+                  return (
+                    <button
+                      key={key}
+                      disabled={!isAdmin || savingPrivacy}
+                      onClick={() => savePrivacyMode(key)}
+                      className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition-all disabled:opacity-50 ${active ? color : 'border-border/40 text-muted-foreground hover:border-border/60'
+                        }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-2.5">
+                {privacyMode === 'open' && '🌍 Open — Anyone with the invite link can view the family tree and request to join.'}
+                {privacyMode === 'protected' && '🔒 Protected — The tree is only visible to joined members. New joiners need admin approval.'}
+                {privacyMode === 'closed' && '🚫 Closed — Fully invite-only. The public bio-link (/family/code) shows no member data.'}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Eye className="h-4 w-4 text-muted-foreground" />
+                Individual Member Privacy
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">
+                Set per-member visibility (Public / Family / Private) by selecting a member in the tree and using the Privacy panel in the detail view.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Data ─────────────────────────────────────────────── */}
+        <TabsContent value="data" className="space-y-4 mt-0">
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                Data Management
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="outline" size="sm" className="w-full justify-start" onClick={onExport}>
+                <Download className="h-4 w-4 mr-2" />
+                Export Family Data (JSON)
+              </Button>
+              <Button variant="outline" size="sm" className="w-full justify-start" onClick={onImport}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import from JSON
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Danger Zone */}
+          <Card className="bg-destructive/5 border-destructive/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2 text-destructive">
+                <Trash2 className="h-4 w-4" />
+                Danger Zone
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" size="sm" className="w-full border-destructive/50 text-destructive hover:bg-destructive/10">
+                Delete All My Data
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        {/* ── Connected Families ───────────────────────────────── */}
+        {isAdmin && (
+          <TabsContent value="connected" className="space-y-4 mt-0">
+            <Card className="bg-muted/30 border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Link2 className="h-4 w-4 text-teal-400" />
+                  Connected Families
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loadingLinked ? (
+                  <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…
+                  </div>
+                ) : (
+                  <>
+                    {/* Sub-tabs */}
+                    <div className="flex gap-1 px-4 pt-3 pb-1">
+                      {(['incoming', 'outgoing', 'accepted'] as const).map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setLinkedTab(t)}
+                          className={`text-xs px-2.5 py-1 rounded-full transition-colors capitalize ${linkedTab === t
+                            ? 'bg-primary/20 text-primary'
+                            : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                          {t}
+                          {t === 'incoming' && linkedData.incoming.length > 0 && (
+                            <span className="ml-1 text-[10px] bg-teal-500/30 text-teal-300 rounded-full px-1">{linkedData.incoming.length}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <Separator className="bg-border/30 my-2" />
+
+                    {/* Incoming */}
+                    {linkedTab === 'incoming' && (
+                      <div className="divide-y divide-border/30">
+                        {linkedData.incoming.length === 0 ? (
+                          <p className="text-xs text-muted-foreground p-4">No incoming requests.</p>
+                        ) : linkedData.incoming.map((r: any) => (
+                          <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{r.otherFamilyName}</p>
+                              {r.linkNote && <p className="text-xs text-muted-foreground truncate">{r.linkNote}</p>}
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <div className="flex gap-1.5">
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
-                                disabled={revokingId === r.id}
-                                onClick={() => revokeLink(r.id)}
+                                className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                disabled={respondingId === r.id}
+                                onClick={() => respondToLink(r.id, 'reject')}
                               >
-                                {revokingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Unlink className="h-3 w-3 mr-1" />Unlink</>}
+                                {respondingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Decline'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-teal-600 hover:bg-teal-500 text-white"
+                                disabled={respondingId === r.id}
+                                onClick={() => respondToLink(r.id, 'accept')}
+                              >
+                                {respondingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Accept'}
                               </Button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-        </Tabs>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Outgoing */}
+                    {linkedTab === 'outgoing' && (
+                      <div className="divide-y divide-border/30">
+                        {linkedData.outgoing.length === 0 ? (
+                          <p className="text-xs text-muted-foreground p-4">No sent requests.</p>
+                        ) : linkedData.outgoing.map((r: any) => (
+                          <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{r.otherFamilyName}</p>
+                              {r.linkNote && <p className="text-xs text-muted-foreground truncate">{r.linkNote}</p>}
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <Badge variant="outline" className={`text-[10px] capitalize ${r.status === 'pending' ? 'border-amber-500/30 text-amber-400' :
+                              r.status === 'rejected' ? 'border-red-500/30 text-red-400' :
+                                'border-border/50 text-muted-foreground'
+                              }`}>
+                              {r.status === 'pending' && <Clock className="h-2.5 w-2.5 mr-1" />}
+                              {r.status === 'rejected' && <XCircle className="h-2.5 w-2.5 mr-1" />}
+                              {r.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Accepted / Linked */}
+                    {linkedTab === 'accepted' && (
+                      <div className="divide-y divide-border/30">
+                        {linkedData.accepted.length === 0 ? (
+                          <p className="text-xs text-muted-foreground p-4">No active family connections yet.</p>
+                        ) : linkedData.accepted.map((r: any) => (
+                          <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                            <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{r.otherFamilyName}</p>
+                              <p className="text-[10px] text-muted-foreground">Linked {new Date(r.updatedAt).toLocaleDateString()}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                              disabled={revokingId === r.id}
+                              onClick={() => revokeLink(r.id)}
+                            >
+                              {revokingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Unlink className="h-3 w-3 mr-1" />Unlink</>}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>
     </>
   )
 

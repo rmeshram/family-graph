@@ -29,7 +29,7 @@ import {
   Trash2,
   RefreshCw,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth"
 import { useInvites } from "@/hooks/use-invites"
 import { useToast } from "@/hooks/use-toast"
@@ -128,7 +128,7 @@ export default function InvitePage() {
         expiresIn: expiresIn === 'never' ? 'Never' : `${expiresIn} day${expiresIn !== '1' ? 's' : ''}`,
       }
       setLinks(prev => [newLink, ...prev])
-      navigator.clipboard.writeText(url)
+      copyToClipboard(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Invite link created!', description: 'Link copied to clipboard.' })
@@ -140,7 +140,7 @@ export default function InvitePage() {
   }
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteUrl)
+    copyToClipboard(inviteUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
     toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' })
@@ -320,7 +320,7 @@ export default function InvitePage() {
                   <button
                     className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
                     onClick={() => {
-                      navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => { })
+                      copyToClipboard(decodeURIComponent(whatsappMessage))
                       toast({ title: 'Message copied!', description: 'Paste it anywhere.' })
                     }}
                   >

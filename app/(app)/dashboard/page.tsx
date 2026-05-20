@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { FamilyMember, Story, FamilyEvent } from '@/lib/types'
 import { sampleFamilyMembers } from '@/lib/sample-data'
-import { filterByDegree, computeProfileCompleteness } from '@/lib/utils'
+import { filterByDegree, computeProfileCompleteness, copyToClipboard } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers, useStories } from '@/hooks/use-members'
 import { useInvites } from '@/hooks/use-invites'
@@ -364,7 +364,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
   const displayLink = link ?? (familyId ? '' : 'https://familygraph.app/join/DEMO')
   const copy = () => {
     if (!displayLink) return
-    navigator.clipboard.writeText(displayLink).catch(() => { })
+    copyToClipboard(displayLink)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -596,11 +596,14 @@ export default function FamilyGraphApp() {
     let base = maxDegree < 10 && selfMember
       ? filterByDegree(members, selfMember.id, maxDegree)
       : members
-    if (!showExtended) {
+    // In demo mode always show all sample members regardless of screen size —
+    // the sample data has no 'core' networkGroup entries so skipping the filter
+    // prevents an empty canvas on mobile.
+    if (!isDemoMode && !showExtended) {
       base = base.filter(m => !m.networkGroup || m.networkGroup === 'core')
     }
     return base
-  }, [members, maxDegree, selfMember, showExtended])
+  }, [isDemoMode, members, maxDegree, selfMember, showExtended])
 
   const { toast } = useToast()
   const selectedMember = members.find((m) => m.id === selectedMemberId)
@@ -753,16 +756,17 @@ export default function FamilyGraphApp() {
         {/* Demo mode banner */}
         {!user && (
           <div
-            className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
+            className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2"
             style={{ background: 'var(--demo-banner-bg)', borderColor: 'var(--demo-banner-border)' }}
           >
-            <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--demo-banner-text)' }}>
-              <span className="h-1.5 w-1.5 rounded-full animate-pulse shrink-0" style={{ background: 'var(--demo-banner-text)' }} />
-              <span>You're viewing <strong>demo data</strong> — this is what your family tree could look like</span>
+            <div className="flex min-w-0 items-center gap-2 text-[12px]" style={{ color: 'var(--demo-banner-text)' }}>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full animate-pulse" style={{ background: 'var(--demo-banner-text)' }} />
+              <span className="truncate hidden sm:inline">You're viewing <strong>demo data</strong> — this is what your family tree could look like</span>
+              <span className="truncate sm:hidden">Viewing <strong>demo data</strong></span>
             </div>
             <Link
               href="/auth/signup"
-              className="shrink-0 rounded-lg border px-3 py-1 text-[11px] font-semibold transition-colors hover:opacity-80"
+              className="shrink-0 rounded-lg border px-3 py-1 text-[11px] font-semibold transition-colors hover:opacity-80 active:scale-95"
               style={{ background: 'var(--demo-banner-bg)', borderColor: 'var(--demo-banner-border)', color: 'var(--demo-banner-link)' }}
             >
               Get started free →
