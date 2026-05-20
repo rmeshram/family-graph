@@ -1023,7 +1023,7 @@ export default function FamilyGraphApp() {
             {isMobile && (viewMode === 'graph' || viewMode === 'universe') && (
               <button
                 onClick={() => setMemberListOpen(true)}
-                className="absolute bottom-20 left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
+                className="absolute bottom-[3.75rem] left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
                 style={{ background: 'var(--surface-header)' }}
               >
                 <Users2 className="h-4 w-4" />
