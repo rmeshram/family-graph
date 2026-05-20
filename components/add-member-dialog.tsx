@@ -143,13 +143,22 @@ export function AddMemberDialog({
 
     let uploadedPhotoUrl: string | undefined
     if (photoFile && familyId) {
-      const ext = photoFile.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-      const path = `${familyId}/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('avatars').upload(path, photoFile, { upsert: false })
+      // family-photos bucket is family-scoped via RLS (migration 012):
+      //   (storage.foldername(name))[1] IN (SELECT family_id::text FROM profiles WHERE id = auth.uid())
+      // Path convention: <family_id>/members/<timestamp>.<ext>
+      const ext = (photoFile.name.split('.').pop()?.toLowerCase() ?? 'jpg').replace(/[^a-z0-9]/g, '') || 'jpg'
+      const path = `${familyId}/members/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const { error } = await supabase.storage
+        .from('family-photos')
+        .upload(path, photoFile, { upsert: false, contentType: photoFile.type })
       if (error) {
-        setUploadError('Photo upload failed — member will be added without photo.')
+        console.error('[add-member] photo upload failed:', error)
+        const friendly = /row-level security|Unauthorized|403/i.test(error.message)
+          ? 'Photo upload blocked — your account isn\'t linked to this family yet. Member added without photo.'
+          : 'Photo upload failed — member will be added without photo.'
+        setUploadError(friendly)
       } else {
-        const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+        const { data } = supabase.storage.from('family-photos').getPublicUrl(path)
         uploadedPhotoUrl = data.publicUrl
       }
     }

@@ -45,12 +45,40 @@
   --graph-connection: rgba(99, 102, 241, 0.18);
   --graph-highlight: #F59E0B;
 
-  /* Universe view — relationship category colors */
+  /* Universe view — relationship category colors (dark = neon/vivid) */
   --paternal: #3b82f6;
   --maternal: #f59e0b;
   --marriage: #a855f7;
   --community: #22c55e;
   --cyan-glow: #22d3ee;
+
+  /* ── Universe atmosphere tokens (dark mode = deep cosmos) ── */
+  --graph-canvas: #060912;
+  --graph-canvas-gradient:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(99, 102, 241, 0.10) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 45% at 72% 65%, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
+  --ambient-bloom-1: rgba(99, 102, 241, 0.18);
+  --ambient-bloom-2: rgba(139, 92, 246, 0.06);
+  --ambient-bloom-center: rgba(34, 211, 238, 0.20);
+  --ambient-pat-bloom: rgba(59, 130, 246, 0.07);
+  --ambient-mat-bloom: rgba(245, 158, 11, 0.06);
+  --star-color-1: rgba(255, 255, 255, 0.50);
+  --star-color-2: rgba(255, 255, 255, 0.30);
+  --star-color-3: rgba(255, 255, 255, 0.20);
+  --graph-fog: linear-gradient(180deg, rgba(10, 13, 22, 0) 0%, rgba(10, 13, 22, 0.45) 100%);
+  --universe-chip-bg: rgba(0, 0, 0, 0.32);
+  --universe-chip-bg-active: rgba(255, 255, 255, 0.08);
+  --universe-chip-border: rgba(255, 255, 255, 0.06);
+  --universe-chip-text: rgba(255, 255, 255, 0.42);
+  --universe-chip-text-active: #ffffff;
+  --universe-panel-bg: rgba(0, 0, 0, 0.70);
+  --universe-panel-border: rgba(255, 255, 255, 0.10);
+  --universe-label-name: #ffffff;
+  --universe-label-meta: rgba(255, 255, 255, 0.46);
+  --universe-trail-bg: rgba(15, 20, 32, 0.85);
+  --universe-trail-border: rgba(148, 163, 184, 0.18);
+  --universe-trail-text: rgba(232, 237, 251, 0.85);
+  --universe-trail-active: #facc15;
 
   /* Glow tokens */
   --glow-gold: rgba(245, 158, 11, 0.20);
@@ -173,66 +201,125 @@
   }
 }
 
-/* ── Warm Indigo + Saffron — Light Marketing Theme ── */
+/* ──────────────────────────────────────────────────────────────────────────
+   Light Theme — "Dawn Constellation"
+   Apple VisionOS daylight + cinematic relationship cosmos at sunrise.
+   Never pure white. All surfaces sit on a warm pearl base with soft ambient
+   gradients so the graph and dashboard share the same atmospheric environment.
+   ────────────────────────────────────────────────────────────────────────── */
 .light-theme {
-  --background: #FAFAF7;
-  --foreground: #111827;
-  --card: #FFFFFF;
-  --card-foreground: #111827;
-  --popover: #FFFFFF;
-  --popover-foreground: #111827;
+  /* Base palette — warm pearl, ivory, soft slate */
+  --background: #F4F1EA;
+  /* warm pearl base — never #fff */
+  --foreground: #1B2230;
+  /* warm charcoal (not pure black) */
+  --card: #FBF8F2;
+  /* soft ivory card */
+  --card-foreground: #1B2230;
+  --popover: #FFFCF6;
+  --popover-foreground: #1B2230;
   --primary: #4338CA;
   --primary-foreground: #FFFFFF;
   --secondary: #7C3AED;
   --secondary-foreground: #FFFFFF;
-  --muted: #F4F3EF;
-  --muted-foreground: #6B7280;
+  --muted: #EDE7DC;
+  /* muted ivory */
+  --muted-foreground: #4F5A6E;
+  /* atmospheric gray-blue */
   --accent: #D97706;
   --accent-foreground: #FFFFFF;
   --destructive: #DC2626;
   --destructive-foreground: #FFFFFF;
-  --border: #E5E3DE;
-  --input: #E5E3DE;
-  --ring: #4338CA;
+  --border: rgba(76, 92, 122, 0.14);
+  /* low-contrast soft slate */
+  --input: rgba(76, 92, 122, 0.12);
+  --ring: #6366F1;
   --success: #16A34A;
   --warning: #D97706;
   --error: #DC2626;
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #111827;
+
+  /* Sidebar — translucent ivory glass, not white */
+  --sidebar: rgba(251, 248, 242, 0.78);
+  --sidebar-foreground: #1B2230;
   --sidebar-primary: #4338CA;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F4F3EF;
-  --sidebar-accent-foreground: #111827;
-  --sidebar-border: #E5E3DE;
-  --sidebar-ring: #4338CA;
+  --sidebar-accent: rgba(237, 231, 220, 0.7);
+  --sidebar-accent-foreground: #1B2230;
+  --sidebar-border: rgba(76, 92, 122, 0.10);
+  --sidebar-ring: #6366F1;
 
-  /* Glow tokens — softer in light */
-  --glow-gold: rgba(217, 119, 6, 0.12);
-  --glow-primary: rgba(67, 56, 202, 0.08);
-  --surface-glass: rgba(255, 255, 255, 0.75);
-  --nebula-1: rgba(99, 102, 241, 0.03);
-  --nebula-2: rgba(139, 92, 246, 0.02);
+  /* Glow tokens — softer in light, kept warm */
+  --glow-gold: rgba(217, 119, 6, 0.16);
+  --glow-primary: rgba(67, 56, 202, 0.10);
+  --surface-glass: rgba(251, 248, 242, 0.70);
+  --nebula-1: rgba(99, 102, 241, 0.04);
+  --nebula-2: rgba(217, 119, 6, 0.03);
 
-  /* ── Light surface tokens ── */
-  --surface-base: #EEF2FA;
-  --surface-card: #FFFFFF;
-  --surface-sidebar: #F5F7FD;
-  --surface-panel: #FFFFFF;
-  --surface-header: rgba(238, 242, 250, 0.95);
-  --surface-overlay: rgba(255, 255, 255, 0.82);
+  /* Surface tokens — atmospheric pearl, no pure white */
+  --surface-base: #EFEAE0;
+  --surface-card: rgba(251, 248, 242, 0.92);
+  --surface-sidebar: rgba(247, 242, 232, 0.78);
+  --surface-panel: rgba(255, 252, 246, 0.92);
+  --surface-header: rgba(244, 241, 234, 0.86);
+  --surface-overlay: rgba(251, 248, 242, 0.78);
 
-  /* Light tree node tokens */
-  --tree-node-bg: rgba(255, 255, 255, 0.82);
-  --tree-node-bg-hover: rgba(255, 255, 255, 0.96);
-  --tree-node-bg-selected: rgba(255, 255, 255, 1.00);
-  --tree-node-border: rgba(203, 213, 225, 0.70);
-  --tree-node-border-hover: rgba(148, 163, 184, 0.80);
-  --tree-node-border-selected: rgba(245, 158, 11, 0.55);
-  --tree-node-shadow-selected: rgba(245, 158, 11, 0.15);
-  --tree-node-text: #1E293B;
-  --tree-node-subtext: #64748B;
-  --tree-node-label: rgba(161, 98, 7, 0.75);
-  --tree-canvas-dot: rgba(0, 0, 0, 0.03);
+  /* Tree node tokens — pearl + warm slate borders */
+  --tree-node-bg: rgba(255, 252, 246, 0.88);
+  --tree-node-bg-hover: rgba(255, 252, 246, 0.98);
+  --tree-node-bg-selected: #FFFCF6;
+  --tree-node-border: rgba(76, 92, 122, 0.18);
+  --tree-node-border-hover: rgba(76, 92, 122, 0.32);
+  --tree-node-border-selected: rgba(217, 119, 6, 0.55);
+  --tree-node-shadow-selected: rgba(217, 119, 6, 0.18);
+  --tree-node-text: #1B2230;
+  --tree-node-subtext: #4F5A6E;
+  --tree-node-label: rgba(161, 98, 7, 0.85);
+  --tree-canvas-dot: rgba(76, 92, 122, 0.06);
+
+  /* Universe relationship category colors — desaturated for daylight contrast */
+  --paternal: #2563EB;
+  /* warm sky-blue */
+  --maternal: #C2410C;
+  /* warm sunset orange (not yellow on white) */
+  --marriage: #7C3AED;
+  /* royal violet */
+  --community: #15803D;
+  /* forest green */
+  --cyan-glow: #0E7490;
+  /* deep teal for self */
+
+  /* ── Universe atmosphere — "dawn constellation" ─────────────────────────
+     Replace cosmic black with pearl-dawn sky: peach horizon, lavender mid,
+     ivory zenith. Plus soft ambient blooms that integrate with the dashboard. */
+  --graph-canvas: #ECE6DA;
+  --graph-canvas-gradient:
+    radial-gradient(ellipse 90% 70% at 50% 18%, rgba(255, 222, 200, 0.55) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 55% at 78% 80%, rgba(196, 181, 253, 0.40) 0%, transparent 65%),
+    radial-gradient(ellipse 75% 60% at 18% 78%, rgba(186, 213, 245, 0.45) 0%, transparent 65%),
+    linear-gradient(180deg, #F2EBDC 0%, #E8E2D2 100%);
+  --ambient-bloom-1: rgba(124, 58, 237, 0.08);
+  --ambient-bloom-2: rgba(217, 119, 6, 0.06);
+  --ambient-bloom-center: rgba(14, 116, 144, 0.08);
+  --ambient-pat-bloom: rgba(37, 99, 235, 0.05);
+  --ambient-mat-bloom: rgba(194, 65, 12, 0.04);
+  /* Soft daytime "stars" — barely visible particles, like dust in sunlight */
+  --star-color-1: rgba(76, 92, 122, 0.18);
+  --star-color-2: rgba(76, 92, 122, 0.10);
+  --star-color-3: rgba(217, 119, 6, 0.08);
+  --graph-fog: linear-gradient(180deg, rgba(236, 230, 218, 0) 0%, rgba(236, 230, 218, 0.55) 100%);
+  --universe-chip-bg: rgba(255, 252, 246, 0.70);
+  --universe-chip-bg-active: rgba(255, 252, 246, 0.95);
+  --universe-chip-border: rgba(76, 92, 122, 0.16);
+  --universe-chip-text: #4F5A6E;
+  --universe-chip-text-active: #1B2230;
+  --universe-panel-bg: rgba(255, 252, 246, 0.88);
+  --universe-panel-border: rgba(76, 92, 122, 0.14);
+  --universe-label-name: #1B2230;
+  --universe-label-meta: rgba(27, 34, 48, 0.62);
+  --universe-trail-bg: rgba(255, 252, 246, 0.92);
+  --universe-trail-border: rgba(76, 92, 122, 0.18);
+  --universe-trail-text: #1B2230;
+  --universe-trail-active: #B45309;
 
   color-scheme: light;
   background-color: var(--background);
@@ -241,26 +328,56 @@
 
 /* ── Universe view utility classes ──────────────────────────────────────── */
 
+/* ── Universe canvas — fully theme-aware via tokens ──────────────────────
+   Dark = deep cosmos. Light = dawn constellation sky. Same engine, no hex. */
 .universe-canvas {
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(99, 102, 241, 0.08) 0%, transparent 70%),
-    radial-gradient(ellipse 55% 45% at 72% 65%, rgba(139, 92, 246, 0.05) 0%, transparent 70%),
-    #060912;
+  background: var(--graph-canvas-gradient), var(--graph-canvas);
 }
 
+/* Constellation field — adapts intensity to theme via star-color tokens */
 .universe-canvas::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(circle, rgba(255, 255, 255, 0.5) 1px, transparent 1px),
-    radial-gradient(circle, rgba(255, 255, 255, 0.3) 1px, transparent 1px),
-    radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+    radial-gradient(circle, var(--star-color-1) 1px, transparent 1px),
+    radial-gradient(circle, var(--star-color-2) 1px, transparent 1px),
+    radial-gradient(circle, var(--star-color-3) 1px, transparent 1px);
   background-size: 330px 330px, 200px 200px, 130px 130px;
   background-position: 0 0, 85px 65px, 42px 115px;
   animation: starTwinkle 7s ease-in-out infinite;
   z-index: 0;
+}
+
+/* Atmospheric fog overlay — gently fades the bottom edge of the universe
+   into surrounding layout so the graph feels embedded, not pasted. */
+.universe-canvas::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 120px;
+  pointer-events: none;
+  background: var(--graph-fog);
+  z-index: 0;
+}
+
+/* Drifting ambient particles — barely perceptible, alive even in daylight */
+@keyframes particleDrift {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: translate3d(40px, -30px, 0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate3d(80px, 0, 0);
+    opacity: 0.6;
+  }
 }
 
 .edge-flow {
@@ -268,10 +385,10 @@
 }
 
 .glass {
-  background: rgba(15, 20, 32, 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--border);
 }
 
 /* Node breathing — subtle alive feel */
@@ -333,4 +450,215 @@
 
 .node-breath-selected {
   animation: nodeBreathSelected 2.8s ease-in-out infinite;
+}
+
+/* ── Light-mode contrast overrides ──────────────────────────────────────────
+   Tailwind's *-400 / *-300 colors are tuned for dark backgrounds.
+   On the pearl light theme they become nearly invisible (≤ 2:1 contrast).
+   These overrides shift each hue to its 700 equivalent, hitting WCAG AA.
+   Applied inside .light-theme so dark mode is completely unaffected.
+   ─────────────────────────────────────────────────────────────────────────── */
+.light-theme {
+
+  .text-amber-400,
+  .text-amber-500 {
+    color: #92400E;
+  }
+
+  .text-amber-300 {
+    color: #B45309;
+  }
+
+  .text-amber-600 {
+    color: #78350F;
+  }
+
+  .text-green-400,
+  .text-green-500 {
+    color: #166534;
+  }
+
+  .text-green-300 {
+    color: #15803D;
+  }
+
+  .text-teal-400,
+  .text-teal-500 {
+    color: #0F766E;
+  }
+
+  .text-teal-300 {
+    color: #0F766E;
+  }
+
+  .text-violet-400,
+  .text-violet-500 {
+    color: #5B21B6;
+  }
+
+  .text-violet-300 {
+    color: #6D28D9;
+  }
+
+  .text-blue-400,
+  .text-blue-500 {
+    color: #1D4ED8;
+  }
+
+  .text-blue-300 {
+    color: #1E40AF;
+  }
+
+  .text-pink-400,
+  .text-pink-500 {
+    color: #9D174D;
+  }
+
+  .text-pink-300 {
+    color: #BE185D;
+  }
+
+  .text-rose-400,
+  .text-rose-500 {
+    color: #9F1239;
+  }
+
+  .text-indigo-400,
+  .text-indigo-500 {
+    color: #3730A3;
+  }
+
+  .text-indigo-300 {
+    color: #4338CA;
+  }
+
+  .text-cyan-400,
+  .text-cyan-500 {
+    color: #0E7490;
+  }
+
+  .text-cyan-300 {
+    color: #0E7490;
+  }
+
+  .text-purple-400,
+  .text-purple-500 {
+    color: #5B21B6;
+  }
+
+  .text-purple-300 {
+    color: #6D28D9;
+  }
+
+  .text-orange-400,
+  .text-orange-500 {
+    color: #C2410C;
+  }
+
+  .text-emerald-400,
+  .text-emerald-500 {
+    color: #065F46;
+  }
+
+  .text-emerald-300 {
+    color: #047857;
+  }
+
+  .text-sky-400 {
+    color: #0369A1;
+  }
+
+  /* Amber-200 (used in avatars) is near-invisible on pearl */
+  .text-amber-200 {
+    color: #92400E;
+  }
+
+  /* White text on colored pill/badge backgrounds stays white — keep as-is */
+
+  /* Chip/badge background adjustments for legibility */
+  .bg-amber-500\/10 {
+    background-color: rgba(146, 64, 14, 0.10);
+  }
+
+  .bg-amber-500\/20 {
+    background-color: rgba(146, 64, 14, 0.14);
+  }
+
+  .bg-green-500\/10,
+  .bg-green-500\/20 {
+    background-color: rgba(22, 101, 52, 0.10);
+  }
+
+  .bg-teal-500\/10,
+  .bg-teal-500\/20,
+  .bg-teal-500\/30 {
+    background-color: rgba(15, 118, 110, 0.10);
+  }
+
+  .bg-violet-500\/10,
+  .bg-violet-500\/20 {
+    background-color: rgba(91, 33, 182, 0.10);
+  }
+
+  .bg-blue-500\/10,
+  .bg-blue-500\/20 {
+    background-color: rgba(29, 78, 216, 0.10);
+  }
+
+  .bg-pink-500\/10,
+  .bg-pink-500\/20 {
+    background-color: rgba(157, 23, 77, 0.10);
+  }
+
+  .bg-purple-500\/10,
+  .bg-purple-500\/20 {
+    background-color: rgba(91, 33, 182, 0.10);
+  }
+
+  .bg-cyan-500\/10,
+  .bg-cyan-500\/20 {
+    background-color: rgba(14, 116, 144, 0.10);
+  }
+
+  .bg-indigo-600\/25,
+  .bg-indigo-600\/20 {
+    background-color: rgba(79, 70, 229, 0.12);
+  }
+
+  /* Borders */
+  .border-amber-500\/20,
+  .border-amber-500\/25,
+  .border-amber-500\/30 {
+    border-color: rgba(146, 64, 14, 0.22);
+  }
+
+  .border-teal-500\/25,
+  .border-teal-500\/30,
+  .border-teal-500\/40 {
+    border-color: rgba(15, 118, 110, 0.25);
+  }
+
+  .border-green-500\/20,
+  .border-green-500\/30 {
+    border-color: rgba(22, 101, 52, 0.22);
+  }
+
+  .border-violet-500\/20,
+  .border-violet-500\/30 {
+    border-color: rgba(91, 33, 182, 0.22);
+  }
+
+  .border-blue-500\/20,
+  .border-blue-500\/30 {
+    border-color: rgba(29, 78, 216, 0.22);
+  }
+
+  .border-pink-500\/20,
+  .border-pink-500\/30 {
+    border-color: rgba(157, 23, 77, 0.22);
+  }
+
+  .border-indigo-400\/35 {
+    border-color: rgba(99, 102, 241, 0.35);
+  }
 }

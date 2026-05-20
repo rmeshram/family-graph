@@ -152,20 +152,6 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
 
         <Separator className="my-2" />
 
-        {/* Connected Families */}
-        <Link
-          href="/dashboard"
-          onClick={() => setOpen(false)}
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors border-l-2 border-teal-500/50 pl-[10px]"
-        >
-          <Globe className="h-4 w-4 text-teal-400" />
-          <span className="flex-1">Connected Families</span>
-          <Badge className="h-4 px-1.5 text-[9px] bg-teal-500/10 text-teal-400 border-teal-500/25">
-            Soon
-          </Badge>
-        </Link>
-
-        <Separator className="my-2" />
         <div className="mt-3 px-2">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 mb-2 px-1">Advanced Analytics</p>
           <div className="rounded-xl bg-muted/20 border border-border/40 p-2">
