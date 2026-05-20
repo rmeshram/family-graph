@@ -83,10 +83,16 @@ export function useEvents(familyId: string | null) {
   ) => {
     const event = events.find(e => e.id === eventId)
     if (!event) return
-    const rsvps = { ...event.rsvps, [userId]: status }
+    const previousRsvps = event.rsvps
+    const nextRsvps = { ...event.rsvps, [userId]: status }
     // Optimistic update
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, rsvps } : e))
-    await supabase.from('events').update({ rsvps }).eq('id', eventId)
+    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, rsvps: nextRsvps } : e))
+    const { error } = await supabase.from('events').update({ rsvps: nextRsvps }).eq('id', eventId)
+    if (error) {
+      // Rollback on failure
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, rsvps: previousRsvps } : e))
+      throw new Error(error.message)
+    }
   }, [supabase, events])
 
   return { events, loading, createEvent, updateRSVP, refetch: fetch }

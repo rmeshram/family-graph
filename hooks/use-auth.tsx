@@ -33,12 +33,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    setProfile(data)
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      setProfile(data)
+    } catch {
+      // Network or RLS error — keep previous profile, don't crash auth
+    }
   }, [supabase])
 
   useEffect(() => {
@@ -47,16 +51,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mounted) return
       setSession(session)
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id).finally(() => { if (mounted) setLoading(false) })
-      else setLoading(false)
+      if (session?.user) {
+        fetchProfile(session.user.id).finally(() => { if (mounted) setLoading(false) })
+      } else {
+        setLoading(false)
+      }
     }).catch(() => { if (mounted) setLoading(false) })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return
       setSession(session)
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
+      if (session?.user) {
+        // Always settle loading after profile fetch resolves (success or fail)
+        fetchProfile(session.user.id).finally(() => { if (mounted) setLoading(false) })
+      } else {
+        setProfile(null); setLoading(false)
+      }
     })
 
     return () => { mounted = false; subscription.unsubscribe() }

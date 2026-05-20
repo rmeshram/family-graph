@@ -46,8 +46,12 @@ const STORAGE_KEY = 'fg_read_notif_ids'
 
 function getReadIds(): Set<string> {
   try {
+    if (typeof localStorage === 'undefined') return new Set()
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? new Set(JSON.parse(raw)) : new Set()
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((v): v is string => typeof v === 'string'))
   } catch { return new Set() }
 }
 

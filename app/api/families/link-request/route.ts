@@ -44,6 +44,9 @@ export async function POST(req: Request) {
   if (!targetInviteCode?.trim()) {
     return NextResponse.json({ error: 'MISSING_CODE' }, { status: 400 })
   }
+  if (!/^[A-Z0-9]{4,16}$/.test(targetInviteCode.trim().toUpperCase())) {
+    return NextResponse.json({ error: 'INVALID_CODE' }, { status: 400 })
+  }
 
   const admin = adminClient()
 

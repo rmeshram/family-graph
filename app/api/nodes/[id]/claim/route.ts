@@ -106,6 +106,13 @@ export async function POST(
   if (!submittedName?.trim()) {
     return NextResponse.json({ error: 'MISSING_NAME' }, { status: 400 })
   }
+  // Bounds-check to prevent O(m*n) Levenshtein DoS
+  if (submittedName.length > 200) {
+    return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
+  }
+  if (submittedBirthYear !== undefined && (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
+    return NextResponse.json({ error: 'INVALID_BIRTH_YEAR' }, { status: 400 })
+  }
 
   const admin = adminClient()
 

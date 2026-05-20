@@ -3,6 +3,11 @@
 import { useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+function getOrigin(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
+  return process.env.NEXT_PUBLIC_APP_URL ?? ''
+}
+
 function randomCode(len = 8) {
   return Math.random().toString(36).substring(2, 2 + len).toUpperCase()
 }
@@ -29,7 +34,7 @@ export function useInvites(familyId: string | null) {
     }).select().single()
 
     if (error) throw new Error(error.message)
-    return { ...data, link: `${location.origin}/join/${data.code}` }
+    return { ...data, link: `${getOrigin()}/join/${data.code}` }
   }, [familyId, supabase])
 
   const createNodeClaimInvite = useCallback(async (
@@ -63,7 +68,7 @@ export function useInvites(familyId: string | null) {
       .eq('id', nodeId)
       .eq('claim_status' as any, 'unclaimed')
 
-    return { ...data, link: `${location.origin}/join/${(data as any).code}` }
+    return { ...data, link: `${getOrigin()}/join/${(data as any).code}` }
   }, [familyId, supabase])
 
   const getActiveLinks = useCallback(async () => {
