@@ -26,7 +26,8 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight } from 'lucide-react'
+import { getInverseRelationship } from '@/lib/relationship-engine'
 
 interface AddMemberDialogProps {
   open: boolean
@@ -430,6 +431,19 @@ export function AddMemberDialog({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                  {/* Inverse relationship hint — shown once the user picks a relationship */}
+                  {relationship && relationship !== 'self' && (
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
+                      <ArrowLeftRight className="h-3 w-3 shrink-0" />
+                      They will see you as their{' '}
+                      <span className="font-medium capitalize text-foreground">
+                        {getInverseRelationship(
+                          relationship,
+                          existingMembers.find(m => m.relationship === 'self')?.gender
+                        )}
+                      </span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">

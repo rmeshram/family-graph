@@ -23,6 +23,8 @@ import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-fe
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
+import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
+import { computePostAddSuggestions, type RelationshipSuggestion, type RelationshipAction } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -458,6 +460,8 @@ export default function FamilyGraphApp() {
   const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
   const [claimTargetId, setClaimTargetId] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  // ── Relationship intelligence suggestions ─────────────────────────────────
+  const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
   const [viewMode, setViewMode] = useState<TreeViewMode>('universe')
@@ -652,8 +656,14 @@ export default function FamilyGraphApp() {
       return
     }
     try {
-      await dbAddMember(memberData, user.id)
+      const newMember = await dbAddMember(memberData, user.id)
       toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
+      // Run relationship intelligence: surface actionable suggestions to the user
+      if (newMember) {
+        const allWithNew = [...members, newMember]
+        const suggestions = computePostAddSuggestions(newMember.id, allWithNew)
+        if (suggestions.length > 0) setPendingSuggestions(suggestions)
+      }
     } catch (e: unknown) {
       toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
     }
@@ -977,6 +987,26 @@ export default function FamilyGraphApp() {
                 onOpenPathFinder={handleOpenPathFinder}
                 pathFinderOpen={pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
+              />
+            )}
+
+            {/* ── Relationship Intelligence suggestions banner ──────── */}
+            {viewMode === 'universe' && pendingSuggestions.length > 0 && (
+              <RelationshipSuggestionsBanner
+                suggestions={pendingSuggestions}
+                onAccept={async (actions: RelationshipAction[]) => {
+                  for (const action of actions) {
+                    const target = members.find(m => m.id === action.memberId)
+                    if (!target) continue
+                    if (action.field === 'spouseIds') {
+                      const updated = [...new Set([...target.spouseIds, action.value])]
+                      await dbUpdateMember(action.memberId, { spouseIds: updated })
+                    }
+                  }
+                  toast({ title: 'Connected!', description: 'Relationship updated in the tree.' })
+                }}
+                onDismiss={(id) => setPendingSuggestions(prev => prev.filter(s => s.id !== id))}
+                onDismissAll={() => setPendingSuggestions([])}
               />
             )}
 
