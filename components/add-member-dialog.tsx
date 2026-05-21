@@ -29,6 +29,8 @@ import { Separator } from '@/components/ui/separator'
 import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight } from 'lucide-react'
 import { getInverseRelationship } from '@/lib/relationship-engine'
 import { computeRelationLabel } from '@/lib/relation-engine'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { cn } from '@/lib/utils'
 
 // Map verbose BFS labels to dropdown values ("Paternal Uncle (Chacha/Tau)" -> "paternal-uncle")
 function bfsLabelToRelType(label: string): string | null {
@@ -80,6 +82,8 @@ interface AddMemberDialogProps {
   familyId?: string
   /** The currently authenticated user's ID — used to lock photo on claimed nodes. */
   currentUserId?: string
+  /** Logged-in user's bound member id; hides 'Relationship to You' when editing self. */
+  selfMemberId?: string | null
 }
 
 export function AddMemberDialog({
@@ -91,8 +95,10 @@ export function AddMemberDialog({
   editingMember,
   familyId,
   currentUserId,
+  selfMemberId,
 }: AddMemberDialogProps) {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const photoInputRef = useRef<HTMLInputElement>(null)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
@@ -113,6 +119,7 @@ export function AddMemberDialog({
       setDeathYear(editingMember.deathYear?.toString() ?? '')
       setBirthPlace(editingMember.birthPlace ?? '')
       setCurrentPlace(editingMember.currentPlace ?? '')
+      setHometown(editingMember.hometown ?? '')
       setOccupation(editingMember.occupation ?? '')
       setGotra(editingMember.gotra ?? '')
       setPhone(editingMember.phone ?? '')
@@ -141,6 +148,7 @@ export function AddMemberDialog({
   const [deathYear, setDeathYear] = useState('')
   const [birthPlace, setBirthPlace] = useState('')
   const [currentPlace, setCurrentPlace] = useState('')
+  const [hometown, setHometown] = useState('')
   const [occupation, setOccupation] = useState('')
   const [gotra, setGotra] = useState('')
   const [phone, setPhone] = useState('')
@@ -187,7 +195,10 @@ export function AddMemberDialog({
   // ── Auto-compute “Relationship to you” via BFS when parent / spouse is selected ──
   // Only fills when the field is currently empty (never overwrites a manual pick).
   useEffect(() => {
-    const self = existingMembers.find(m => m.relationship === 'self')
+    // DECISION 4: resolve self via prop (logged-in user's bound member id) and
+    // fall back to legacy 'relationship === self' for unauthenticated demo views.
+    const self = (selfMemberId && existingMembers.find(m => m.id === selfMemberId))
+      || existingMembers.find(m => m.relationship === 'self')
     if (!self) return
     const tempParentIds = [fatherId, motherId].filter(id => id && id !== 'none')
     const tempSpouseIds = spouseId && spouseId !== 'none' ? [spouseId] : []
@@ -277,6 +288,7 @@ export function AddMemberDialog({
       deathYear: deathYear ? parseInt(deathYear) : undefined,
       birthPlace: birthPlace || undefined,
       currentPlace: currentPlace || undefined,
+      hometown: hometown || undefined,
       occupation: occupation || undefined,
       gotra: gotra || undefined,
       phone: phone || undefined,
@@ -313,6 +325,7 @@ export function AddMemberDialog({
     setDeathYear('')
     setBirthPlace('')
     setCurrentPlace('')
+    setHometown('')
     setOccupation('')
     setGotra('')
     setPhone('')
@@ -340,7 +353,12 @@ export function AddMemberDialog({
       if (!open) resetForm()
       onOpenChange(open)
     }}>
-      <DialogContent className="sm:max-w-[550px] max-h-[90vh] p-0 gap-0">
+      <DialogContent className={cn(
+        "p-0 gap-0",
+        isMobile
+          ? "w-screen h-[100dvh] max-h-[100dvh] max-w-none rounded-none top-0 left-0 translate-x-0 translate-y-0 flex flex-col"
+          : "sm:max-w-[550px] max-h-[90vh]"
+      )}>
         <DialogHeader className="p-6 pb-4 border-b border-border/50">
           <DialogTitle className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
@@ -353,7 +371,7 @@ export function AddMemberDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[calc(90vh-180px)]">
+        <ScrollArea className={isMobile ? "flex-1 min-h-0" : "max-h-[calc(90vh-180px)]"}>
           <form id="add-member-form" onSubmit={handleSubmit} className="p-6 space-y-6">
             {/* Photo Upload */}
             <div className="flex items-center gap-4">
@@ -411,128 +429,134 @@ export function AddMemberDialog({
                   {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="relationship">Relationship to You</Label>
-                  <Select value={relationship} onValueChange={setRelationship}>
-                    <SelectTrigger className="bg-muted/30 border-border/50">
-                      <SelectValue placeholder="Select relationship" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectLabel>Self</SelectLabel>
-                        <SelectItem value="self">Myself (You)</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Grandparents</SelectLabel>
-                        <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>
-                        <SelectItem value="paternal-grandmother">Paternal Grandmother</SelectItem>
-                        <SelectItem value="maternal-grandfather">Maternal Grandfather</SelectItem>
-                        <SelectItem value="maternal-grandmother">Maternal Grandmother</SelectItem>
-                        <SelectItem value="great-grandfather">Great Grandfather</SelectItem>
-                        <SelectItem value="great-grandmother">Great Grandmother</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Parents</SelectLabel>
-                        <SelectItem value="father">Father</SelectItem>
-                        <SelectItem value="mother">Mother</SelectItem>
-                        <SelectItem value="stepfather">Stepfather</SelectItem>
-                        <SelectItem value="stepmother">Stepmother</SelectItem>
-                        <SelectItem value="foster-father">Foster Father</SelectItem>
-                        <SelectItem value="foster-mother">Foster Mother</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Siblings</SelectLabel>
-                        <SelectItem value="brother">Brother</SelectItem>
-                        <SelectItem value="sister">Sister</SelectItem>
-                        <SelectItem value="half-brother">Half Brother</SelectItem>
-                        <SelectItem value="half-sister">Half Sister</SelectItem>
-                        <SelectItem value="stepbrother">Stepbrother</SelectItem>
-                        <SelectItem value="stepsister">Stepsister</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Spouse &amp; Partner</SelectLabel>
-                        <SelectItem value="husband">Husband</SelectItem>
-                        <SelectItem value="wife">Wife</SelectItem>
-                        <SelectItem value="partner">Partner</SelectItem>
-                        <SelectItem value="ex-husband">Ex Husband</SelectItem>
-                        <SelectItem value="ex-wife">Ex Wife</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Children</SelectLabel>
-                        <SelectItem value="son">Son</SelectItem>
-                        <SelectItem value="daughter">Daughter</SelectItem>
-                        <SelectItem value="stepson">Stepson</SelectItem>
-                        <SelectItem value="stepdaughter">Stepdaughter</SelectItem>
-                        <SelectItem value="adopted-son">Adopted Son</SelectItem>
-                        <SelectItem value="adopted-daughter">Adopted Daughter</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Grandchildren</SelectLabel>
-                        <SelectItem value="grandson">Grandson</SelectItem>
-                        <SelectItem value="granddaughter">Granddaughter</SelectItem>
-                        <SelectItem value="great-grandson">Great Grandson</SelectItem>
-                        <SelectItem value="great-granddaughter">Great Granddaughter</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Aunts &amp; Uncles</SelectLabel>
-                        <SelectItem value="paternal-uncle">Paternal Uncle (Father&apos;s Brother)</SelectItem>
-                        <SelectItem value="paternal-aunt">Paternal Aunt (Father&apos;s Sister)</SelectItem>
-                        <SelectItem value="maternal-uncle">Maternal Uncle (Mother&apos;s Brother)</SelectItem>
-                        <SelectItem value="maternal-aunt">Maternal Aunt (Mother&apos;s Sister)</SelectItem>
-                        <SelectItem value="uncle-in-law">Uncle-in-law</SelectItem>
-                        <SelectItem value="aunt-in-law">Aunt-in-law</SelectItem>
-                        <SelectItem value="great-uncle">Great Uncle</SelectItem>
-                        <SelectItem value="great-aunt">Great Aunt</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Cousins</SelectLabel>
-                        <SelectItem value="first-cousin">First Cousin</SelectItem>
-                        <SelectItem value="second-cousin">Second Cousin</SelectItem>
-                        <SelectItem value="third-cousin">Third Cousin</SelectItem>
-                        <SelectItem value="first-cousin-once-removed">First Cousin Once Removed</SelectItem>
-                        <SelectItem value="cousin-in-law">Cousin-in-law</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Nieces &amp; Nephews</SelectLabel>
-                        <SelectItem value="nephew">Nephew</SelectItem>
-                        <SelectItem value="niece">Niece</SelectItem>
-                        <SelectItem value="grand-nephew">Grand Nephew</SelectItem>
-                        <SelectItem value="grand-niece">Grand Niece</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>In-Laws</SelectLabel>
-                        <SelectItem value="father-in-law">Father-in-law</SelectItem>
-                        <SelectItem value="mother-in-law">Mother-in-law</SelectItem>
-                        <SelectItem value="brother-in-law">Brother-in-law</SelectItem>
-                        <SelectItem value="sister-in-law">Sister-in-law</SelectItem>
-                        <SelectItem value="son-in-law">Son-in-law</SelectItem>
-                        <SelectItem value="daughter-in-law">Daughter-in-law</SelectItem>
-                      </SelectGroup>
-                      <SelectGroup>
-                        <SelectLabel>Other</SelectLabel>
-                        <SelectItem value="family-friend">Family Friend</SelectItem>
-                        <SelectItem value="godfather">Godfather</SelectItem>
-                        <SelectItem value="godmother">Godmother</SelectItem>
-                        <SelectItem value="godson">Godson</SelectItem>
-                        <SelectItem value="goddaughter">Goddaughter</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {/* Inverse relationship hint — shown once the user picks a relationship */}
-                  {relationship && relationship !== 'self' && (
-                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
-                      <ArrowLeftRight className="h-3 w-3 shrink-0" />
-                      They will see you as their{' '}
-                      <span className="font-medium capitalize text-foreground">
-                        {getInverseRelationship(
-                          relationship,
-                          existingMembers.find(m => m.relationship === 'self')?.gender
-                        )}
-                      </span>
-                    </p>
+                {/* Hide 'Relationship to You' when editing self — self cannot have a relationship to self. */}
+                {!(editingMember && (
+                  editingMember.id === selfMemberId ||
+                  (!selfMemberId && editingMember.relationship === 'self')
+                )) && (
+                    <div className="space-y-2">
+                      <Label htmlFor="relationship">Relationship to You</Label>
+                      <Select value={relationship} onValueChange={setRelationship}>
+                        <SelectTrigger className="bg-muted/30 border-border/50">
+                          <SelectValue placeholder="Select relationship" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Self</SelectLabel>
+                            <SelectItem value="self">Myself (You)</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Grandparents</SelectLabel>
+                            <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>
+                            <SelectItem value="paternal-grandmother">Paternal Grandmother</SelectItem>
+                            <SelectItem value="maternal-grandfather">Maternal Grandfather</SelectItem>
+                            <SelectItem value="maternal-grandmother">Maternal Grandmother</SelectItem>
+                            <SelectItem value="great-grandfather">Great Grandfather</SelectItem>
+                            <SelectItem value="great-grandmother">Great Grandmother</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Parents</SelectLabel>
+                            <SelectItem value="father">Father</SelectItem>
+                            <SelectItem value="mother">Mother</SelectItem>
+                            <SelectItem value="stepfather">Stepfather</SelectItem>
+                            <SelectItem value="stepmother">Stepmother</SelectItem>
+                            <SelectItem value="foster-father">Foster Father</SelectItem>
+                            <SelectItem value="foster-mother">Foster Mother</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Siblings</SelectLabel>
+                            <SelectItem value="brother">Brother</SelectItem>
+                            <SelectItem value="sister">Sister</SelectItem>
+                            <SelectItem value="half-brother">Half Brother</SelectItem>
+                            <SelectItem value="half-sister">Half Sister</SelectItem>
+                            <SelectItem value="stepbrother">Stepbrother</SelectItem>
+                            <SelectItem value="stepsister">Stepsister</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Spouse &amp; Partner</SelectLabel>
+                            <SelectItem value="husband">Husband</SelectItem>
+                            <SelectItem value="wife">Wife</SelectItem>
+                            <SelectItem value="partner">Partner</SelectItem>
+                            <SelectItem value="ex-husband">Ex Husband</SelectItem>
+                            <SelectItem value="ex-wife">Ex Wife</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Children</SelectLabel>
+                            <SelectItem value="son">Son</SelectItem>
+                            <SelectItem value="daughter">Daughter</SelectItem>
+                            <SelectItem value="stepson">Stepson</SelectItem>
+                            <SelectItem value="stepdaughter">Stepdaughter</SelectItem>
+                            <SelectItem value="adopted-son">Adopted Son</SelectItem>
+                            <SelectItem value="adopted-daughter">Adopted Daughter</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Grandchildren</SelectLabel>
+                            <SelectItem value="grandson">Grandson</SelectItem>
+                            <SelectItem value="granddaughter">Granddaughter</SelectItem>
+                            <SelectItem value="great-grandson">Great Grandson</SelectItem>
+                            <SelectItem value="great-granddaughter">Great Granddaughter</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Aunts &amp; Uncles</SelectLabel>
+                            <SelectItem value="paternal-uncle">Paternal Uncle (Father&apos;s Brother)</SelectItem>
+                            <SelectItem value="paternal-aunt">Paternal Aunt (Father&apos;s Sister)</SelectItem>
+                            <SelectItem value="maternal-uncle">Maternal Uncle (Mother&apos;s Brother)</SelectItem>
+                            <SelectItem value="maternal-aunt">Maternal Aunt (Mother&apos;s Sister)</SelectItem>
+                            <SelectItem value="uncle-in-law">Uncle-in-law</SelectItem>
+                            <SelectItem value="aunt-in-law">Aunt-in-law</SelectItem>
+                            <SelectItem value="great-uncle">Great Uncle</SelectItem>
+                            <SelectItem value="great-aunt">Great Aunt</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Cousins</SelectLabel>
+                            <SelectItem value="first-cousin">First Cousin</SelectItem>
+                            <SelectItem value="second-cousin">Second Cousin</SelectItem>
+                            <SelectItem value="third-cousin">Third Cousin</SelectItem>
+                            <SelectItem value="first-cousin-once-removed">First Cousin Once Removed</SelectItem>
+                            <SelectItem value="cousin-in-law">Cousin-in-law</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Nieces &amp; Nephews</SelectLabel>
+                            <SelectItem value="nephew">Nephew</SelectItem>
+                            <SelectItem value="niece">Niece</SelectItem>
+                            <SelectItem value="grand-nephew">Grand Nephew</SelectItem>
+                            <SelectItem value="grand-niece">Grand Niece</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>In-Laws</SelectLabel>
+                            <SelectItem value="father-in-law">Father-in-law</SelectItem>
+                            <SelectItem value="mother-in-law">Mother-in-law</SelectItem>
+                            <SelectItem value="brother-in-law">Brother-in-law</SelectItem>
+                            <SelectItem value="sister-in-law">Sister-in-law</SelectItem>
+                            <SelectItem value="son-in-law">Son-in-law</SelectItem>
+                            <SelectItem value="daughter-in-law">Daughter-in-law</SelectItem>
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Other</SelectLabel>
+                            <SelectItem value="family-friend">Family Friend</SelectItem>
+                            <SelectItem value="godfather">Godfather</SelectItem>
+                            <SelectItem value="godmother">Godmother</SelectItem>
+                            <SelectItem value="godson">Godson</SelectItem>
+                            <SelectItem value="goddaughter">Goddaughter</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {/* Inverse relationship hint — shown once the user picks a relationship */}
+                      {relationship && relationship !== 'self' && (
+                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
+                          <ArrowLeftRight className="h-3 w-3 shrink-0" />
+                          They will see you as their{' '}
+                          <span className="font-medium capitalize text-foreground">
+                            {getInverseRelationship(
+                              relationship,
+                              existingMembers.find(m => m.relationship === 'self')?.gender
+                            )}
+                          </span>
+                        </p>
+                      )}
+                    </div>
                   )}
-                </div>
 
                 <div className="space-y-2">
                   <Label>Gender</Label>
@@ -611,6 +635,19 @@ export function AddMemberDialog({
                     value={currentPlace}
                     onChange={(e) => setCurrentPlace(e.target.value)}
                     placeholder="City they live in now"
+                    className="bg-muted/30 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hometown" className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    Native Place
+                  </Label>
+                  <Input
+                    id="hometown"
+                    value={hometown}
+                    onChange={(e) => setHometown(e.target.value)}
+                    placeholder="Native city / hometown"
                     className="bg-muted/30 border-border/50"
                   />
                 </div>
@@ -858,7 +895,10 @@ export function AddMemberDialog({
           </form>
         </ScrollArea>
 
-        <DialogFooter className="p-6 pt-4 border-t border-border/50">
+        <DialogFooter className={cn(
+          "p-6 pt-4 border-t border-border/50",
+          isMobile && "flex-row flex-wrap gap-2 sticky bottom-0 bg-background safe-area-pb"
+        )}>
           {uploadError && (
             <p className="text-xs text-amber-500 mr-auto">{uploadError}</p>
           )}

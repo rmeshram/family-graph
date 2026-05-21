@@ -56,7 +56,8 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const sidebarMembers = useMemo(() => isDemoMode ? sampleFamilyMembers : dbMembers, [isDemoMode, dbMembers])
   const memoriesCount = isDemoMode ? sampleMemories.length : dbMemories.length
   const sidebarEvents = useMemo(() => isDemoMode ? [] : dbEvents, [isDemoMode, dbEvents])
-  const { notifications, unreadCount, markAllRead } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents)
+  const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
+  const { notifications, unreadCount, markAllRead } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents, isDemoMode ? null : familyId, isAdmin)
 
   const handleSignOut = async () => {
     await signOut()

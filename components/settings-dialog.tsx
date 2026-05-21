@@ -54,9 +54,10 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void
   onExport?: () => void
   onImport?: () => void
+  defaultTab?: string
 }
 
-export function SettingsDialog({ open, onOpenChange, onExport, onImport }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onExport, onImport, defaultTab = 'general' }: SettingsDialogProps) {
   const isMobile = useIsMobile()
   const { user, profile, familyId, loading: authLoading } = useAuth()
   const supabase = createClient()
@@ -331,7 +332,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
         <DialogDescription>Manage your Family Graph preferences and team</DialogDescription>
       </DialogHeader>
 
-      <Tabs defaultValue="general">
+      <Tabs key={defaultTab} defaultValue={defaultTab}>
         <TabsList className="w-full mb-4 overflow-x-auto flex-nowrap justify-start">
           <TabsTrigger value="general" className="flex-1 shrink-0 text-xs sm:text-sm">General</TabsTrigger>
           <TabsTrigger value="team" className="flex-1 shrink-0 text-xs sm:text-sm">
@@ -514,6 +515,27 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
 
         {/* ── Team / Family Members ─────────────────────────────── */}
         <TabsContent value="team" className="mt-0 space-y-4">
+
+          {/* ── Your Role Card ───────────────────────────────────── */}
+          <div className={`rounded-xl border p-3 flex items-center gap-3 ${isAdmin ? 'border-amber-500/30 bg-amber-500/5' : 'border-border/50 bg-muted/20'}`}>
+            <div className={`h-9 w-9 rounded-lg grid place-items-center shrink-0 ${isAdmin ? 'bg-amber-500/15' : 'bg-muted'}`}>
+              {isAdmin ? <Crown className="h-4 w-4 text-amber-400" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold">
+                {isAdmin ? 'You are the Family Admin' : `Your role: ${(profile as any)?.role ?? 'viewer'}`}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {isAdmin
+                  ? 'You can approve or reject profile claims, manage members, and change invite settings.'
+                  : 'Contact the family admin to get elevated access.'}
+              </p>
+            </div>
+            <Badge variant="outline" className={`shrink-0 text-[10px] px-1.5 py-0 ${isAdmin ? 'border-amber-500/30 text-amber-400' : 'border-border text-muted-foreground'}`}>
+              {isAdmin ? 'Admin' : (profile as any)?.role ?? 'viewer'}
+            </Badge>
+          </div>
+
           {/* Pending Claims — admin only */}
           {isAdmin && (
             <Card className="bg-muted/30 border-amber-500/20">
@@ -602,6 +624,16 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                 <Users className="h-4 w-4 text-muted-foreground" />
                 Family Members with Access
               </CardTitle>
+              {/* Non-admin hint: show who to contact for role changes */}
+              {!isAdmin && familyProfiles.some(fp => fp.role === 'admin') && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Contact{' '}
+                  <span className="font-semibold text-amber-400">
+                    {familyProfiles.find(fp => fp.role === 'admin')?.display_name ?? 'the admin'}
+                  </span>
+                  {' '}to change your role or get admin access.
+                </p>
+              )}
             </CardHeader>
             <CardContent className="space-y-0 p-0">
               {!familyId && authLoading ? (
@@ -614,21 +646,45 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                 <p className="text-sm text-muted-foreground p-4">No family members have joined yet. Share your invite link!</p>
               ) : (
                 <div className="divide-y divide-border/40">
-                  {familyProfiles.map(fp => (
-                    <div key={fp.id} className="flex items-center gap-3 px-4 py-3">
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
-                          {fp.display_name?.[0]?.toUpperCase() ?? '?'}
-                        </AvatarFallback>
-                      </Avatar>
+                  {/* Sort: admins first, then contributors, then viewers */}
+                  {[...familyProfiles]
+                    .sort((a, b) => {
+                      const order = { admin: 0, contributor: 1, viewer: 2 }
+                      return (order[a.role as keyof typeof order] ?? 3) - (order[b.role as keyof typeof order] ?? 3)
+                    })
+                    .map(fp => (
+                    <div
+                      key={fp.id}
+                      className={`flex items-center gap-3 px-4 py-3 ${fp.role === 'admin' ? 'bg-amber-500/3' : ''}`}
+                    >
+                      <div className="relative shrink-0">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className={`text-xs font-bold ${fp.role === 'admin' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'}`}>
+                            {fp.display_name?.[0]?.toUpperCase() ?? '?'}
+                          </AvatarFallback>
+                        </Avatar>
+                        {fp.role === 'admin' && (
+                          <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-1 ring-background">
+                            <Crown className="h-2 w-2 text-white" />
+                          </span>
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
+                          {fp.id === user?.id && (
+                            <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0 rounded-full border border-primary/20">you</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 mt-0.5">
                           {roleIcon(fp.role)}
-                          <p className="text-[10px] text-muted-foreground capitalize">{fp.role}</p>
-                          {fp.id === user?.id && <span className="text-[10px] text-primary ml-1">(you)</span>}
+                          <p className={`text-[10px] capitalize font-medium ${fp.role === 'admin' ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                            {fp.role}
+                            {fp.role === 'admin' && ' · Family Admin'}
+                          </p>
                         </div>
                       </div>
+                      {/* Admin: show role selector + remove button for others */}
                       {isAdmin && fp.id !== user?.id && (
                         <div className="flex items-center gap-2">
                           <Select
@@ -654,9 +710,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport }: Setti
                           </Button>
                         </div>
                       )}
+                      {/* Non-admin or viewing own row: just show role badge */}
                       {(!isAdmin || fp.id === user?.id) && (
-                        <Badge variant="outline" className={`text-xs ${roleBadgeClass(fp.role)}`}>
-                          {fp.role}
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${roleBadgeClass(fp.role)}`}>
+                          {roleIcon(fp.role)}
+                          <span className="ml-1">{fp.role}</span>
                         </Badge>
                       )}
                     </div>

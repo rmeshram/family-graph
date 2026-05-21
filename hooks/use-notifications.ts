@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { FamilyMember } from '@/lib/types'
+import { createClient } from '@/lib/supabase/client'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
-export type NotifType = 'member_joined' | 'birthday_today' | 'birthday_upcoming' | 'event_upcoming' | 'memory_added' | 'node_match_found' | 'claim_accepted' | 'claim_revoked' | 'node_claimed'
+export type NotifType = 'member_joined' | 'birthday_today' | 'birthday_upcoming' | 'event_upcoming' | 'memory_added' | 'node_match_found' | 'claim_accepted' | 'claim_revoked' | 'node_claimed' | 'claim_submitted' | 'claim_pending_admin'
 
 export interface AppNotification {
   id: string
@@ -55,11 +57,139 @@ function getReadIds(): Set<string> {
   } catch { return new Set() }
 }
 
-export function useNotifications(members: FamilyMember[], memoriesCount: number, events: MinEvent[] = []) {
+export function useNotifications(
+  members: FamilyMember[],
+  memoriesCount: number,
+  events: MinEvent[] = [],
+  familyId?: string | null,
+  isAdmin?: boolean,
+) {
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
     return getReadIds()
   })
+
+  // ── Pending claims polling (admin only) ───────────────────────────────
+  // Polls GET /api/claims/pending every 60 s and injects each claim as a
+  // notification so the bell badge lights up without the admin needing to
+  // open Settings first.
+  const [pendingClaimNotifs, setPendingClaimNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!isAdmin || !familyId) return
+
+    const load = async () => {
+      try {
+        const res = await fetch('/api/claims/pending')
+        if (!res.ok) return
+        const { claims = [] } = await res.json()
+        const notifs: AppNotification[] = (claims as any[]).map((c) => ({
+          id: `pending-claim-${c.id}`,
+          type: 'claim_submitted' as NotifType,
+          title: `Claim request: ${c.nodeName ?? 'Unknown'}`,
+          body: `${c.claimantName ?? 'Someone'} wants to claim this profile — review in Settings → Team`,
+          timestamp: new Date(c.createdAt ?? Date.now()),
+          read: false,
+          href: '/dashboard', // opens settings programmatically; for now link to dashboard
+        }))
+        setPendingClaimNotifs(notifs)
+      } catch { /* ignore */ }
+    }
+
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [isAdmin, familyId])
+
+  // ── Realtime claim_audit_log subscription ─────────────────────────────
+  // Listens for claim lifecycle events on the user's family and emits
+  // warm-copy notifications in real time. Off when no familyId or when the
+  // feature flag is disabled.
+  const [claimNotifs, setClaimNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`claim_audit:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'claim_audit_log', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const row = payload.new as { id: string; node_id: string; actor_id: string | null; action: string; metadata: Record<string, unknown>; created_at: string }
+          const node = members.find(m => m.id === row.node_id)
+          const nodeName = node?.name ?? (row.metadata?.node_name as string) ?? 'A family member'
+          const initials = nodeName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          const ts = new Date(row.created_at)
+
+          let title: string | null = null
+          let body = ''
+          let type: NotifType = 'node_claimed'
+
+          switch (row.action) {
+            case 'claim_completed':
+              title = `${nodeName} joined the family`
+              body = 'Their profile is now claimed and verified.'
+              type = 'node_claimed'
+              break
+            case 'claim_initiated':
+              // Someone submitted a claim that needs admin review
+              title = `New claim request for ${nodeName}`
+              body = 'Review and approve or reject in Settings → Team.'
+              type = 'claim_submitted'
+              break
+            case 'claim_verified':
+              title = `${nodeName}\'s claim was approved`
+              body = 'They now have full access to their profile.'
+              type = 'claim_accepted'
+              break
+            case 'claim_rejected':
+              title = `A claim on ${nodeName} was rejected`
+              body = 'The submitted identity did not match.'
+              type = 'claim_revoked'
+              break
+            case 'claim_revoked':
+              title = `Access to ${nodeName} was revoked`
+              body = 'An admin removed the claim.'
+              type = 'claim_revoked'
+              break
+            case 'invite_sent':
+              title = `Invite sent for ${nodeName}`
+              body = 'They can now claim their profile.'
+              type = 'node_match_found'
+              break
+            case 'node_merged':
+              title = `Duplicate profile merged`
+              body = `${nodeName}\'s duplicate entry was cleaned up.`
+              type = 'node_claimed'
+              break
+            default:
+              return // ignore non-notable actions
+          }
+
+          setClaimNotifs(prev => {
+            // Dedupe by id (audit row id is unique).
+            if (prev.some(n => n.id === `claim-${row.id}`)) return prev
+            const next: AppNotification = {
+              id: `claim-${row.id}`,
+              type,
+              title,
+              body,
+              memberName: nodeName,
+              memberInitials: initials,
+              timestamp: ts,
+              read: false,
+              href: '/dashboard',
+            }
+            // Cap to last 20 realtime claim events.
+            return [next, ...prev].slice(0, 20)
+          })
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId, members])
 
   const notifications = useMemo<AppNotification[]>(() => {
     const notifs: AppNotification[] = []
@@ -70,12 +200,11 @@ export function useNotifications(members: FamilyMember[], memoriesCount: number,
       .sort((a, b) => new Date(b.addedAt ?? 0).getTime() - new Date(a.addedAt ?? 0).getTime())
 
     for (const m of newMembers.slice(0, 5)) {
-      const ago = daysAgo(m.addedAt)
       notifs.push({
         id: `joined-${m.id}`,
         type: 'member_joined',
         title: `${m.name} joined the family tree`,
-        body: ago === 0 ? 'Just now' : ago === 1 ? 'Yesterday' : `${ago} days ago`,
+        body: 'Added to the family tree',
         memberName: m.name,
         memberInitials: m.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
         timestamp: new Date(m.addedAt ?? Date.now()),
@@ -185,10 +314,23 @@ export function useNotifications(members: FamilyMember[], memoriesCount: number,
     return notifs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
   }, [members, memoriesCount, events])
 
-  // Mark notifications as read based on readIds
+  // Mark notifications as read based on readIds + merge realtime claim events.
   const notificationsWithRead = useMemo(
-    () => notifications.map(n => ({ ...n, read: readIds.has(n.id) })),
-    [notifications, readIds]
+    () => {
+      // Merge all streams: pending-claim polls (admin), realtime audit events, computed.
+      const merged = [...pendingClaimNotifs, ...claimNotifs, ...notifications]
+      // Dedupe by id (admin pending-claim first wins so they stay until dismissed).
+      const seen = new Set<string>()
+      const deduped: AppNotification[] = []
+      for (const n of merged) {
+        if (seen.has(n.id)) continue
+        seen.add(n.id)
+        deduped.push(n)
+      }
+      deduped.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      return deduped.map(n => ({ ...n, read: readIds.has(n.id) }))
+    },
+    [notifications, claimNotifs, pendingClaimNotifs, readIds]
   )
 
   const unreadCount = useMemo(
