@@ -23,6 +23,7 @@ import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-fe
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
+import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
 import { computePostAddSuggestions, type RelationshipSuggestion, type RelationshipAction } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -448,6 +449,7 @@ export default function FamilyGraphApp() {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [detailMemberId, setDetailMemberId] = useState<string | null>(null)
   // Phase 2.5 — relationship exploration trail ("You → Brother → Brother's Wife → …")
   // Capped at 8 hops so the breadcrumb stays readable.
   const [explorationTrail, setExplorationTrail] = useState<string[]>([])
@@ -457,6 +459,17 @@ export default function FamilyGraphApp() {
   const [isAIInsightsOpen, setIsAIInsightsOpen] = useState(false)
   const [isStoryDialogOpen, setIsStoryDialogOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<string>('general')
+
+  // Listen for fg:open-settings custom event fired from notification bell
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ tab?: string }>) => {
+      setSettingsDefaultTab(e.detail?.tab ?? 'general')
+      setIsSettingsOpen(true)
+    }
+    window.addEventListener('fg:open-settings', handler as EventListener)
+    return () => window.removeEventListener('fg:open-settings', handler as EventListener)
+  }, [])
   const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
   const [claimTargetId, setClaimTargetId] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -487,9 +500,11 @@ export default function FamilyGraphApp() {
       if (!map.has(b)) map.set(b, new Set())
       map.get(a)!.add(b); map.get(b)!.add(a)
     }
-    // Use the raw dbMembers for adjacency so filtering doesn't break paths
+    // Use enriched members: derives edges from relationship labels for isolated nodes
     const base = isDemoMode ? sampleFamilyMembers : dbMembers
-    base.forEach(m => {
+    const selfMemberForEnrich = base.find(m => m.relationship === 'self')
+    const enriched = selfMemberForEnrich ? enrichMembersWithDerivedEdges(base, selfMemberForEnrich.id) : base
+    enriched.forEach(m => {
       m.parentIds.forEach(pid => add(m.id, pid))
       m.spouseIds.forEach(sid => add(m.id, sid))
     })
@@ -610,7 +625,15 @@ export default function FamilyGraphApp() {
   }, [isDemoMode, members, maxDegree, selfMember, showExtended])
 
   const { toast } = useToast()
-  const selectedMember = members.find((m) => m.id === selectedMemberId)
+  const selectedMember = members.find((m) => m.id === (viewMode === 'universe' ? detailMemberId : selectedMemberId))
+
+  const closeMemberDetail = useCallback(() => {
+    if (viewMode === 'universe') {
+      setDetailMemberId(null)
+      return
+    }
+    setSelectedMemberId(null)
+  }, [viewMode])
 
   const handleSelectMember = useCallback((id: string) => {
     setSelectedMemberId((prev) => (prev === id ? null : id))
@@ -623,8 +646,27 @@ export default function FamilyGraphApp() {
     })
   }, [])
 
+  const handleSelectUniverseMember = useCallback((id: string) => {
+    setDetailMemberId(null)
+    setSelectedMemberId((prev) => (prev === id ? null : id))
+    setExplorationTrail((trail) => {
+      if (trail[trail.length - 1] === id) return trail
+      const existingIdx = trail.indexOf(id)
+      if (existingIdx !== -1) return trail.slice(0, existingIdx + 1)
+      return [...trail, id].slice(-8)
+    })
+  }, [])
+
+  const handleOpenSelectedMemberDetail = useCallback((id?: string) => {
+    const nextId = id ?? selectedMemberId
+    if (!nextId) return
+    setSelectedMemberId(nextId)
+    setDetailMemberId(nextId)
+  }, [selectedMemberId])
+
   const handleTrailJump = useCallback((id: string) => {
     setSelectedMemberId(id)
+    setDetailMemberId(null)
     setExplorationTrail((trail) => {
       const idx = trail.indexOf(id)
       return idx !== -1 ? trail.slice(0, idx + 1) : [id]
@@ -634,6 +676,7 @@ export default function FamilyGraphApp() {
   const handleTrailClear = useCallback(() => {
     setExplorationTrail([])
     setSelectedMemberId(null)
+    setDetailMemberId(null)
   }, [])
 
   const handleAddMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>) => {
@@ -982,11 +1025,14 @@ export default function FamilyGraphApp() {
                 members={filteredMembers}
                 selfMemberId={selfMember?.id ?? null}
                 selectedMemberId={selectedMemberId}
-                onSelectMember={handleSelectMember}
+                onSelectMember={handleSelectUniverseMember}
                 pathHighlight={pfPathSequence.length > 0 ? { nodes: pfPathNodes, edges: pfPathEdges, sequence: pfPathSequence } : undefined}
                 onOpenPathFinder={handleOpenPathFinder}
+                onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 pathFinderOpen={pathFinderOpen}
+                detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
+                loading={!isDemoMode && (dbLoading || authLoading)}
               />
             )}
 
@@ -1085,14 +1131,14 @@ export default function FamilyGraphApp() {
             )}
 
             {/* Presence avatars — top right of canvas */}
-            {viewMode === 'graph' && (
+            {viewMode === 'graph' && FEATURE_FLAGS.enablePresenceAvatars && (
               <div className="absolute top-3 right-3 z-20">
                 <PresenceAvatars isDemoMode={isDemoMode} />
               </div>
             )}
 
             {/* Live activity feed — bottom left of canvas (visible when no member selected) */}
-            {viewMode === 'graph' && (
+            {viewMode === 'graph' && FEATURE_FLAGS.enableLiveActivityWidget && (
               <div className="absolute bottom-4 left-4 z-20">
                 <LiveActivityFeed isDemoMode={isDemoMode} />
               </div>
@@ -1133,6 +1179,7 @@ export default function FamilyGraphApp() {
                   setPfFrom(''); setPfTo(''); setPfFromSearch(''); setPfToSearch('')
                   setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
                 }}
+                selfMemberId={selfMember?.id ?? null}
               />
             </aside>
           )}
@@ -1143,13 +1190,14 @@ export default function FamilyGraphApp() {
               <MemberDetail
                 member={selectedMember}
                 allMembers={members}
-                onClose={() => setSelectedMemberId(null)}
+                onClose={closeMemberDetail}
                 onEdit={() => setEditingMember(selectedMember)}
                 onDelete={() => setIsDeleteDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
-                onInvite={() => { setSelectedMemberId(null); setShowInviteWidget(true) }}
+                onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
                 isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
                 currentUserId={user?.id}
+                selfMemberId={selfMember?.id ?? null}
                 onSetVisibility={async (memberId, v) => {
                   try {
                     await setVisibility(memberId, v)
@@ -1166,7 +1214,7 @@ export default function FamilyGraphApp() {
           {isMobile && (
             <Drawer
               open={!!selectedMember && !showAIWidget && !showInviteWidget}
-              onOpenChange={(open) => { if (!open) setSelectedMemberId(null) }}
+              onOpenChange={(open) => { if (!open) closeMemberDetail() }}
               direction="bottom"
             >
               <DrawerContent className="h-[88vh] flex flex-col overflow-hidden">
@@ -1174,13 +1222,14 @@ export default function FamilyGraphApp() {
                   <MemberDetail
                     member={selectedMember}
                     allMembers={members}
-                    onClose={() => setSelectedMemberId(null)}
+                    onClose={closeMemberDetail}
                     onEdit={() => setEditingMember(selectedMember)}
                     onDelete={() => setIsDeleteDialogOpen(true)}
                     onAddStory={() => setIsStoryDialogOpen(true)}
-                    onInvite={() => { setSelectedMemberId(null); setShowInviteWidget(true) }}
+                    onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
                     isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
                     currentUserId={user?.id}
+                    selfMemberId={selfMember?.id ?? null}
                     onSetVisibility={async (memberId, v) => {
                       try {
                         await setVisibility(memberId, v)
@@ -1214,11 +1263,12 @@ export default function FamilyGraphApp() {
         editingMember={editingMember}
         familyId={familyId ?? undefined}
         currentUserId={user?.id}
+        selfMemberId={selfMember?.id ?? null}
       />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
-      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} onExport={handleExport} onImport={handleImport} />
+      <SettingsDialog open={isSettingsOpen} onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }} onExport={handleExport} onImport={handleImport} defaultTab={settingsDefaultTab} />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}
         onOpenChange={setIsLinkFamilyOpen}

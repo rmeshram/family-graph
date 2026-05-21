@@ -8,8 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Loader2, CheckCircle2, XCircle, TreePine, ArrowRight, Share2, Heart, Users, User, GitBranch, UserPlus, Shield } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, TreePine, ArrowRight, Share2, Heart, Users, User, GitBranch, UserPlus, Shield, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
+import { scoreCandidate, tierLabel, tierColor, isRecommendedClaimMatch } from '@/lib/match-detection'
+import type { MatchResult } from '@/lib/match-detection'
 
 type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'node_claim' | 'joining' | 'success' | 'error'
 type RelType = 'spouse' | 'child' | 'parent' | 'sibling' | 'relative' | 'skip'
@@ -50,6 +53,7 @@ export default function JoinPage() {
 
   // Claim step state
   const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
+  const [scoredMatches, setScoredMatches] = useState<MatchResult[]>([])
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null) // null = create new
 
   // node_claim invite state (B2)
@@ -126,35 +130,94 @@ export default function JoinPage() {
 
   const handleContinueToRelate = () => {
     if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
+    // Per DECISION 1: claim = join. Skip the redundant relationship picker for MVP
+    // and go straight to the claim step (which already lists unclaimed nodes
+    // and offers "create new"). Relationship is assigned later via add-member-dialog.
+    if (!FEATURE_FLAGS.enableInviteRelationshipStep) {
+      handleContinueToClaim()
+      return
+    }
     setStatus('relate')
   }
 
   // After picking their relationship, fetch unclaimed nodes that might be them
   const handleContinueToClaim = async () => {
-    if (!selectedRel || (selectedRel !== 'skip' && !displayName.trim())) return
+    // When the relationship step is enabled, require a selection. Otherwise skip validation.
+    if (FEATURE_FLAGS.enableInviteRelationshipStep) {
+      if (!selectedRel || (selectedRel !== 'skip' && !displayName.trim())) return
+    }
     setStatus('joining') // brief spinner while fetching
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push(`/auth/signin?next=/join/${code}`); return }
 
-      // Load unclaimed members of this family whose name fuzzy-matches displayName
+      // Load unclaimed members of this family for identity resolution
       const { data: invite } = await supabase
         .from('invite_links').select('family_id').eq('code', code.toUpperCase()).single()
 
       if (invite?.family_id) {
         const { data: nodes } = await supabase
           .from('family_members')
-          .select('id, name, relationship, generation')
+          .select('id, name, relationship, generation, birth_year, phone, email')
           .eq('family_id', invite.family_id)
           .eq('is_claimed', false)
           .order('generation', { ascending: true })
-          .limit(20)
+          .limit(30)
 
-        const candidates = (nodes ?? []) as { id: string; name: string; relationship: string; generation: number }[]
+        const candidates = (nodes ?? []) as {
+          id: string; name: string; relationship: string; generation: number;
+          birth_year: number | null; phone: string | null; email: string | null
+        }[]
 
         if (candidates.length > 0) {
           setUnclaimedNodes(candidates)
+
+          // ── Identity Resolution: score each candidate against the joining user ──
+          const { data: myProfile } = await supabase
+            .from('profiles')
+            .select('display_name, phone')
+            .eq('id', user.id)
+            .single()
+
+          const userProfile = {
+            name: displayName.trim() || myProfile?.display_name || user.email?.split('@')[0] || '',
+            birthYear: null as number | null,
+            phone: myProfile?.phone ?? null,
+            email: user.email ?? null,
+          }
+
+          const familyName = preview?.name ?? 'Family'
+          const scored = candidates
+            .map(n => scoreCandidate(
+              {
+                nodeId: n.id,
+                nodeName: n.name,
+                familyId: invite.family_id,
+                familyName,
+                addedByName: null,
+                relationship: n.relationship ?? null,
+                birthYear: n.birth_year ?? null,
+                phone: n.phone ?? null,
+                email: n.email ?? null,
+              },
+              userProfile,
+            ))
+            .filter(Boolean) as MatchResult[]
+
+          scored.sort((a, b) => b.confidenceScore - a.confidenceScore)
+          setScoredMatches(scored)
+
+          // Auto-pre-select if a recommended match is found.
+          // Exact email/phone matches should be treated as strong claim suggestions
+          // even when the generic tier ends up below "high".
+          if (scored.length > 0 && isRecommendedClaimMatch(scored[0])) {
+            setSelectedClaimId(scored[0].nodeId)
+          } else {
+            // Default to create new when no strong match
+            setSelectedClaimId(null)
+          }
+
           setStatus('claim')
           return
         }
@@ -405,68 +468,168 @@ export default function JoinPage() {
             </div>
           )}
 
-          {/* ── Claim Step ───────────────────────────────────── */}
+          {/* ── Claim Step (Identity Resolution) ─────────────── */}
           {status === 'claim' && (
             <div className="p-6 space-y-5">
-              <div className="text-center">
-                <h2 className="text-lg font-bold">Are you already in the tree?</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Someone may have added you before you signed up. Pick your node to link your account — or create a new one.
-                </p>
-              </div>
+              {/* Header — adapted based on confidence of top match */}
+              {scoredMatches.length > 0 && scoredMatches[0].confidenceTier === 'high' ? (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/8 p-4 text-center space-y-1">
+                  <div className="flex items-center justify-center gap-1.5 mb-1">
+                    <Sparkles className="h-4 w-4 text-amber-400" />
+                    <span className="text-xs font-semibold uppercase tracking-widest text-amber-400">Identity Match Found</span>
+                  </div>
+                  <h2 className="text-base font-bold">This looks like your existing profile</h2>
+                  <p className="text-xs text-muted-foreground">Someone added you before you signed up. Claim your node instead of creating a duplicate.</p>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h2 className="text-lg font-bold">Are you already in the tree?</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Someone may have added you before you signed up. Claim your profile — or create a new one.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {unclaimedNodes.map(node => (
-                  <button
-                    key={node.id}
-                    onClick={() => setSelectedClaimId(node.id)}
-                    className={cn(
-                      'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                      selectedClaimId === node.id
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border/50 bg-muted/20 hover:border-border/70'
-                    )}
-                  >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
-                      {node.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">{node.name}</p>
-                      <p className="text-[11px] text-muted-foreground capitalize">{node.relationship} · Gen {node.generation}</p>
-                    </div>
-                    {selectedClaimId === node.id && (
-                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    )}
-                  </button>
-                ))}
+                {/* Scored / ranked candidates first */}
+                {(() => {
+                  const scoredIds = new Set(scoredMatches.map(m => m.nodeId))
+                  // Scored nodes sorted by confidence
+                  const sortedScored = scoredMatches.map(match => {
+                    const node = unclaimedNodes.find(n => n.id === match.nodeId)
+                    return node ? { node, match } : null
+                  }).filter(Boolean) as { node: typeof unclaimedNodes[0]; match: MatchResult }[]
+                  // Unscored nodes in original order
+                  const unscored = unclaimedNodes.filter(n => !scoredIds.has(n.id))
 
-                {/* None of these option */}
-                <button
-                  onClick={() => setSelectedClaimId(null)}
-                  className={cn(
-                    'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                    selectedClaimId === null
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border/50 bg-muted/20 hover:border-border/70'
-                  )}
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <UserPlus className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">None of these — create my node</p>
-                    <p className="text-[11px] text-muted-foreground">A new entry will be added to the tree</p>
-                  </div>
-                  {selectedClaimId === null && (
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0 ml-auto" />
-                  )}
-                </button>
+                  return (
+                    <>
+                      {sortedScored.map(({ node, match }) => (
+                        <button
+                          key={node.id}
+                          onClick={() => setSelectedClaimId(node.id)}
+                          className={cn(
+                            'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                            selectedClaimId === node.id
+                              ? 'border-primary bg-primary/10'
+                              : match.confidenceTier === 'high'
+                                ? 'border-amber-500/40 bg-amber-500/5 hover:border-amber-500/60'
+                                : 'border-border/50 bg-muted/20 hover:border-border/70'
+                          )}
+                        >
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
+                            {node.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-sm truncate">{node.name}</p>
+                              <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded border', tierColor(match.confidenceTier))}>
+                                {tierLabel(match.confidenceTier)}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground capitalize mt-0.5">
+                              {node.relationship} · {match.matchReasons.includes('email') ? 'Email match' : match.matchReasons.includes('name') ? 'Name match' : 'Possible match'}
+                            </p>
+                          </div>
+                          {selectedClaimId === node.id
+                            ? <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                            : isRecommendedClaimMatch(match) && <span className="text-[10px] text-amber-400 shrink-0">Recommended</span>
+                          }
+                        </button>
+                      ))}
+
+                      {unscored.map(node => (
+                        <button
+                          key={node.id}
+                          onClick={() => setSelectedClaimId(node.id)}
+                          className={cn(
+                            'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                            selectedClaimId === node.id
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border/50 bg-muted/20 hover:border-border/70'
+                          )}
+                        >
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
+                            {node.name.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm truncate">{node.name}</p>
+                            <p className="text-[11px] text-muted-foreground capitalize">{node.relationship} · Gen {node.generation}</p>
+                          </div>
+                          {selectedClaimId === node.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                        </button>
+                      ))}
+
+                      {/* Create new — secondary option */}
+                      <button
+                        onClick={() => setSelectedClaimId(null)}
+                        className={cn(
+                          'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                          selectedClaimId === null
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border/40 bg-muted/10 hover:border-border/60'
+                        )}
+                      >
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                          <UserPlus className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm">Create a separate profile</p>
+                          <p className="text-[11px] text-muted-foreground">A new entry will be added to the tree</p>
+                        </div>
+                        {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0 ml-auto" />}
+                      </button>
+                    </>
+                  )
+                })()}
               </div>
 
+              {/* When the relationship step is disabled (MVP default) and the user is
+                  creating a new node, collect minimal identity (name + gender). */}
+              {!FEATURE_FLAGS.enableInviteRelationshipStep && selectedClaimId === null && (
+                <div className="space-y-3 rounded-xl border border-border/40 bg-muted/10 p-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Your name</label>
+                    <Input
+                      placeholder="Your full name"
+                      value={displayName}
+                      onChange={e => setDisplayName(e.target.value)}
+                      className="h-10 bg-background/60 border-border"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Your gender (optional)</label>
+                    <div className="flex gap-2">
+                      {([['male', '♂ Male'], ['female', '♀ Female'], ['other', '⚥ Other']] as const).map(([g, label]) => (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => setSelectedGender(prev => prev === g ? null : g)}
+                          className={cn(
+                            'flex-1 rounded-lg border py-2 text-xs font-medium transition-all',
+                            selectedGender === g
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-border/70'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">You can set how you’re related to others later — directly in the tree.</p>
+                </div>
+              )}
+
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setStatus('relate')} className="flex-1 h-11">Back</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setStatus(FEATURE_FLAGS.enableInviteRelationshipStep ? 'relate' : 'preview')}
+                  className="flex-1 h-11"
+                >Back</Button>
                 <Button
                   onClick={() => handleJoin(selectedClaimId)}
+                  disabled={!selectedClaimId && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim()}
                   className="flex-1 h-11 bg-primary hover:bg-primary/90"
                 >
                   {selectedClaimId ? 'Claim & Join' : 'Create & Join'}

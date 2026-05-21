@@ -29,6 +29,14 @@ export interface MatchResult {
   matchReasons: string[]
 }
 
+export function isRecommendedClaimMatch(match: Pick<MatchResult, 'confidenceTier' | 'matchReasons'>): boolean {
+  return (
+    match.confidenceTier === 'high' ||
+    match.matchReasons.includes('email') ||
+    match.matchReasons.includes('phone')
+  )
+}
+
 function levenshtein(a: string, b: string): number {
   const m = a.length
   const n = b.length

@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { isRecommendedClaimMatch, scoreCandidate } from '@/lib/match-detection'
 
 function getOrigin(): string {
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
@@ -15,12 +16,30 @@ function randomCode(len = 8) {
 export function useInvites(familyId: string | null) {
   const supabase = createClient()
 
+  const getCallerRole = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (error) throw new Error(error.message)
+    return data.role as 'admin' | 'contributor' | 'viewer'
+  }, [supabase])
+
   const createInviteLink = useCallback(async (
     role: 'contributor' | 'viewer' | 'admin' = 'contributor',
     expiryHours: number = 72,
     userId: string
   ) => {
     if (!familyId) throw new Error('No family')
+    const callerRole = await getCallerRole(userId)
+    if (callerRole === 'viewer') {
+      throw new Error('Permission denied: viewers cannot create invite links')
+    }
+    if (role === 'admin' && callerRole !== 'admin') {
+      throw new Error('Permission denied: only family admins can create admin invite links')
+    }
     const code = randomCode(8)
     const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
 
@@ -35,7 +54,7 @@ export function useInvites(familyId: string | null) {
 
     if (error) throw new Error(error.message)
     return { ...data, link: `${getOrigin()}/join/${data.code}` }
-  }, [familyId, supabase])
+  }, [familyId, getCallerRole, supabase])
 
   const createNodeClaimInvite = useCallback(async (
     nodeId: string,
@@ -44,6 +63,10 @@ export function useInvites(familyId: string | null) {
     expiryHours = 72
   ) => {
     if (!familyId) throw new Error('No family')
+    const callerRole = await getCallerRole(userId)
+    if (callerRole === 'viewer') {
+      throw new Error('Permission denied: viewers cannot create claim invites')
+    }
     const code = randomCode(8)
     const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
 
@@ -69,7 +92,7 @@ export function useInvites(familyId: string | null) {
       .eq('claim_status' as any, 'unclaimed')
 
     return { ...data, link: `${getOrigin()}/join/${(data as any).code}` }
-  }, [familyId, supabase])
+  }, [familyId, getCallerRole, supabase])
 
   const getActiveLinks = useCallback(async () => {
     if (!familyId) return []
@@ -122,12 +145,107 @@ export function useJoinFamily() {
       }
     }
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name, phone, member_id')
+      .eq('id', userId)
+      .single()
+
+    const { data: authUser } = await supabase.auth.getUser()
+    const userEmail = authUser.user?.email ?? null
+
+    // If the user already has a bound member in this family, don't create another.
+    if (profile?.member_id) {
+      const { data: existingMember } = await supabase
+        .from('family_members')
+        .select('id, family_id')
+        .eq('id', profile.member_id)
+        .single()
+      if (existingMember?.family_id === invite.family_id) {
+        await supabase.from('profiles').update({
+          family_id: invite.family_id,
+          role: invite.role,
+        }).eq('id', userId)
+
+        const incrQuery = supabase.from('invite_links') as any
+        let incrChain = incrQuery
+          .update({ used_count: invite.used_count + 1 })
+          .eq('id', invite.id)
+          .eq('used_count', invite.used_count)
+        if (invite.max_uses) incrChain = incrChain.lt('used_count', invite.max_uses)
+        const { error: incrErr } = await incrChain
+        if (incrErr) {
+          throw new Error('This invite was just used by someone else. Please request a new one.')
+        }
+        return invite.family_id
+      }
+    }
+
     // 2. Update profile with family_id + role
     const { error: profileErr } = await supabase.from('profiles').update({
       family_id: invite.family_id,
       role: invite.role,
     }).eq('id', userId)
     if (profileErr) throw new Error(profileErr.message)
+
+    // 2b. Before creating a new member, auto-claim a recommended unclaimed node
+    // if there is an exact email/phone match or a high-confidence identity match.
+    if (!opts?.claimMemberId) {
+      const { data: unclaimed } = await supabase
+        .from('family_members')
+        .select('id, name, relationship, birth_year, phone, email')
+        .eq('family_id', invite.family_id)
+        .eq('is_claimed', false)
+        .limit(50)
+
+      const userProfile = {
+        name: opts?.displayName?.trim() || profile?.display_name || userEmail?.split('@')[0] || '',
+        birthYear: null as number | null,
+        phone: profile?.phone ?? null,
+        email: userEmail,
+      }
+
+      const bestMatch = (unclaimed ?? [])
+        .map((node: any) => scoreCandidate(
+          {
+            nodeId: node.id,
+            nodeName: node.name,
+            familyId: invite.family_id,
+            familyName: 'Family',
+            addedByName: null,
+            relationship: node.relationship ?? null,
+            birthYear: node.birth_year ?? null,
+            phone: node.phone ?? null,
+            email: node.email ?? null,
+          },
+          userProfile,
+        ))
+        .filter(Boolean)
+        .sort((a: any, b: any) => b.confidenceScore - a.confidenceScore)[0]
+
+      if (bestMatch && isRecommendedClaimMatch(bestMatch)) {
+        const { error: claimErr } = await supabase.from('family_members')
+          .update({ claimed_by_user_id: userId, is_claimed: true } as any)
+          .eq('id', bestMatch.nodeId)
+          .eq('is_claimed', false)
+        if (claimErr) throw new Error(claimErr.message)
+
+        await supabase.from('profiles').update({
+          member_id: bestMatch.nodeId,
+          display_name: opts?.displayName || profile?.display_name || undefined,
+        }).eq('id', userId)
+
+        const incrQ = supabase.from('invite_links') as any
+        let chain = incrQ
+          .update({ used_count: invite.used_count + 1, consumed_at: new Date().toISOString() })
+          .eq('id', invite.id)
+          .eq('used_count', invite.used_count)
+        if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
+        const { error: incErr } = await chain
+        if (incErr) throw new Error('This invite was just used by someone else. Please request a new one.')
+        return invite.family_id
+      }
+    }
 
     // 3. If user picked an existing node to claim, link it and skip new-member creation
     if (opts?.claimMemberId) {
@@ -227,6 +345,8 @@ export function useJoinFamily() {
         parent_ids: parentIds,
         spouse_ids: spouseIds,
         gender: opts.gender ?? null,
+        phone: profile?.phone ?? null,
+        email: userEmail,
         network_group: networkGroup,
         added_by: userId,
       } as any).select().single()
