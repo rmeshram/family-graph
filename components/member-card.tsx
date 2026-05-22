@@ -12,9 +12,19 @@ interface MemberCardProps {
   isSelected: boolean
   onClick: () => void
   compact?: boolean
+  isSelf?: boolean
+  /** Pre-computed dynamic relation label (e.g. "Father", "Maternal Uncle"). Overrides the raw DB field. */
+  relationLabel?: string
+  /**
+   * True when a real selfMemberId exists for the current user.
+   * When true and relationLabel is null/undefined (no graph path found), the raw DB
+   * `relationship` field is suppressed — it was set from the adder's perspective and
+   * would be misleading (e.g. showing "Brother" to the member's mother).
+   */
+  hasSelf?: boolean
 }
 
-export function MemberCard({ member, isSelected, onClick, compact = false }: MemberCardProps) {
+export function MemberCard({ member, isSelected, onClick, compact = false, isSelf = false, relationLabel, hasSelf = false }: MemberCardProps) {
   const initials = member.name
     .split(' ')
     .map((n) => n[0])
@@ -110,7 +120,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
             </h3>
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            {member.relationship && (
+            {(isSelf || relationLabel || (!hasSelf && member.relationship && member.relationship !== 'self')) && (
               <Badge
                 variant="secondary"
                 className={cn(
@@ -120,7 +130,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false }: Mem
                     : 'bg-muted/50 text-muted-foreground border-border/50'
                 )}
               >
-                {member.relationship?.replace(/-/g, ' ')}
+                {isSelf ? 'You' : (relationLabel ?? member.relationship?.replace(/-/g, ' '))}
               </Badge>
             )}
             {hasStories && (

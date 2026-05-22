@@ -1397,7 +1397,7 @@ export function RelationshipUniverse({
                     onClick={e => e.stopPropagation()}
                     onPointerDown={e => e.stopPropagation()}
                   >
-                    <NodeActionRing memberId={p.id} onAddRelative={onAddRelative} />
+                    <NodeActionRing member={p} allMembers={members} onAddRelative={onAddRelative} />
                   </div>
                 )}
               </motion.div>

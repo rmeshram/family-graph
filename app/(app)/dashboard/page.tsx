@@ -221,7 +221,7 @@ function OrgChartView({ members, onSelect, selectedId, onAddRelative }: {
                   </button>
                   {ringNodeId === m.id && onAddRelative && (
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-20">
-                      <NodeActionRing memberId={m.id} onAddRelative={onAddRelative} />
+                      <NodeActionRing member={m} allMembers={members} onAddRelative={onAddRelative} />
                     </div>
                   )}
                 </div>
@@ -640,10 +640,10 @@ export default function FamilyGraphApp() {
 
   // The "self" member — use profile.member_id (authoritative), then claimedByUserId
   // (catches the case where profile.member_id is stale immediately after join),
-  // then fall back to relationship === 'self' (demo mode / unauthenticated).
+  // then fall back to relationship === 'self' ONLY in demo mode (no real user profile).
   const selfMember = members.find(m => m.id === (profile as any)?.member_id)
     ?? members.find(m => m.claimedByUserId === user?.id)
-    ?? members.find(m => m.relationship === 'self')
+    ?? (isDemoMode ? members.find(m => m.relationship === 'self') : null)
     ?? null
   const filteredMembers = useMemo(() => {
     let base = maxDegree < 10 && selfMember
@@ -988,22 +988,6 @@ export default function FamilyGraphApp() {
               <span className="hidden sm:inline">Invite</span>
             </Button>
 
-            {/* Link another family tree */}
-            {user && (
-              <Button variant="ghost" size="sm"
-                onClick={() => setIsLinkFamilyOpen(true)}
-                className={cn('h-8 gap-1.5 text-xs relative text-teal-400 hover:bg-teal-500/10')}
-              >
-                <Link2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Link Family</span>
-                {linkedFamilies.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-500 text-[9px] font-bold text-white">
-                    {linkedFamilies.length}
-                  </span>
-                )}
-              </Button>
-            )}
-
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
             <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
@@ -1079,6 +1063,7 @@ export default function FamilyGraphApp() {
                 members={filteredMembers}
                 selectedMemberId={selectedMemberId}
                 onSelectMember={handleSelectMember}
+                selfMemberId={selfMember?.id ?? null}
                 maxDegree={maxDegree}
                 onMaxDegreeChange={setMaxDegree}
                 totalCount={isDemoMode ? members.length : dbTotalCount}
@@ -1219,6 +1204,7 @@ export default function FamilyGraphApp() {
                     members={filteredMembers}
                     selectedMemberId={selectedMemberId}
                     onSelectMember={(id) => { handleSelectMember(id); setMemberListOpen(false) }}
+                    selfMemberId={selfMember?.id ?? null}
                     maxDegree={maxDegree}
                     onMaxDegreeChange={setMaxDegree}
                     totalCount={isDemoMode ? members.length : dbTotalCount}

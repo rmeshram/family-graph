@@ -155,11 +155,11 @@ export function MemberDetail({
             <div className="space-y-1">
               <h2 className="text-xl font-bold text-foreground">{member.name}</h2>
               <div className="flex items-center gap-2 flex-wrap">
-                {member.relationship && (
+                {(member.relationship && member.relationship !== 'self') || member.id === selfMemberId ? (
                   <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
-                    {member.relationship}
+                    {member.id === selfMemberId ? 'You' : member.relationship}
                   </Badge>
-                )}
+                ) : null}
                 {age && (
                   <Badge variant="outline" className="text-muted-foreground border-border/50">
                     {member.deathYear ? `Lived ${age} years` : `Age ${age}`}

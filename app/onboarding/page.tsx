@@ -86,6 +86,7 @@ function OnboardingContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [pushGranted, setPushGranted] = useState(false)
+  const [pushBlocked, setPushBlocked] = useState(false)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -117,10 +118,22 @@ function OnboardingContent() {
   }
 
   const handleRequestPush = () => {
-    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setPushBlocked(true)
+      return
+    }
+    if (Notification.permission === "denied") {
+      setPushBlocked(true)
+      return
+    }
     // Must be called synchronously from a user gesture — no await
     Notification.requestPermission().then((permission) => {
-      setPushGranted(permission === "granted")
+      if (permission === "granted") {
+        setPushGranted(true)
+        setPushBlocked(false)
+      } else {
+        setPushBlocked(permission === "denied")
+      }
     })
   }
 
@@ -504,19 +517,23 @@ function OnboardingContent() {
               "rounded-xl border p-4 flex items-start gap-3 transition-colors",
               pushGranted
                 ? "border-green-500/30 bg-green-500/10"
-                : "border-amber-500/30 bg-amber-500/5"
+                : pushBlocked
+                  ? "border-red-500/30 bg-red-500/5"
+                  : "border-amber-500/30 bg-amber-500/5"
             )}>
-              <Bell className={cn("h-5 w-5 mt-0.5 shrink-0", pushGranted ? "text-green-400" : "text-amber-400")} />
+              <Bell className={cn("h-5 w-5 mt-0.5 shrink-0", pushGranted ? "text-green-400" : pushBlocked ? "text-red-400" : "text-amber-400")} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">
-                  {pushGranted ? "🎉 Notifications enabled!" : "Never miss a birthday or anniversary"}
+                  {pushGranted ? "🎉 Notifications enabled!" : pushBlocked ? "Notifications blocked" : "Never miss a birthday or anniversary"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {pushGranted
                     ? "We'll remind you of family birthdays, anniversaries, and milestones."
-                    : "Get gentle reminders the morning of every family birthday & anniversary."}
+                    : pushBlocked
+                      ? "Your browser has blocked notifications. Please enable them in your browser or system settings and try again."
+                      : "Get gentle reminders the morning of every family birthday & anniversary."}
                 </p>
-                {!pushGranted && (
+                {!pushGranted && !pushBlocked && (
                   <Button
                     size="sm"
                     variant="outline"

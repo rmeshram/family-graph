@@ -311,15 +311,30 @@ export function useMembers(familyId: string | null) {
   }, [supabase, members])
 
   const deleteMember = useCallback(async (id: string) => {
-    // Remove from other members' parent_ids/spouse_ids first
+    // Optimistically remove from local state first so UI responds immediately.
+    // Realtime will also fire but the filter below deduplicates.
+    setMembers(prev => {
+      const updated = prev
+        .filter(m => m.id !== id)
+        .map(m => ({
+          ...m,
+          parentIds: ((m.parentIds as string[]) ?? []).filter(pid => pid !== id),
+          spouseIds: ((m.spouseIds as string[]) ?? []).filter(sid => sid !== id),
+        }))
+      return updated
+    })
+    setTotalCount(c => Math.max(0, c - 1))
+
+    // Remove from other members' parent_ids/spouse_ids in DB
     for (const m of members) {
-      const needsUpdate =
-        (m.parentIds as string[]).includes(id) ||
-        (m.spouseIds as string[]).includes(id)
+      if (m.id === id) continue
+      const pids: string[] = (m.parentIds as string[]) ?? []
+      const sids: string[] = (m.spouseIds as string[]) ?? []
+      const needsUpdate = pids.includes(id) || sids.includes(id)
       if (needsUpdate) {
         await supabase.from('family_members').update({
-          parent_ids: (m.parentIds as string[]).filter(pid => pid !== id),
-          spouse_ids: (m.spouseIds as string[]).filter(sid => sid !== id),
+          parent_ids: pids.filter(pid => pid !== id),
+          spouse_ids: sids.filter(sid => sid !== id),
         }).eq('id', m.id)
       }
     }
