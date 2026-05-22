@@ -76,7 +76,7 @@ interface AddMemberDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   existingMembers: FamilyMember[]
-  onAdd: (member: Omit<FamilyMember, 'id'>) => void
+  onAdd: (member: Omit<FamilyMember, 'id'>) => void | Promise<void>
   onUpdate?: (id: string, updates: Partial<FamilyMember>) => Promise<void>
   editingMember?: FamilyMember | null
   familyId?: string
@@ -215,6 +215,24 @@ export function AddMemberDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fatherId, motherId, spouseId])
 
+  // ── Reverse: when a sibling relationship is chosen, auto-fill the parents from the self-member ──
+  // This ensures `generation` is computed correctly (parentMember.generation+1) and the
+  // new node is wired into the right family branch on the graph.
+  useEffect(() => {
+    const SIBLING_RELS = ['brother', 'sister', 'half-brother', 'half-sister', 'stepbrother', 'stepsister']
+    if (!SIBLING_RELS.includes(relationship)) return
+    const self = (selfMemberId && existingMembers.find(m => m.id === selfMemberId))
+      || existingMembers.find(m => m.relationship === 'self')
+    if (!self?.parentIds?.length) return
+    const selfParents = existingMembers.filter(m => self.parentIds.includes(m.id))
+    const selfFather = selfParents.find(m => m.gender === 'male') ?? selfParents[0]
+    const selfMother = selfParents.find(m => m.gender === 'female') ?? selfParents.find(m => m.id !== selfFather?.id)
+    // Only auto-fill if the user hasn't already made a manual selection
+    if (selfFather && !fatherId) setFatherId(selfFather.id)
+    if (selfMother && !motherId) setMotherId(selfMother.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relationship])
+
   const validate = () => {
     const e: Record<string, string> = {}
     if (!name.trim()) e.name = 'Name is required'
@@ -308,15 +326,20 @@ export function AddMemberDialog({
       isAlive: !deathYear,
     }
 
-    if (editingMember && onUpdate) {
-      await onUpdate(editingMember.id, memberData)
-    } else {
-      onAdd(memberData)
+    try {
+      if (editingMember && onUpdate) {
+        await onUpdate(editingMember.id, memberData)
+      } else {
+        await onAdd(memberData)
+      }
+      resetForm()
+      onOpenChange(false)
+    } catch (err) {
+      // Error toast is already shown by the caller (handleAddMember/handleUpdateMember)
+      console.error('[add-member] submit failed:', err)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setIsSubmitting(false)
-    resetForm()
-    onOpenChange(false)
   }
 
   const resetForm = () => {

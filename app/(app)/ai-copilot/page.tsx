@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
 import { sampleFamilyMembers } from "@/lib/sample-data"
-import { FamilyMember, AIMessage } from "@/lib/types"
+import { FamilyMember, AIMessage, AIToolCallInfo } from "@/lib/types"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
 import { DemoBanner } from "@/components/demo-banner"
@@ -31,6 +31,9 @@ import {
   Bot,
   User,
   Lightbulb,
+  AlertTriangle,
+  RefreshCw,
+  Wrench,
 } from "lucide-react"
 import { cn, copyToClipboard } from "@/lib/utils"
 
@@ -260,6 +263,24 @@ function generateAIResponse(query: string, members: FamilyMember[]): { content: 
   }
 }
 
+// ─── Compact member mapper (strips sensitive fields before sending to API) ──────
+
+function toCompactMember(m: FamilyMember) {
+  return {
+    id: m.id,
+    name: m.name,
+    relationship: m.relationship,
+    generation: m.generation,
+    gender: m.gender,
+    birthYear: m.birthYear,
+    birthPlace: m.birthPlace,
+    currentPlace: m.currentPlace,
+    occupation: m.occupation,
+    parentIds: m.parentIds,
+    spouseIds: m.spouseIds,
+  }
+}
+
 // ─── Suggestion Chips ─────────────────────────────────────────────────────────
 
 const SUGGESTIONS = [
@@ -290,6 +311,11 @@ export default function AICopilotPage() {
   const isDemoMode = !authLoading && !user
   const members = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
 
+  // Conversation history sent to Gemini (role: 'user' | 'model')
+  const [conversationHistory, setConversationHistory] = useState<{ role: string; content: string }[]>([])
+  // Last user query — used for retry
+  const lastUserQuery = useRef<string>('')
+
   const [messages, setMessages] = useState<AIMessage[]>([
     {
       id: 'welcome',
@@ -311,6 +337,11 @@ export default function AICopilotPage() {
   }, [members.length])
   const [inputValue, setInputValue] = useState("")
   const [isThinking, setIsThinking] = useState(false)
+  const [thinkingStatus, setThinkingStatus] = useState('Thinking about your family...')
+  // Track which AI messages should animate (streaming feel)
+  const [newMsgIds, setNewMsgIds] = useState<Set<string>>(new Set())
+  // 'gemini' | 'local' | null (null = not yet tried)
+  const [aiMode, setAiMode] = useState<'gemini' | 'local' | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -323,6 +354,8 @@ export default function AICopilotPage() {
   const sendMessage = useCallback(async (query: string) => {
     if (!query.trim() || isThinking) return
 
+    lastUserQuery.current = query
+
     const userMsg: AIMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -330,40 +363,68 @@ export default function AICopilotPage() {
       timestamp: new Date().toISOString(),
     }
     setMessages(prev => [...prev, userMsg])
-    setInputValue("")
+    setInputValue('')
     setIsThinking(true)
+    setThinkingStatus('Thinking about your family...')
+
+    // Build new history with this user turn appended
+    const updatedHistory = [...conversationHistory, { role: 'user', content: query }]
 
     let aiContent: string
     let relatedIds: string[] = []
+    let toolCallInfo: AIToolCallInfo | undefined
+    let isError = false
 
     try {
-      // Build compact family context for Gemini
-      const context = members.slice(0, 30).map(m =>
-        `${m.name} (${m.relationship}, gen ${m.generation}${m.birthYear ? `, b.${m.birthYear}` : ''}${m.birthPlace ? `, ${m.birthPlace}` : ''})`
-      ).join('\n')
-
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: query, context }),
+        body: JSON.stringify({
+          messages: updatedHistory,
+          members: members.map(toCompactMember),
+        }),
       })
+
       const data = await res.json()
+
+      if (data.toolCallInfo) {
+        setThinkingStatus('Looking up relationship...')
+        toolCallInfo = data.toolCallInfo as AIToolCallInfo
+      }
 
       if (data.response) {
         aiContent = data.response
+        setAiMode('gemini')
+        setConversationHistory([
+          ...updatedHistory,
+          { role: 'model', content: data.response },
+        ])
       } else {
-        // Fallback to local pattern matching
-        await new Promise(r => setTimeout(r, 600 + Math.random() * 400))
+        // no_api_key or api_error — local fallback
+        setAiMode('local')
         const result = generateAIResponse(query, members)
         aiContent = result.content
         relatedIds = result.relatedIds
+        setConversationHistory([
+          ...updatedHistory,
+          { role: 'model', content: result.content },
+        ])
       }
     } catch {
-      // Network error — fall back silently
-      await new Promise(r => setTimeout(r, 600))
+      // Network error — local fallback
+      setAiMode('local')
       const result = generateAIResponse(query, members)
       aiContent = result.content
       relatedIds = result.relatedIds
+      setConversationHistory([
+        ...updatedHistory,
+        { role: 'model', content: result.content },
+      ])
+
+      if (!aiContent) {
+        aiContent = '⚠️ Something went wrong. Please try again.'
+        isError = true
+      }
     }
 
     const aiMsg: AIMessage = {
@@ -372,10 +433,14 @@ export default function AICopilotPage() {
       content: aiContent,
       timestamp: new Date().toISOString(),
       relatedMemberIds: relatedIds,
+      toolCallInfo,
+      isError,
     }
     setMessages(prev => [...prev, aiMsg])
+    // Mark this message for streaming animation
+    setNewMsgIds(prev => new Set([...prev, aiMsg.id]))
     setIsThinking(false)
-  }, [isThinking, members])
+  }, [isThinking, members, conversationHistory])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -383,6 +448,9 @@ export default function AICopilotPage() {
   }
 
   const clearChat = () => {
+    setConversationHistory([])
+    setNewMsgIds(new Set())
+    setAiMode(null)
     setMessages([{
       id: 'welcome-new',
       role: 'ai',
@@ -410,10 +478,22 @@ export default function AICopilotPage() {
             <p className="text-xs text-muted-foreground">Powered by Family Intelligence • {members.length} members loaded</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Badge variant="secondary" className="hidden sm:flex bg-violet-500/10 text-violet-400 border-violet-500/20">
-              <Sparkles className="mr-1 h-3 w-3" />
-              AI Active
-            </Badge>
+            {aiMode === 'gemini' ? (
+              <Badge variant="secondary" className="hidden sm:flex bg-violet-500/10 text-violet-400 border-violet-500/20">
+                <Sparkles className="mr-1 h-3 w-3" />
+                Gemini Active
+              </Badge>
+            ) : aiMode === 'local' ? (
+              <Badge variant="secondary" className="hidden sm:flex bg-amber-500/10 text-amber-400 border-amber-500/20">
+                <Zap className="mr-1 h-3 w-3" />
+                Local Mode
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="hidden sm:flex bg-violet-500/10 text-violet-400 border-violet-500/20">
+                <Sparkles className="mr-1 h-3 w-3" />
+                AI Ready
+              </Badge>
+            )}
             <Button variant="ghost" size="icon" onClick={clearChat} className="h-9 w-9">
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -421,13 +501,39 @@ export default function AICopilotPage() {
         </div>
       </header>
 
+      {/* API key setup banner — shown only when running in local fallback mode */}
+      {aiMode === 'local' && (
+        <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <p className="text-xs text-amber-300/90">
+            <strong>Copilot is in local mode</strong> — responses use pattern matching, not real AI.
+            Add <code className="rounded bg-amber-500/15 px-1 font-mono">GOOGLE_AI_API_KEY</code> to
+            <code className="rounded bg-amber-500/15 px-1 font-mono">.env.local</code> to enable Gemini.
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-1 underline hover:text-amber-200"
+            >
+              Get a free API key →
+            </a>
+          </p>
+        </div>
+      )}
+
       {/* Chat Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} members={members} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              members={members}
+              isNew={newMsgIds.has(msg.id)}
+              onRetry={msg.isError ? () => sendMessage(lastUserQuery.current) : undefined}
+            />
           ))}
-          {isThinking && <ThinkingIndicator />}
+          {isThinking && <ThinkingIndicator status={thinkingStatus} />}
           {/* Scroll anchor */}
           <div className="h-1" />
         </div>
@@ -514,7 +620,17 @@ export default function AICopilotPage() {
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ message, members }: { message: AIMessage; members: FamilyMember[] }) {
+function MessageBubble({
+  message,
+  members,
+  isNew = false,
+  onRetry,
+}: {
+  message: AIMessage
+  members: FamilyMember[]
+  isNew?: boolean
+  onRetry?: () => void
+}) {
   const [copied, setCopied] = useState(false)
   const isAI = message.role === 'ai'
 
@@ -545,14 +661,29 @@ function MessageBubble({ message, members }: { message: AIMessage; members: Fami
       </div>
 
       <div className={cn("flex max-w-[85%] flex-col gap-2", !isAI && "items-end")}>
+        {/* Tool call badge — shown above bubble when Gemini used a tool */}
+        {isAI && message.toolCallInfo && (
+          <ToolCallBadge info={message.toolCallInfo} />
+        )}
+
         {/* Bubble */}
         <div className={cn(
           "rounded-2xl px-4 py-3 text-sm",
           isAI
             ? "bg-card border border-border/50 text-foreground rounded-tl-sm"
-            : "bg-gradient-to-br from-orange-500 to-red-600 text-white rounded-tr-sm"
+            : "bg-gradient-to-br from-orange-500 to-red-600 text-white rounded-tr-sm",
+          message.isError && "border-amber-500/50 bg-amber-500/5"
         )}>
-          <MarkdownText content={message.content} />
+          {message.isError ? (
+            <div className="flex items-center gap-2 text-amber-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{message.content}</span>
+            </div>
+          ) : isAI && isNew ? (
+            <StreamingText content={message.content} />
+          ) : (
+            <MarkdownText content={message.content} />
+          )}
         </div>
 
         {/* Related Members */}
@@ -580,18 +711,32 @@ function MessageBubble({ message, members }: { message: AIMessage; members: Fami
         {/* Actions */}
         {isAI && (
           <div className="flex items-center gap-1">
-            <button
-              onClick={handleCopy}
-              className="rounded p-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              <Copy className="h-3 w-3" />
-            </button>
-            <button className="rounded p-1 text-muted-foreground/50 hover:text-green-400 transition-colors">
-              <ThumbsUp className="h-3 w-3" />
-            </button>
-            <button className="rounded p-1 text-muted-foreground/50 hover:text-red-400 transition-colors">
-              <ThumbsDown className="h-3 w-3" />
-            </button>
+            {message.isError && onRetry && (
+              <button
+                onClick={onRetry}
+                className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-400 hover:bg-amber-500/20 transition-colors mr-1"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Retry
+              </button>
+            )}
+            {!message.isError && (
+              <>
+                <button
+                  onClick={handleCopy}
+                  className="rounded p-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                  title={copied ? 'Copied!' : 'Copy'}
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+                <button className="rounded p-1 text-muted-foreground/50 hover:text-green-400 transition-colors">
+                  <ThumbsUp className="h-3 w-3" />
+                </button>
+                <button className="rounded p-1 text-muted-foreground/50 hover:text-red-400 transition-colors">
+                  <ThumbsDown className="h-3 w-3" />
+                </button>
+              </>
+            )}
             <span className="ml-1 text-[10px] text-muted-foreground/40">
               {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
@@ -602,7 +747,73 @@ function MessageBubble({ message, members }: { message: AIMessage; members: Fami
   )
 }
 
-function ThinkingIndicator() {
+// ─── Streaming typing animation ────────────────────────────────────────────────────────────
+
+function StreamingText({ content }: { content: string }) {
+  const [displayed, setDisplayed] = useState('')
+  const contentRef = useRef(content)
+
+  useEffect(() => {
+    contentRef.current = content
+    let i = 0
+    setDisplayed('')
+    // Reveal 5 chars per tick at ~12ms = ~417 chars/sec (smooth, readable pace)
+    const id = setInterval(() => {
+      i = Math.min(i + 5, contentRef.current.length)
+      setDisplayed(contentRef.current.slice(0, i))
+      if (i >= contentRef.current.length) clearInterval(id)
+    }, 12)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Run once on mount — content is stable
+
+  return <MarkdownText content={displayed || '…'} />
+}
+
+// ─── Tool Call Badge ──────────────────────────────────────────────────────────────
+
+const TOOL_LABELS: Record<string, string> = {
+  getRelationshipPath: 'Relationship Lookup',
+  getNodeDetails: 'Member Details',
+  searchFamilyNodes: 'Family Search',
+}
+
+function ToolCallBadge({ info }: { info: NonNullable<AIMessage['toolCallInfo']> }) {
+  const [expanded, setExpanded] = useState(false)
+  const label = TOOL_LABELS[info.toolName] ?? info.toolName
+  const argsStr = Object.entries(info.args)
+    .map(([k, v]) => v)
+    .filter(Boolean)
+    .join(' → ')
+
+  return (
+    <button
+      onClick={() => setExpanded(e => !e)}
+      className="flex flex-col gap-1 rounded-xl border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-left transition-colors hover:border-violet-500/40"
+    >
+      <div className="flex items-center gap-1.5">
+        <Wrench className="h-3 w-3 text-violet-400 shrink-0" />
+        <span className="text-[11px] font-medium text-violet-400">{label}</span>
+        {argsStr && (
+          <span className="text-[11px] text-muted-foreground/70 truncate max-w-[200px]">
+            &middot; {argsStr}
+          </span>
+        )}
+        <ChevronRight className={cn(
+          'ml-auto h-3 w-3 text-muted-foreground/40 transition-transform shrink-0',
+          expanded && 'rotate-90'
+        )} />
+      </div>
+      {expanded && (
+        <p className="text-[11px] text-muted-foreground/80 leading-relaxed whitespace-pre-wrap">
+          {info.result}
+        </p>
+      )}
+    </button>
+  )
+}
+
+function ThinkingIndicator({ status = 'Thinking about your family...' }: { status?: string }) {
   return (
     <div className="flex gap-3">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-purple-700">
@@ -613,7 +824,7 @@ function ThinkingIndicator() {
           <div className="h-2 w-2 animate-bounce rounded-full bg-violet-500 [animation-delay:0ms]" />
           <div className="h-2 w-2 animate-bounce rounded-full bg-violet-500 [animation-delay:150ms]" />
           <div className="h-2 w-2 animate-bounce rounded-full bg-violet-500 [animation-delay:300ms]" />
-          <span className="ml-2 text-xs text-muted-foreground">Thinking about your family...</span>
+          <span className="ml-2 text-xs text-muted-foreground">{status}</span>
         </div>
       </div>
     </div>

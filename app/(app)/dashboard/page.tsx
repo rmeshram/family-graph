@@ -15,6 +15,7 @@ import { FamilyTree } from '@/components/family-tree'
 import { MemberListSidebar } from '@/components/member-list-sidebar'
 import { MemberDetail } from '@/components/member-detail'
 import { AddMemberDialog } from '@/components/add-member-dialog'
+import { QuickAddMemberDialog, type QuickRelType, QUICK_REL_LABELS } from '@/components/quick-add-member-dialog'
 import { SearchDialog } from '@/components/search-dialog'
 import { AIInsightsDialog } from '@/components/ai-insights-dialog'
 import { AddStoryDialog } from '@/components/add-story-dialog'
@@ -29,6 +30,7 @@ import { computePostAddSuggestions, type RelationshipSuggestion, type Relationsh
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { NodeActionRing } from '@/components/node-action-ring'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import {
@@ -135,10 +137,11 @@ function quickAIAnswer(q: string, members: FamilyMember[]): string {
 
 // ─── Org Chart View ────────────────────────────────────────────────────────────
 
-function OrgChartView({ members, onSelect, selectedId }: {
+function OrgChartView({ members, onSelect, selectedId, onAddRelative }: {
   members: FamilyMember[]
   onSelect: (id: string) => void
   selectedId: string | null
+  onAddRelative?: (anchorId: string, relType: QuickRelType) => void
 }) {
   const byGen = useMemo(() => {
     const map = new Map<number, FamilyMember[]>()
@@ -148,6 +151,27 @@ function OrgChartView({ members, onSelect, selectedId }: {
     })
     return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
   }, [members])
+
+  const [ringNodeId, setRingNodeId] = useState<string | null>(null)
+
+  // 4s idle auto-dismiss
+  useEffect(() => {
+    if (!ringNodeId) return
+    const t = setTimeout(() => setRingNodeId(null), 4000)
+    return () => clearTimeout(t)
+  }, [ringNodeId])
+
+  // ESC dismiss
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setRingNodeId(null) }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  // Sync with external selection
+  useEffect(() => {
+    setRingNodeId(prev => (prev && prev !== selectedId ? null : prev))
+  }, [selectedId])
 
   return (
     <div className="h-full overflow-auto p-4 md:p-6">
@@ -163,38 +187,44 @@ function OrgChartView({ members, onSelect, selectedId }: {
             </div>
             <div className="flex flex-wrap justify-center gap-3">
               {genMembers.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => onSelect(m.id)}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-2xl border p-3 w-28 transition-all hover:-translate-y-0.5 hover:shadow-lg',
-                    selectedId === m.id
-                      ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                      : 'border-border/50 bg-card hover:border-primary/30'
+                <div key={m.id} className="relative">
+                  <button
+                    onClick={() => { setRingNodeId(m.id); onSelect(m.id) }}
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 rounded-2xl border p-3 w-28 transition-all hover:-translate-y-0.5 hover:shadow-lg',
+                      selectedId === m.id
+                        ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
+                        : 'border-border/50 bg-card hover:border-primary/30'
+                    )}
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className={cn(
+                        'text-xs font-bold',
+                        selectedId === m.id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                      )}>
+                        {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="text-center">
+                      <p className="text-[11px] font-semibold leading-tight">{m.name.split(' ')[0]}</p>
+                      <p className="text-[9px] text-muted-foreground">{m.birthYear ?? '—'}</p>
+                      {m.isAlive === false && <div className="mt-0.5 h-1 w-1 rounded-full bg-muted-foreground/50 mx-auto" />}
+                    </div>
+                    {m.side && (
+                      <Badge variant="outline" className={cn(
+                        'text-[8px] py-0 h-3.5 px-1',
+                        m.side === 'paternal' ? 'border-blue-500/30 text-blue-400' : m.side === 'maternal' ? 'border-rose-500/30 text-rose-400' : 'border-green-500/30 text-green-400'
+                      )}>
+                        {m.side}
+                      </Badge>
+                    )}
+                  </button>
+                  {ringNodeId === m.id && onAddRelative && (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-20">
+                      <NodeActionRing memberId={m.id} onAddRelative={onAddRelative} />
+                    </div>
                   )}
-                >
-                  <Avatar className="h-10 w-10">
-                    <AvatarFallback className={cn(
-                      'text-xs font-bold',
-                      selectedId === m.id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
-                    )}>
-                      {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="text-center">
-                    <p className="text-[11px] font-semibold leading-tight">{m.name.split(' ')[0]}</p>
-                    <p className="text-[9px] text-muted-foreground">{m.birthYear ?? '—'}</p>
-                    {m.isAlive === false && <div className="mt-0.5 h-1 w-1 rounded-full bg-muted-foreground/50 mx-auto" />}
-                  </div>
-                  {m.side && (
-                    <Badge variant="outline" className={cn(
-                      'text-[8px] py-0 h-3.5 px-1',
-                      m.side === 'paternal' ? 'border-blue-500/30 text-blue-400' : m.side === 'maternal' ? 'border-rose-500/30 text-rose-400' : 'border-green-500/30 text-green-400'
-                    )}>
-                      {m.side}
-                    </Badge>
-                  )}
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -481,6 +511,8 @@ export default function FamilyGraphApp() {
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
   const [memberListOpen, setMemberListOpen] = useState(false)
+  // Quick-add relative inline UX
+  const [quickAdd, setQuickAdd] = useState<{ anchorId: string; relType: QuickRelType } | null>(null)
 
   // ── Path Finder state ──────────────────────────────────────────────────────
   const [pathFinderOpen, setPathFinderOpen] = useState(false)
@@ -712,7 +744,7 @@ export default function FamilyGraphApp() {
     } catch (e: unknown) {
       toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
     }
-  }, [familyId, user, dbAddMember, toast])
+  }, [familyId, user, dbAddMember, toast, members])
 
   const handleUpdateMember = useCallback(async (id: string, updates: Partial<FamilyMember>) => {
     try {
@@ -723,6 +755,69 @@ export default function FamilyGraphApp() {
       toast({ title: 'Update failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
     }
   }, [dbUpdateMember, toast])
+
+  // Open the inline quick-add dialog anchored to a specific node
+  const handleAddRelative = useCallback((anchorId: string, relType: QuickRelType) => {
+    setQuickAdd({ anchorId, relType })
+  }, [])
+
+  // Called by QuickAddMemberDialog on submit — creates the new member and handles bidirectional wiring
+  const handleQuickAddSubmit = useCallback(async (
+    name: string,
+    gender: 'male' | 'female' | 'other' | '',
+    birthYearStr: string,
+    relType: QuickRelType,
+    anchorId: string,
+  ) => {
+    if (!user || !familyId) return
+    const anchor = members.find(m => m.id === anchorId)
+    if (!anchor) return
+
+    const birthYear = birthYearStr ? parseInt(birthYearStr) : undefined
+
+    // Derive parentIds / spouseIds for the new node
+    const parentIds: string[] = relType === 'child' ? [anchorId]
+      : relType === 'sibling' ? [...(anchor.parentIds ?? [])]
+        : [] // father / mother / spouse — no pre-set parents for the new node
+
+    const spouseIds: string[] = relType === 'spouse' ? [anchorId] : []
+
+    const generation =
+      relType === 'child' ? (anchor.generation ?? 0) + 1
+        : relType === 'father' || relType === 'mother' ? (anchor.generation ?? 0) - 1
+          : anchor.generation ?? 0
+
+    const memberData: Omit<FamilyMember, 'id'> = {
+      name,
+      gender: (gender || undefined) as FamilyMember['gender'],
+      birthYear,
+      parentIds,
+      spouseIds,
+      generation,
+      isAlive: true,
+      relationship: (
+        relType === 'father' ? 'father'
+          : relType === 'mother' ? 'mother'
+            : relType === 'spouse' ? (gender === 'female' ? 'wife' : 'husband')
+              : relType === 'child' ? (gender === 'female' ? 'daughter' : 'son')
+                : (gender === 'female' ? 'sister' : 'brother')
+      ) as FamilyMember['relationship'],
+    }
+
+    const newMember = await dbAddMember(memberData, user.id)
+    if (!newMember) return
+
+    // For a new parent (father/mother): patch the anchor so it recognises the new parent
+    if (relType === 'father' || relType === 'mother') {
+      const updated = [...new Set([...(anchor.parentIds ?? []), newMember.id])]
+      await dbUpdateMember(anchorId, { parentIds: updated })
+    }
+
+    toast({
+      title: `${QUICK_REL_LABELS[relType]} added`,
+      description: `${name} added to the tree.`,
+    })
+  }, [familyId, user, members, dbAddMember, dbUpdateMember, toast])
 
   const handleDeleteMember = useCallback(async () => {
     if (!selectedMemberId) return
@@ -1014,10 +1109,11 @@ export default function FamilyGraphApp() {
                   setClaimTargetId(id)
                   setIsClaimDialogOpen(true)
                 }}
+                onAddRelative={!isDemoMode ? handleAddRelative : undefined}
               />
             )}
             {viewMode === 'orgchart' && (
-              <OrgChartView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
+              <OrgChartView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} onAddRelative={!isDemoMode ? handleAddRelative : undefined} />
             )}
             {viewMode === 'list' && (
               <ListView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
@@ -1034,6 +1130,7 @@ export default function FamilyGraphApp() {
                 pathFinderOpen={pathFinderOpen}
                 detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
+                onAddRelative={!isDemoMode ? handleAddRelative : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
               />
             )}
@@ -1197,6 +1294,7 @@ export default function FamilyGraphApp() {
                 onDelete={() => setIsDeleteDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
                 onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
+                onAddRelative={!isDemoMode ? handleAddRelative : undefined}
                 isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
                 currentUserId={user?.id}
                 selfMemberId={selfMember?.id ?? null}
@@ -1229,6 +1327,7 @@ export default function FamilyGraphApp() {
                     onDelete={() => setIsDeleteDialogOpen(true)}
                     onAddStory={() => setIsStoryDialogOpen(true)}
                     onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
+                    onAddRelative={!isDemoMode ? handleAddRelative : undefined}
                     isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
                     currentUserId={user?.id}
                     selfMemberId={selfMember?.id ?? null}
@@ -1268,6 +1367,19 @@ export default function FamilyGraphApp() {
         selfMemberId={selfMember?.id ?? null}
       />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
+      {/* Inline quick-add relative dialog */}
+      {quickAdd && (() => {
+        const anchor = members.find(m => m.id === quickAdd.anchorId)
+        return anchor ? (
+          <QuickAddMemberDialog
+            open={!!quickAdd}
+            onOpenChange={(open) => { if (!open) setQuickAdd(null) }}
+            relType={quickAdd.relType}
+            anchorMember={anchor}
+            onAdd={handleQuickAddSubmit}
+          />
+        ) : null
+      })()}
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
       <SettingsDialog open={isSettingsOpen} onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }} onExport={handleExport} onImport={handleImport} defaultTab={settingsDefaultTab} />
