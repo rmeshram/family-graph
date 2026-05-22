@@ -8,11 +8,13 @@ import { Input } from '@/components/ui/input'
 import { useMemo, useState } from 'react'
 import { Search, Users, Layers, Clock, Network, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { computeRelationLabel } from '@/lib/relation-engine'
 
 interface MemberListSidebarProps {
   members: FamilyMember[]
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
+  selfMemberId?: string | null
   maxDegree?: number
   onMaxDegreeChange?: (d: number) => void
   totalCount?: number
@@ -24,6 +26,7 @@ export function MemberListSidebar({
   members,
   selectedMemberId,
   onSelectMember,
+  selfMemberId,
   maxDegree = 10,
   onMaxDegreeChange,
   totalCount,
@@ -65,6 +68,20 @@ export function MemberListSidebar({
       })
       .slice(0, 5)
   }, [filteredMembers])
+
+  // Pre-compute dynamic relation labels for every visible member relative to the
+  // logged-in user's node. Falls back to the raw DB relationship field when no
+  // selfMemberId is available (demo mode / unauthenticated).
+  const relationLabels = useMemo<Record<string, string | null>>(() => {
+    if (!selfMemberId) return {}
+    const map: Record<string, string | null> = {}
+    for (const m of members) {
+      map[m.id] = m.id === selfMemberId
+        ? 'You'
+        : computeRelationLabel(selfMemberId, m.id, members)
+    }
+    return map
+  }, [selfMemberId, members])
 
   const generationLabels: Record<number, string> = {
     0: 'Great Grandparents',
@@ -220,6 +237,9 @@ export function MemberListSidebar({
                     member={member}
                     isSelected={selectedMemberId === member.id}
                     onClick={() => onSelectMember(member.id)}
+                    isSelf={selfMemberId ? member.id === selfMemberId : false}
+                    relationLabel={relationLabels[member.id] ?? undefined}
+                    hasSelf={!!selfMemberId}
                   />
                 ))
               ) : (
@@ -254,6 +274,9 @@ export function MemberListSidebar({
                           isSelected={selectedMemberId === member.id}
                           onClick={() => onSelectMember(member.id)}
                           compact
+                          isSelf={selfMemberId ? member.id === selfMemberId : false}
+                          relationLabel={relationLabels[member.id] ?? undefined}
+                          hasSelf={!!selfMemberId}
                         />
                       ))}
                     </div>
@@ -278,6 +301,9 @@ export function MemberListSidebar({
                       member={member}
                       isSelected={selectedMemberId === member.id}
                       onClick={() => onSelectMember(member.id)}
+                      isSelf={selfMemberId ? member.id === selfMemberId : false}
+                      relationLabel={relationLabels[member.id] ?? undefined}
+                      hasSelf={!!selfMemberId}
                     />
                   ))}
                 </div>

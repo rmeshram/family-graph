@@ -1100,7 +1100,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                     className="absolute left-1/2 -translate-x-1/2"
                     style={{ top: 'calc(100% + 10px)', zIndex: 20 }}
                   >
-                    <NodeActionRing memberId={member.id} onAddRelative={onAddRelative} />
+                    <NodeActionRing member={member} allMembers={members} onAddRelative={onAddRelative} />
                   </div>
                 )}
               </div>

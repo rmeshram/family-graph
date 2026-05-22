@@ -1390,16 +1390,20 @@ export function RelationshipUniverse({
                   )}
                 </button>
                 {/* Inline add-relative actions — rendered outside <button>, dismisses after idle */}
-                {ringNodeId === p.id && onAddRelative && (
-                  <div
-                    className="absolute left-1/2 -translate-x-1/2 pointer-events-auto"
-                    style={{ top: r * 2 + 58, zIndex: 50 }}
-                    onClick={e => e.stopPropagation()}
-                    onPointerDown={e => e.stopPropagation()}
-                  >
-                    <NodeActionRing memberId={p.id} onAddRelative={onAddRelative} />
-                  </div>
-                )}
+                {ringNodeId === p.id && onAddRelative && (() => {
+                  const fullMember = members.find(m => m.id === p.id)
+                  if (!fullMember) return null
+                  return (
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 pointer-events-auto"
+                      style={{ top: r * 2 + 58, zIndex: 50 }}
+                      onClick={e => e.stopPropagation()}
+                      onPointerDown={e => e.stopPropagation()}
+                    >
+                      <NodeActionRing member={fullMember} allMembers={members} onAddRelative={onAddRelative} />
+                    </div>
+                  )
+                })()}
               </motion.div>
             )
           })}

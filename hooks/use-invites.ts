@@ -318,64 +318,77 @@ export function useJoinFamily() {
       return invite.family_id
     }
 
-    // 4. Auto-create + auto-link family_member record if relationship provided
-    if (opts?.displayName && opts.relationshipToInviter && opts.relationshipToInviter !== 'skip') {
-      // Get inviter's member record
-      const { data: inviterProfile } = await supabase
-        .from('profiles')
-        .select('member_id')
-        .eq('id', invite.created_by)
-        .single()
+    // 4. Auto-create + auto-link family_member record if display name provided
+    if (opts?.displayName) {
+      // Skip new-member creation if relationship step is disabled and user chose "skip"
+      // but still create a basic node so the joiner has a presence in the tree.
+      const relToInviter = opts.relationshipToInviter ?? 'skip'
 
-      const inviterMemberId = inviterProfile?.member_id as string | null
-
+      // Get inviter's member record (only relevant when a real relationship is declared)
       let generation = 3
       let parentIds: string[] = []
       let spouseIds: string[] = []
       let networkGroup = 'core'
 
-      if (inviterMemberId) {
-        const { data: inviterMember } = await supabase
-          .from('family_members')
-          .select('generation, parent_ids, spouse_ids, network_group')
-          .eq('id', inviterMemberId)
+      if (relToInviter !== 'skip') {
+        const { data: inviterProfile } = await supabase
+          .from('profiles')
+          .select('member_id')
+          .eq('id', invite.created_by)
           .single()
 
-        if (inviterMember) {
-          const invGen = inviterMember.generation as number
-          const invNetwork = (inviterMember.network_group as string) ?? 'core'
+        const inviterMemberId = inviterProfile?.member_id as string | null
 
-          switch (opts.relationshipToInviter) {
-            case 'spouse':
-              generation = invGen
-              spouseIds = [inviterMemberId]
-              networkGroup = 'core' // spouse marries into core family
-              break
-            case 'child':
-              generation = invGen + 1
-              parentIds = [inviterMemberId]
-              networkGroup = 'core'
-              break
-            case 'sibling':
-              generation = invGen
-              // Share same parents if inviter has them
-              parentIds = (inviterMember.parent_ids as string[]) ?? []
-              networkGroup = 'core'
-              break
-            case 'parent':
-              generation = invGen - 1
-              // After creating, we'll add new member id to inviter's parent_ids
-              networkGroup = invNetwork === 'core' ? 'extended' : 'affiliated'
-              break
-            case 'relative':
-              generation = invGen
-              networkGroup = invNetwork === 'core' ? 'extended' : 'affiliated'
-              break
+        if (inviterMemberId) {
+          const { data: inviterMember } = await supabase
+            .from('family_members')
+            .select('generation, parent_ids, spouse_ids, network_group')
+            .eq('id', inviterMemberId)
+            .single()
+
+          if (inviterMember) {
+            const invGen = inviterMember.generation as number
+            const invNetwork = (inviterMember.network_group as string) ?? 'core'
+
+            switch (relToInviter) {
+              case 'spouse':
+                generation = invGen
+                spouseIds = [inviterMemberId]
+                networkGroup = 'core'
+                break
+              case 'child':
+                generation = invGen + 1
+                parentIds = [inviterMemberId]
+                networkGroup = 'core'
+                break
+              case 'sibling':
+                generation = invGen
+                parentIds = (inviterMember.parent_ids as string[]) ?? []
+                networkGroup = 'core'
+                break
+              case 'parent':
+                generation = invGen - 1
+                networkGroup = invNetwork === 'core' ? 'extended' : 'affiliated'
+                break
+              case 'relative':
+                generation = invGen
+                networkGroup = invNetwork === 'core' ? 'extended' : 'affiliated'
+                break
+            }
+
+            // Bidirectional link back to inviter
+            if (relToInviter === 'spouse' && inviterMemberId) {
+              const { data: inv } = await supabase.from('family_members')
+                .select('spouse_ids').eq('id', inviterMemberId).single()
+              const existing = ((inv?.spouse_ids ?? []) as string[])
+              // Will be patched after insert below
+              void existing
+            }
           }
         }
       }
 
-      // Relationship label for the DB field
+      // Relationship label for the DB field — 'skip' maps to 'member' (neutral placeholder)
       const relationshipLabel: Record<RelToInviter, string> = {
         spouse: 'spouse', child: 'child', parent: 'parent',
         sibling: 'sibling', relative: 'relative', skip: 'member',
@@ -384,7 +397,7 @@ export function useJoinFamily() {
       const { data: newMember, error: memberErr } = await supabase.from('family_members').insert({
         family_id: invite.family_id,
         name: opts.displayName,
-        relationship: relationshipLabel[opts.relationshipToInviter],
+        relationship: relationshipLabel[relToInviter],
         generation,
         is_alive: true,
         parent_ids: parentIds,
@@ -397,28 +410,32 @@ export function useJoinFamily() {
       } as any).select().single()
       if (memberErr) throw new Error(memberErr.message)
 
-      if (newMember && inviterMemberId) {
-        // Bidirectional link back to inviter
-        if (opts.relationshipToInviter === 'spouse') {
-          const { data: inv } = await supabase.from('family_members')
-            .select('spouse_ids').eq('id', inviterMemberId).single()
-          const existing = ((inv?.spouse_ids ?? []) as string[])
-          if (!existing.includes(newMember.id)) {
-            await supabase.from('family_members')
-              .update({ spouse_ids: [...existing, newMember.id] }).eq('id', inviterMemberId)
-          }
-        } else if (opts.relationshipToInviter === 'parent') {
-          const { data: inv } = await supabase.from('family_members')
-            .select('parent_ids').eq('id', inviterMemberId).single()
-          const existing = ((inv?.parent_ids ?? []) as string[])
-          if (!existing.includes(newMember.id)) {
-            await supabase.from('family_members')
-              .update({ parent_ids: [...existing, newMember.id] }).eq('id', inviterMemberId)
+      if (newMember && relToInviter !== 'skip') {
+        const { data: inviterProfile } = await supabase
+          .from('profiles').select('member_id').eq('id', invite.created_by).single()
+        const inviterMemberId = inviterProfile?.member_id as string | null
+
+        if (inviterMemberId) {
+          if (relToInviter === 'spouse') {
+            const { data: inv } = await supabase.from('family_members')
+              .select('spouse_ids').eq('id', inviterMemberId).single()
+            const existing = ((inv?.spouse_ids ?? []) as string[])
+            if (!existing.includes(newMember.id)) {
+              await supabase.from('family_members')
+                .update({ spouse_ids: [...existing, newMember.id] }).eq('id', inviterMemberId)
+            }
+          } else if (relToInviter === 'parent') {
+            const { data: inv } = await supabase.from('family_members')
+              .select('parent_ids').eq('id', inviterMemberId).single()
+            const existing = ((inv?.parent_ids ?? []) as string[])
+            if (!existing.includes(newMember.id)) {
+              await supabase.from('family_members')
+                .update({ parent_ids: [...existing, newMember.id] }).eq('id', inviterMemberId)
+            }
           }
         }
       }
 
-      // Save member_id to profile so they can claim their node
       if (newMember) {
         await supabase.from('profiles').update({
           member_id: newMember.id,

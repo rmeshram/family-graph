@@ -2,14 +2,6 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-function adminClient() {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
-  )
-}
-
 async function authedClient() {
   const cs = await cookies()
   return createServerClient(
@@ -36,9 +28,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
 
-  const admin = adminClient()
-
-  const { data: profile } = await admin
+  const { data: profile } = await supabase
     .from('profiles')
     .select('family_id, role')
     .eq('id', user.id)
@@ -48,7 +38,7 @@ export async function GET() {
   if (!myFamilyId) return NextResponse.json({ incoming: [], outgoing: [], accepted: [] })
 
   // Fetch all links involving this family
-  const { data: links } = await admin
+  const { data: links } = await supabase
     .from('family_links')
     .select('id, family_a_id, family_b_id, status, link_note, initiated_by, accepted_by, created_at, updated_at')
     .or(`family_a_id.eq.${myFamilyId},family_b_id.eq.${myFamilyId}`)
@@ -63,7 +53,7 @@ export async function GET() {
     links.flatMap((l: any) => [l.family_a_id, l.family_b_id]).filter((id: string) => id !== myFamilyId)
   )]
 
-  const { data: familyRows } = await admin
+  const { data: familyRows } = await supabase
     .from('families')
     .select('id, name, invite_code')
     .in('id', otherFamilyIds)

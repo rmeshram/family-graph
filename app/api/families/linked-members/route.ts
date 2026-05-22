@@ -2,14 +2,6 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-function adminClient() {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
-  )
-}
-
 async function authedClient() {
   const cs = await cookies()
   return createServerClient(
@@ -34,9 +26,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
 
-  const admin = adminClient()
-
-  const { data: profile } = await admin
+  const { data: profile } = await supabase
     .from('profiles')
     .select('family_id')
     .eq('id', user.id)
@@ -46,7 +36,7 @@ export async function GET() {
   if (!myFamilyId) return NextResponse.json({ linkedMembers: [], linkedFamilies: [] })
 
   // Fetch all accepted links where this family is either side
-  const { data: links } = await admin
+  const { data: links } = await supabase
     .from('family_links')
     .select('id, family_a_id, family_b_id, junction_member_a, junction_member_b, link_note, visibility_scope')
     .eq('status', 'accepted')
@@ -70,7 +60,7 @@ export async function GET() {
   }
 
   // Fetch family names
-  const { data: familyRows } = await admin
+  const { data: familyRows } = await supabase
     .from('families')
     .select('id, name')
     .in('id', linkedFamilyIds)
@@ -81,7 +71,7 @@ export async function GET() {
   }
 
   // Fetch all members from linked families
-  const { data: memberRows } = await admin
+  const { data: memberRows } = await supabase
     .from('family_members')
     .select(`
       id, family_id, name, birth_year, death_year, birth_place, current_place,
