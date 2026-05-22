@@ -203,7 +203,9 @@ export function useMembers(familyId: string | null) {
           }
         }
       )
-      .subscribe()
+      .subscribe((status, err) => {
+        if (err) console.warn('[family_members] realtime error:', err)
+      })
     return () => { supabase.removeChannel(channel) }
   }, [familyId, supabase])
 
@@ -414,7 +416,9 @@ export function useStories(familyId: string | null) {
     const ch = supabase
       .channel(`stories:${familyId}:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stories', filter: `family_id=eq.${familyId}` }, () => fetchRef.current())
-      .subscribe()
+      .subscribe((status, err) => {
+        if (err) console.warn('[stories] realtime error:', err)
+      })
     return () => { supabase.removeChannel(ch) }
   }, [familyId, supabase])
 

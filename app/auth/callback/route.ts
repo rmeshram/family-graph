@@ -26,9 +26,12 @@ export async function GET(request: Request) {
           .select('family_id')
           .eq('id', user.id)
           .single()
-        // New user (no family yet) → onboarding
+        // New user (no family yet) → onboarding (preserve ?next so invite flow resumes)
         if (!profile?.family_id) {
-          return NextResponse.redirect(`${origin}/onboarding`)
+          const onboardingUrl = next !== '/dashboard'
+            ? `${origin}/onboarding?next=${encodeURIComponent(next)}`
+            : `${origin}/onboarding`
+          return NextResponse.redirect(onboardingUrl)
         }
       }
       return NextResponse.redirect(`${origin}${next}`)

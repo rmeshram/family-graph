@@ -54,7 +54,7 @@ export default function JoinPage() {
   // Claim step state
   const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
   const [scoredMatches, setScoredMatches] = useState<MatchResult[]>([])
-  const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null) // null = create new
+  const [selectedClaimId, setSelectedClaimId] = useState<string | null | undefined>(undefined) // undefined = no selection yet; null = create new
 
   // node_claim invite state (B2)
   const [nodeClaim, setNodeClaim] = useState<{ nodeId: string; identityHint: string | null; familyId: string } | null>(null)
@@ -129,7 +129,12 @@ export default function JoinPage() {
   }, [code, supabase])
 
   const handleContinueToRelate = () => {
-    if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
+    if (!isAuthed) {
+      // Save invite code as resilience backup in case the ?next chain breaks (e.g. mid-flow refresh)
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('fg_invite_return', code)
+      router.push(`/auth/signin?next=/join/${code}`)
+      return
+    }
     // Per DECISION 1: claim = join. Skip the redundant relationship picker for MVP
     // and go straight to the claim step (which already lists unclaimed nodes
     // and offers "create new"). Relationship is assigned later via add-member-dialog.
@@ -214,8 +219,9 @@ export default function JoinPage() {
           if (scored.length > 0 && isRecommendedClaimMatch(scored[0])) {
             setSelectedClaimId(scored[0].nodeId)
           } else {
-            // Default to create new when no strong match
-            setSelectedClaimId(null)
+            // No strong match — require the user to explicitly pick a profile or
+            // tap "Create a separate profile". Prevents silent duplicate creation.
+            setSelectedClaimId(undefined)
           }
 
           setStatus('claim')
@@ -240,8 +246,10 @@ export default function JoinPage() {
         gender: selectedGender ?? undefined,
         claimMemberId: claimId ?? undefined,
       })
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
       setStatus('success')
-      setTimeout(() => router.push('/dashboard'), 2000)
+      // Full page navigation forces AuthProvider to re-fetch updated profile (new member_id)
+      setTimeout(() => { window.location.href = '/dashboard' }, 2000)
     } catch (e: unknown) {
       setStatus('error')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
@@ -271,6 +279,15 @@ export default function JoinPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        if (res.status === 423) {
+          const lockedUntil = data.lockedUntil
+            ? new Date(data.lockedUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+            : 'tomorrow'
+          setStatus('node_claim')
+          setNcAttempts(0)
+          setMessage(`Too many attempts. Please try again after ${lockedUntil}.`)
+          return
+        }
         if (typeof data.attemptsLeft === 'number') setNcAttempts(data.attemptsLeft)
         setStatus('node_claim')
         setMessage(data.message ?? data.error ?? 'Verification failed')
@@ -291,8 +308,10 @@ export default function JoinPage() {
         .eq('code', code.toUpperCase())
         .is('consumed_at', null)
 
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
       setStatus('success')
-      setTimeout(() => router.push('/dashboard'), 2000)
+      // Full page navigation forces AuthProvider to re-fetch updated profile (new member_id)
+      setTimeout(() => { window.location.href = '/dashboard' }, 2000)
     } catch (e: unknown) {
       setStatus('node_claim')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
@@ -621,6 +640,12 @@ export default function JoinPage() {
                 </div>
               )}
 
+              {selectedClaimId === undefined && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Tap a profile above, or tap "Create a separate profile" to continue.
+                </p>
+              )}
+
               <div className="flex gap-3">
                 <Button
                   variant="outline"
@@ -628,8 +653,11 @@ export default function JoinPage() {
                   className="flex-1 h-11"
                 >Back</Button>
                 <Button
-                  onClick={() => handleJoin(selectedClaimId)}
-                  disabled={!selectedClaimId && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim()}
+                  onClick={() => handleJoin(selectedClaimId ?? null)}
+                  disabled={
+                    selectedClaimId === undefined ||
+                    (selectedClaimId === null && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim())
+                  }
                   className="flex-1 h-11 bg-primary hover:bg-primary/90"
                 >
                   {selectedClaimId ? 'Claim & Join' : 'Create & Join'}

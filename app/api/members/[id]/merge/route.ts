@@ -24,7 +24,7 @@ function adminClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false } }
+    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
   )
 }
 
@@ -37,7 +37,7 @@ async function authedClient() {
       cookies: {
         getAll: () => cs.getAll(),
         setAll: (c) => {
-          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch {}
+          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
         },
       },
     }
@@ -93,6 +93,10 @@ export async function POST(
   if (!profile || (profile as any).family_id !== (primary as any).family_id) {
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
   }
+  // Only admins can perform irreversible merge operations
+  if ((profile as any).role !== 'admin') {
+    return NextResponse.json({ error: 'ADMIN_REQUIRED' }, { status: 403 })
+  }
 
   // ── 2. Merge scalar fields ──────────────────────────────────────────────────
   const merged: Record<string, unknown> = {}
@@ -142,7 +146,7 @@ export async function POST(
           admin.from('family_members')
             .update({ parent_ids: newParents, spouse_ids: newSpouses })
             .eq('id', memberAny.id)
-        ).then(() => {})
+        ).then(() => { })
       )
     }
   }
@@ -169,7 +173,7 @@ export async function POST(
     .from('stories')
     .update({ member_id: primaryId })
     .eq('member_id', targetId)
-    .then(() => {}) // best-effort — stories table might not exist
+    .then(() => { }) // best-effort — stories table might not exist
 
   // ── 7. Apply merged update to primary, then delete duplicate ───────────────
   const { error: updateErr } = await admin
@@ -194,7 +198,7 @@ export async function POST(
     actor_id: user.id,
     action: 'node_merged',
     metadata: { absorbed_id: targetId },
-  }).then(() => {})
+  }).then(() => { })
 
   // Return the updated primary
   const { data: updated } = await admin.from('family_members').select('*').eq('id', primaryId).single()

@@ -32,7 +32,9 @@ import {
   Lock,
   Shield,
   UserPlus,
+  UserRoundPlus,
 } from 'lucide-react'
+import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { cn, computeProfileCompleteness } from '@/lib/utils'
 import { findRelationshipPath, computeRelationLabel } from '@/lib/relation-engine'
 
@@ -56,6 +58,8 @@ interface MemberDetailProps {
    */
   selfMemberId?: string | null
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
+  /** Called when user clicks a quick-add relative button; parent opens QuickAddMemberDialog. */
+  onAddRelative?: (anchorId: string, relType: QuickRelType) => void
 }
 
 const milestoneIcons: Record<string, React.ReactNode> = {
@@ -84,6 +88,7 @@ export function MemberDetail({
   onDelete,
   onAddStory,
   onInvite,
+  onAddRelative,
   isAdmin = false,
   currentUserId,
   selfMemberId,
@@ -491,7 +496,28 @@ export function MemberDetail({
         </CardContent>
       </ScrollArea>
 
-      <div className="shrink-0 p-4 border-t border-border/50" style={{ background: 'var(--surface-panel)' }}>
+      <div className="shrink-0 p-4 border-t border-border/50 space-y-2" style={{ background: 'var(--surface-panel)' }}>
+        {/* Quick-add relative buttons */}
+        {onAddRelative && (
+          <div>
+            <p className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+              <UserRoundPlus className="h-3 w-3" />
+              Add relative
+            </p>
+            <div className="flex gap-1.5 flex-wrap">
+              {(['father', 'mother', 'spouse', 'child', 'sibling'] as QuickRelType[]).map((rel) => (
+                <button
+                  key={rel}
+                  type="button"
+                  onClick={() => onAddRelative(member.id, rel)}
+                  className="rounded-full border border-border/50 bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary transition-all capitalize"
+                >
+                  + {rel}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Invite nudge for unclaimed members */}
         {!member.isClaimed && member.relationship !== 'self' && onInvite && (
           <button

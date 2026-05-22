@@ -15,12 +15,15 @@ import {
 import { ParticleBackground } from '@/components/particle-background'
 import { useGraphIndex } from '@/hooks/use-graph-index'
 import { useViewportCulling, isEdgeVisible } from '@/hooks/use-viewport-culling'
+import { NodeActionRing } from '@/components/node-action-ring'
+import type { QuickRelType } from '@/components/quick-add-member-dialog'
 
 interface FamilyTreeProps {
   members: FamilyMember[]
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
   onDoubleClickMember?: (id: string) => void
+  onAddRelative?: (anchorId: string, relType: QuickRelType) => void
 }
 
 interface NodePosition {
@@ -29,7 +32,7 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selectedMemberId, onSelectMember, onDoubleClickMember }: FamilyTreeProps) {
+export function FamilyTree({ members, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative }: FamilyTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -38,6 +41,8 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+  // Ring state — tracks which node's quick-add actions are visible; auto-dismisses
+  const [ringNodeId, setRingNodeId] = useState<string | null>(null)
   // Affiliated clusters start collapsed — user taps to progressively discover each family
   const [collapsedClusters, setCollapsedClusters] = useState<Set<string>>(() => {
     // Will be populated once members are available via the useEffect below
@@ -315,6 +320,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
       setIsDragging(true)
+      setRingNodeId(null)  // dismiss ring when user starts panning
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
     }
   }, [pan])
@@ -483,6 +489,25 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       fitToView()
     }
   }, [nodePositions, dimensions, fitToView])
+
+  // Ring: 4-second idle auto-dismiss
+  useEffect(() => {
+    if (!ringNodeId) return
+    const t = setTimeout(() => setRingNodeId(null), 4000)
+    return () => clearTimeout(t)
+  }, [ringNodeId])
+
+  // Ring: ESC to dismiss
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setRingNodeId(null) }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  // Ring: clear when selection changes externally (e.g. sidebar)
+  useEffect(() => {
+    setRingNodeId(prev => (prev && prev !== selectedMemberId ? null : prev))
+  }, [selectedMemberId])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -910,6 +935,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1,
                   animation: isExtended || isAffiliated ? `fadeSlideIn 0.35s ease both` : 'none',
                   animationDelay: staggerDelay,
+                  zIndex: isSelected ? 20 : undefined,
                 }}
               >
                 {/* Relationship label above node */}
@@ -947,10 +973,12 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
+                        setRingNodeId(member.id)
                         onSelectMember(member.id)
                       }}
                       onDoubleClick={(e) => {
                         e.stopPropagation()
+                        setRingNodeId(null)
                         focusNode(member.id)
                         onDoubleClickMember?.(member.id)
                       }}
@@ -1064,6 +1092,15 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                 {isCollapsed && (
                   <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 flex h-5 items-center gap-0.5 rounded-full bg-muted/90 border border-border/50 px-1.5 pointer-events-none">
                     <span className="text-[8px] text-slate-500">+branch</span>
+                  </div>
+                )}
+                {/* Inline add-relative actions — shown when this node's ring is active */}
+                {ringNodeId === member.id && onAddRelative && zoom >= 0.65 && (
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2"
+                    style={{ top: 'calc(100% + 10px)', zIndex: 20 }}
+                  >
+                    <NodeActionRing memberId={member.id} onAddRelative={onAddRelative} />
                   </div>
                 )}
               </div>

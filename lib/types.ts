@@ -207,6 +207,12 @@ export interface FamilyEvent {
   emoji?: string
 }
 
+export interface AIToolCallInfo {
+  toolName: string
+  args: Record<string, string>
+  result: string
+}
+
 export interface AIMessage {
   id: string
   role: 'user' | 'ai'
@@ -214,6 +220,8 @@ export interface AIMessage {
   timestamp: string
   relatedMemberIds?: string[]
   actionType?: 'relationship' | 'add_member' | 'story' | 'search' | 'insight'
+  toolCallInfo?: AIToolCallInfo
+  isError?: boolean
 }
 
 export interface InviteLink {

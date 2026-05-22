@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { FamilyMember } from '@/lib/types'
 import { computeRelationLabel } from '@/lib/relation-engine'
 import { cn } from '@/lib/utils'
+import { NodeActionRing } from '@/components/node-action-ring'
 
 // ─── Internal graph types ──────────────────────────────────────────────────
 
@@ -401,6 +402,8 @@ interface Props {
   detailPanelOpen?: boolean
   /** Called when the user taps "Add first member" in the empty state */
   onAddMember?: () => void
+  /** Called when user clicks an inline add-relative action on a node */
+  onAddRelative?: (anchorId: string, relType: import('@/components/quick-add-member-dialog').QuickRelType) => void
   /** True while the parent is fetching members — suppresses the empty-state animation */
   loading?: boolean
 }
@@ -416,6 +419,7 @@ export function RelationshipUniverse({
   pathFinderOpen = false,
   detailPanelOpen = false,
   onAddMember,
+  onAddRelative,
   loading = false,
 }: Props) {
   const effectiveSelfId = selfMemberId ?? members[0]?.id ?? ''
@@ -709,6 +713,29 @@ export function RelationshipUniverse({
 
   // ── Hover / focus state ──────────────────────────────────────────────────
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  // Ring visibility state — auto-dismisses on idle/pan/ESC
+  const [ringNodeId, setRingNodeId] = useState<string | null>(null)
+  const lastNodeClickRef = useRef<{ id: string; t: number } | null>(null)
+
+  // Ring: 4-second idle auto-dismiss
+  useEffect(() => {
+    if (!ringNodeId) return
+    const t = setTimeout(() => setRingNodeId(null), 4000)
+    return () => clearTimeout(t)
+  }, [ringNodeId])
+
+  // Ring: ESC to dismiss
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setRingNodeId(null) }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  // Ring: clear when selection changes externally
+  useEffect(() => {
+    setRingNodeId(prev => (prev && prev !== selectedMemberId ? null : prev))
+  }, [selectedMemberId])
+
   const focusId = selectedMemberId ?? hoveredId
   const selectedPerson = selectedMemberId ? peopleById.get(selectedMemberId) : undefined
 
@@ -1186,8 +1213,8 @@ export function RelationshipUniverse({
                   opacity: { duration: 0.32 },
                   scale: { type: 'spring', stiffness: 200, damping: 22, delay: Math.min(p.depth * 0.045, 0.35) },
                 }}
-                style={{ position: 'absolute', left: px - r, top: py - r, width: r * 2, height: r * 2 }}
-                className="pointer-events-auto"
+                style={{ position: 'absolute', left: px - r, top: py - r, width: r * 2, height: r * 2, zIndex: isSelected ? 50 : undefined }}
+                className="pointer-events-auto overflow-visible"
               >
                 <button
                   className={cn(
@@ -1211,8 +1238,19 @@ export function RelationshipUniverse({
                     if (ev.shiftKey && selectedMemberId && selectedMemberId !== p.id) {
                       findPath(selectedMemberId, p.id)
                     } else {
+                      // Double-click → open deep profile
+                      const now = Date.now()
+                      const last = lastNodeClickRef.current
+                      if (last && last.id === p.id && now - last.t < 350) {
+                        lastNodeClickRef.current = null
+                        setRingNodeId(null)
+                        onOpenMemberDetail?.(p.id)
+                        return
+                      }
+                      lastNodeClickRef.current = { id: p.id, t: now }
                       internalClickRef.current = true  // skip cinematic pan for direct clicks
                       onSelectMember(p.id)
+                      setRingNodeId(p.id)
                       setPathNodes(new Set())
                       setPathEdges(new Set())
                       setPathSequence([])
@@ -1226,8 +1264,8 @@ export function RelationshipUniverse({
                   <span
                     className="absolute inset-0 rounded-full transition-all duration-500"
                     style={{
-                      boxShadow: `0 0 ${isSelected ? 55 : isHovered ? 36 : 16}px ${color}, 0 0 ${isSelected ? 95 : isHovered ? 62 : 26}px ${color}`,
-                      opacity: isSelected ? 0.92 : isHovered ? 0.76 : 0.42,
+                      boxShadow: `0 0 ${isSelected ? 36 : isHovered ? 26 : 13}px ${color}, 0 0 ${isSelected ? 60 : isHovered ? 44 : 22}px ${color}`,
+                      opacity: isSelected ? 0.72 : isHovered ? 0.60 : 0.36,
                     }}
                   />
                   {/* Verified halo */}
@@ -1351,6 +1389,17 @@ export function RelationshipUniverse({
                     >You</span>
                   )}
                 </button>
+                {/* Inline add-relative actions — rendered outside <button>, dismisses after idle */}
+                {ringNodeId === p.id && onAddRelative && (
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2 pointer-events-auto"
+                    style={{ top: r * 2 + 58, zIndex: 50 }}
+                    onClick={e => e.stopPropagation()}
+                    onPointerDown={e => e.stopPropagation()}
+                  >
+                    <NodeActionRing memberId={p.id} onAddRelative={onAddRelative} />
+                  </div>
+                )}
               </motion.div>
             )
           })}
@@ -1445,21 +1494,21 @@ export function RelationshipUniverse({
         {selectedMemberId && selectedPerson && !detailPanelOpen && !pathFinderOpen && (
           <motion.div
             key={selectedMemberId}
-            initial={{ opacity: 0, y: 20, scale: 0.94 }}
-            animate={{ opacity: dockHiddenByPan ? 0 : 1, y: dockHiddenByPan ? 6 : 0, scale: dockHiddenByPan ? 0.96 : 1 }}
-            exit={{ opacity: 0, y: 14, scale: 0.9 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: dockHiddenByPan ? 0 : 0.96, y: dockHiddenByPan ? 4 : 0 }}
+            exit={{ opacity: 0, y: 6 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
             className={cn('absolute z-40 overflow-hidden', dockHiddenByPan && 'pointer-events-none')}
             style={{
               ...(isMobileView
                 ? { left: 12, right: 12, bottom: 18 }
-                : { top: 18, right: 18, width: 360 }),
-              borderRadius: 24,
+                : { top: 18, right: 18, width: 340 }),
+              borderRadius: 20,
               background: 'var(--universe-panel-bg)',
-              border: `1px solid ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}55`,
-              backdropFilter: 'blur(40px)',
-              WebkitBackdropFilter: 'blur(40px)',
-              boxShadow: `0 0 0 1px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}18, 0 24px 64px rgba(0,0,0,0.6), 0 0 48px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}16`,
+              border: `1px solid ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}28`,
+              backdropFilter: 'blur(32px)',
+              WebkitBackdropFilter: 'blur(32px)',
+              boxShadow: `0 2px 20px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.04)`,
             }}
             onClick={(e) => e.stopPropagation()}
           >

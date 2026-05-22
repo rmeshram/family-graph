@@ -5,7 +5,7 @@
  */
 export const FEATURE_FLAGS = {
   /** Google Gemini-powered AI Copilot — requires GOOGLE_AI_API_KEY env var */
-  enableAICopilot: false,
+  enableAICopilot: true,
   /** Stripe subscription / upgrade flow — not yet integrated */
   enableUpgradeFlow: false,
   /** Migration map page — read-only, no real data wiring */

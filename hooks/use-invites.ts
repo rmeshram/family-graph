@@ -104,7 +104,15 @@ export function useInvites(familyId: string | null) {
     return data ?? []
   }, [familyId, supabase])
 
-  return { createInviteLink, createNodeClaimInvite, getActiveLinks }
+  const revokeInvite = useCallback(async (id: string) => {
+    if (!familyId) return
+    await supabase.from('invite_links')
+      .update({ expires_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('family_id', familyId)
+  }, [familyId, supabase])
+
+  return { createInviteLink, createNodeClaimInvite, getActiveLinks, revokeInvite }
 }
 
 // ─── Join via invite code ─────────────────────────────────────────────────────
@@ -145,6 +153,22 @@ export function useJoinFamily() {
       }
     }
 
+    // A2: For non-node_claim invites, validate claimMemberId belongs to this family
+    // Prevents cross-family node claiming with a regular invite link.
+    if (opts?.claimMemberId && inviteAny.invite_type !== 'node_claim') {
+      const { data: targetMember } = await supabase
+        .from('family_members')
+        .select('id, family_id, is_claimed')
+        .eq('id', opts.claimMemberId)
+        .single()
+      if (!targetMember || (targetMember as any).family_id !== invite.family_id) {
+        throw new Error('Cannot claim a node from a different family')
+      }
+      if ((targetMember as any).is_claimed) {
+        throw new Error('This profile has already been claimed by someone else')
+      }
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('display_name, phone, member_id')
@@ -173,8 +197,9 @@ export function useJoinFamily() {
           .eq('id', invite.id)
           .eq('used_count', invite.used_count)
         if (invite.max_uses) incrChain = incrChain.lt('used_count', invite.max_uses)
-        const { error: incrErr } = await incrChain
-        if (incrErr) {
+        incrChain = incrChain.select('id')
+        const { data: incrData, error: incrErr } = await incrChain
+        if (incrErr || !(incrData as any[])?.length) {
           throw new Error('This invite was just used by someone else. Please request a new one.')
         }
         return invite.family_id
@@ -235,14 +260,24 @@ export function useJoinFamily() {
           display_name: opts?.displayName || profile?.display_name || undefined,
         }).eq('id', userId)
 
+        // Emit audit event so realtime notifications fire for admins
+        await (supabase.from('claim_audit_log') as any).insert({
+          node_id: bestMatch.nodeId,
+          family_id: invite.family_id,
+          actor_id: userId,
+          action: 'claim_completed',
+          metadata: { via_invite: true, invite_code: code, auto_matched: true },
+        })
+
         const incrQ = supabase.from('invite_links') as any
         let chain = incrQ
           .update({ used_count: invite.used_count + 1, consumed_at: new Date().toISOString() })
           .eq('id', invite.id)
           .eq('used_count', invite.used_count)
         if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
-        const { error: incErr } = await chain
-        if (incErr) throw new Error('This invite was just used by someone else. Please request a new one.')
+        chain = chain.select('id')
+        const { data: autoData, error: incErr } = await chain
+        if (incErr || !(autoData as any[])?.length) throw new Error('This invite was just used by someone else. Please request a new one.')
         return invite.family_id
       }
     }
@@ -260,6 +295,15 @@ export function useJoinFamily() {
         display_name: opts.displayName || undefined,
       }).eq('id', userId)
 
+      // Emit audit event so realtime notifications fire for admins
+      await (supabase.from('claim_audit_log') as any).insert({
+        node_id: opts.claimMemberId,
+        family_id: invite.family_id,
+        actor_id: userId,
+        action: 'claim_completed',
+        metadata: { via_invite: true, invite_code: code, auto_matched: false },
+      })
+
       // Atomic increment with boundary check (A6)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const incrQ = supabase.from('invite_links') as any
@@ -268,8 +312,9 @@ export function useJoinFamily() {
         .eq('id', invite.id)
         .eq('used_count', invite.used_count)
       if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
-      const { error: incErr } = await chain
-      if (incErr) throw new Error('This invite was just used by someone else. Please request a new one.')
+      chain = chain.select('id')
+      const { data: claimData, error: incErr } = await chain
+      if (incErr || !(claimData as any[])?.length) throw new Error('This invite was just used by someone else. Please request a new one.')
       return invite.family_id
     }
 
@@ -390,8 +435,9 @@ export function useJoinFamily() {
       .eq('id', invite.id)
       .eq('used_count', invite.used_count)
     if (invite.max_uses) incrChain = incrChain.lt('used_count', invite.max_uses)
-    const { error: incrErr } = await incrChain
-    if (incrErr) {
+    incrChain = incrChain.select('id')
+    const { data: incrData, error: incrErr } = await incrChain
+    if (incrErr || !(incrData as any[])?.length) {
       // Lost the race — another joiner consumed the slot. Surface a retryable error.
       throw new Error('This invite was just used by someone else. Please request a new one.')
     }

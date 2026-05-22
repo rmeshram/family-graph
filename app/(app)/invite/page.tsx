@@ -70,12 +70,13 @@ interface InviteLink {
 
 export default function InvitePage() {
   const { familyId, user, profile } = useAuth()
-  const { createInviteLink, getActiveLinks } = useInvites(familyId)
+  const { createInviteLink, getActiveLinks, revokeInvite } = useInvites(familyId)
   const { toast } = useToast()
   const [selectedRole, setSelectedRole] = useState<string>('contributor')
   const [expiresIn, setExpiresIn] = useState('7')
   const [copied, setCopied] = useState(false)
   const [whatsappCopied, setWhatsappCopied] = useState(false)
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null)
   const [links, setLinks] = useState<InviteLink[]>([])
   const [activeUrl, setActiveUrl] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -159,6 +160,23 @@ export default function InvitePage() {
     setWhatsappCopied(true)
     setTimeout(() => setWhatsappCopied(false), 2000)
     window.open(whatsappUrl, '_blank')
+  }
+
+  const handleCopyLinkCode = (code: string) => {
+    copyToClipboard(`${location.origin}/join/${code}`)
+    setCopiedLinkId(code)
+    setTimeout(() => setCopiedLinkId(null), 2000)
+    toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' })
+  }
+
+  const handleRevokeLink = async (id: string) => {
+    try {
+      await revokeInvite(id)
+      setLinks(prev => prev.filter(l => l.id !== id))
+      toast({ title: 'Invite revoked', description: 'The link is now invalid.' })
+    } catch {
+      toast({ title: 'Error', description: 'Could not revoke link.', variant: 'destructive' })
+    }
   }
 
   return (
@@ -476,10 +494,10 @@ export default function InvitePage() {
                       </p>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <Copy className="h-3.5 w-3.5" />
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopyLinkCode(link.code)}>
+                        {copiedLinkId === link.code ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleRevokeLink(link.id)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>

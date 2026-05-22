@@ -76,7 +76,7 @@ interface AddMemberDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   existingMembers: FamilyMember[]
-  onAdd: (member: Omit<FamilyMember, 'id'>) => void
+  onAdd: (member: Omit<FamilyMember, 'id'>) => void | Promise<void>
   onUpdate?: (id: string, updates: Partial<FamilyMember>) => Promise<void>
   editingMember?: FamilyMember | null
   familyId?: string
@@ -215,6 +215,24 @@ export function AddMemberDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fatherId, motherId, spouseId])
 
+  // ── Reverse: when a sibling relationship is chosen, auto-fill the parents from the self-member ──
+  // This ensures `generation` is computed correctly (parentMember.generation+1) and the
+  // new node is wired into the right family branch on the graph.
+  useEffect(() => {
+    const SIBLING_RELS = ['brother', 'sister', 'half-brother', 'half-sister', 'stepbrother', 'stepsister']
+    if (!SIBLING_RELS.includes(relationship)) return
+    const self = (selfMemberId && existingMembers.find(m => m.id === selfMemberId))
+      || existingMembers.find(m => m.relationship === 'self')
+    if (!self?.parentIds?.length) return
+    const selfParents = existingMembers.filter(m => self.parentIds.includes(m.id))
+    const selfFather = selfParents.find(m => m.gender === 'male') ?? selfParents[0]
+    const selfMother = selfParents.find(m => m.gender === 'female') ?? selfParents.find(m => m.id !== selfFather?.id)
+    // Only auto-fill if the user hasn't already made a manual selection
+    if (selfFather && !fatherId) setFatherId(selfFather.id)
+    if (selfMother && !motherId) setMotherId(selfMother.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relationship])
+
   const validate = () => {
     const e: Record<string, string> = {}
     if (!name.trim()) e.name = 'Name is required'
@@ -308,15 +326,20 @@ export function AddMemberDialog({
       isAlive: !deathYear,
     }
 
-    if (editingMember && onUpdate) {
-      await onUpdate(editingMember.id, memberData)
-    } else {
-      onAdd(memberData)
+    try {
+      if (editingMember && onUpdate) {
+        await onUpdate(editingMember.id, memberData)
+      } else {
+        await onAdd(memberData)
+      }
+      resetForm()
+      onOpenChange(false)
+    } catch (err) {
+      // Error toast is already shown by the caller (handleAddMember/handleUpdateMember)
+      console.error('[add-member] submit failed:', err)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setIsSubmitting(false)
-    resetForm()
-    onOpenChange(false)
   }
 
   const resetForm = () => {
@@ -373,6 +396,16 @@ export function AddMemberDialog({
 
         <ScrollArea className={isMobile ? "flex-1 min-h-0" : "max-h-[calc(90vh-180px)]"}>
           <form id="add-member-form" onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Notice when editing a node claimed by another user */}
+            {photoIsLocked && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs">
+                <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                <p className="text-amber-200/90">
+                  <span className="font-medium">{editingMember?.name?.split(' ')[0] ?? 'This person'}</span> manages their own profile.
+                  You can still update family connections and relationships.
+                </p>
+              </div>
+            )}
             {/* Photo Upload */}
             <div className="flex items-center gap-4">
               <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} disabled={photoIsLocked} />
@@ -441,10 +474,16 @@ export function AddMemberDialog({
                           <SelectValue placeholder="Select relationship" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Self</SelectLabel>
-                            <SelectItem value="self">Myself (You)</SelectItem>
-                          </SelectGroup>
+                          {/* Only show 'Myself' when no self-node exists yet — prevents duplicate self-nodes */}
+                          {!existingMembers.some(m =>
+                            (m.relationship === 'self' || m.id === selfMemberId) &&
+                            m.id !== editingMember?.id
+                          ) && (
+                              <SelectGroup>
+                                <SelectLabel>Self</SelectLabel>
+                                <SelectItem value="self">Myself (You)</SelectItem>
+                              </SelectGroup>
+                            )}
                           <SelectGroup>
                             <SelectLabel>Grandparents</SelectLabel>
                             <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>

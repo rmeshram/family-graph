@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useRef, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -72,7 +72,16 @@ async function requestPushPermission() {
 }
 
 export default function OnboardingPage() {
+  return (
+    <Suspense>
+      <OnboardingContent />
+    </Suspense>
+  )
+}
+
+function OnboardingContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -266,8 +275,14 @@ export default function OnboardingPage() {
         member_id: member.id,
       }).eq("id", user.id)
 
-      // Hard navigation so AuthProvider re-fetches the updated profile (with family_id)
-      window.location.href = "/dashboard?welcome=1"
+      // Hard navigation so AuthProvider re-fetches the updated profile (with family_id).
+      // If the user came via an invite link, resume that flow; otherwise go to dashboard.
+      const pendingInvite = searchParams.get('next')
+      if (pendingInvite && pendingInvite.startsWith('/join/')) {
+        window.location.href = pendingInvite
+      } else {
+        window.location.href = "/dashboard?welcome=1"
+      }
     } catch (e) {
       console.error("Onboarding error:", e)
       setIsLoading(false)

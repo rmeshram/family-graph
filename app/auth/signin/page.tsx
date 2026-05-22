@@ -64,9 +64,13 @@ function SignInContent() {
 
   const signInWithGoogle = async () => {
     setIsLoading(true)
+    const nextPath = searchParams.get('next')
+    const callbackUrl = nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')
+      ? `${location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
+      : `${location.origin}/auth/callback`
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${location.origin}/auth/callback` },
+      options: { redirectTo: callbackUrl },
     })
     if (error) { setError(error.message); setIsLoading(false) }
   }

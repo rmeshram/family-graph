@@ -1,5 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+async function authedClient() {
+  const cs = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cs.getAll(),
+        setAll: (c) => {
+          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
+        },
+      },
+    }
+  )
+}
 
 export async function POST(req: NextRequest) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -10,6 +27,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'SERVICE_ROLE_NOT_CONFIGURED' }, { status: 503 })
   }
 
+  // Verify the caller is authenticated — never trust createdBy from the request body
+  const supabase = await authedClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
+
   let body: { name?: string; inviteCode?: string; createdBy?: string }
   try {
     body = await req.json()
@@ -17,9 +39,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { name, inviteCode, createdBy } = body
-  if (!name || !inviteCode || !createdBy) {
-    return NextResponse.json({ error: 'Missing required fields: name, inviteCode, createdBy' }, { status: 400 })
+  const { name, inviteCode } = body
+  // Always use the authenticated user's id — ignore any createdBy in the body
+  const createdBy = user.id
+
+  if (!name || !inviteCode) {
+    return NextResponse.json({ error: 'Missing required fields: name, inviteCode' }, { status: 400 })
   }
   // Input validation
   const trimmedName = String(name).trim()
