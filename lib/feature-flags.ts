@@ -20,8 +20,8 @@ export const FEATURE_FLAGS = {
   enablePresenceAvatars: false,
   /** Advanced analytics / missing-data intelligence panels beyond the basic overview. */
   enableAdvancedAnalytics: false,
-  /** Editable milestone CRUD on member-detail. Off until backend wiring + table migration ships. */
-  enableMilestoneEditor: false,
+  /** Editable milestone CRUD on member-detail. ON — migration 017 adds the milestones table. */
+  enableMilestoneEditor: true,
   /** Google Places autocomplete for location fields. Off until GOOGLE_MAPS_API_KEY is configured. */
   enableGooglePlaces: false,
   /** Full multipage PDF export of the entire graph universe. Off until export pipeline ships. */

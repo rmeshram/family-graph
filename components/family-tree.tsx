@@ -82,16 +82,27 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
-        hasMeasuredDimensions.current = true
-        setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        })
+        const w = containerRef.current.clientWidth
+        const h = containerRef.current.clientHeight
+        if (w > 0 && h > 0) {
+          hasMeasuredDimensions.current = true
+          setDimensions({ width: w, height: h })
+        }
       }
     }
     updateDimensions()
     window.addEventListener('resize', updateDimensions)
-    return () => window.removeEventListener('resize', updateDimensions)
+    // ResizeObserver gives sub-pixel accuracy and fires on mount on all browsers,
+    // including mobile Safari where clientWidth can be 0 during the first tick.
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      ro = new ResizeObserver(updateDimensions)
+      ro.observe(containerRef.current)
+    }
+    return () => {
+      window.removeEventListener('resize', updateDimensions)
+      ro?.disconnect()
+    }
   }, [])
 
   const nodePositions = useMemo<NodePosition[]>(() => {
@@ -479,16 +490,23 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     })
   }, [nodePositions, dimensions])
 
-  // Auto-fit on first load and whenever member count changes significantly
-  // (e.g. when mobile hides extended members after hydration — member count drops)
+  // Auto-fit on first load and whenever member count or viewport size changes significantly.
+  // The ResizeObserver updates `dimensions` which triggers this effect, ensuring mobile
+  // Safari devices re-fit after the viewport has been properly measured.
   const prevMemberCount = useRef(0)
+  const prevDimensionsRef = useRef({ width: 0, height: 0 })
   useEffect(() => {
     if (nodePositions.length === 0 || !hasMeasuredDimensions.current) return
     const memberCountChanged = Math.abs(nodePositions.length - prevMemberCount.current) > 5
-    if (!hasAutoFit.current || memberCountChanged) {
+    const prev = prevDimensionsRef.current
+    const dimensionsChanged =
+      Math.abs(dimensions.width - prev.width) > 50 ||
+      Math.abs(dimensions.height - prev.height) > 50
+    if (!hasAutoFit.current || memberCountChanged || dimensionsChanged) {
       hasAutoFit.current = true
       prevMemberCount.current = nodePositions.length
-      fitToView()
+      prevDimensionsRef.current = { width: dimensions.width, height: dimensions.height }
+      if (dimensions.width > 0 && dimensions.height > 0) fitToView()
     }
   }, [nodePositions, dimensions, fitToView])
 
@@ -872,7 +890,9 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             const isCollapsed = collapsedIds.has(member.id)
             // ✔ O(1) hasChildren via precomputed parentSet
             const hasChildren = graphIndex.parentSet.has(member.id)
-            const relationshipLabel = member.relationship
+            // Don't show 'SELF' as a label on nodes — only the current user's node
+            // should display 'You', which is handled by isSelf in member-card/list.
+            const relationshipLabel = member.relationship && member.relationship !== 'self'
               ? member.relationship.toUpperCase()
               : null
 
@@ -1084,7 +1104,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                       {isUnclaimed && (
                         <p className="text-xs text-orange-400">Not joined yet — tap to invite</p>
                       )}
-                      {!isUnclaimed && member.relationship && (
+                      {!isUnclaimed && member.relationship && member.relationship !== 'self' && (
                         <p className="text-xs text-amber-600 dark:text-amber-400/80">{member.relationship}</p>
                       )}
                       {member.occupation && (
