@@ -21,8 +21,8 @@ interface CompactMember {
 // ─── Gemini types ─────────────────────────────────────────────────────────────
 interface GeminiPart {
   text?: string
-  function_call?: { name: string; args: Record<string, unknown> }
-  function_response?: { name: string; response: Record<string, unknown> }
+  functionCall?: { name: string; args: Record<string, unknown> }
+  functionResponse?: { name: string; response: Record<string, unknown> }
 }
 interface GeminiContent { role: string; parts: GeminiPart[] }
 
@@ -149,6 +149,30 @@ const TOOL_DECLARATIONS = [
     },
   },
 ]
+
+// ─── Gemini fetch with retry (handles 503 / 429 transient errors) ─────────────
+// Model fallback chain: gemini-2.0-flash → gemini-flash-latest
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-flash-latest']
+
+async function geminiPost(apiKey: string, body: Record<string, unknown>): Promise<Response> {
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      // Success or non-retriable error — return immediately
+      if (res.ok || (res.status !== 503 && res.status !== 429)) return res
+      // 503/429 — wait then retry (or fall through to next model on last attempt)
+      if (attempt < 2) await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
+    }
+  }
+  // All models exhausted — return last response (caller handles non-ok)
+  const lastUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODELS[GEMINI_MODELS.length - 1]}:generateContent?key=${apiKey}`
+  return fetch(lastUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+}
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
@@ -281,10 +305,7 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
       generationConfig: { maxOutputTokens: 768, temperature: 0.6 },
     }
 
-    const pass1Res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pass1Body) }
-    )
+    const pass1Res = await geminiPost(apiKey, pass1Body)
 
     if (!pass1Res.ok) {
       const errText = await pass1Res.text()
@@ -297,9 +318,9 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
     const parts: GeminiPart[] = candidate?.content?.parts ?? []
 
     // ── Check for function call ────────────────────────────────────────────
-    const funcCallPart = parts.find(p => p.function_call)
-    if (funcCallPart?.function_call) {
-      const { name, args } = funcCallPart.function_call
+    const funcCallPart = parts.find(p => p.functionCall)
+    if (funcCallPart?.functionCall) {
+      const { name, args } = funcCallPart.functionCall
       console.log(`[AI_TOOL] tool=${name} args=${JSON.stringify(args).slice(0, 200)} user=${user?.id ?? 'demo'}`)
 
       // ── Resolve the tool ───────────────────────────────────────────────
@@ -315,10 +336,11 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
       }
 
       // ── Pass 2: Send function response back to Gemini ──────────────────
+      // Use the actual candidate.content from pass1 (preserves thoughtSignature if present)
       const pass2Contents: GeminiContent[] = [
         ...geminiContents,
-        { role: 'model', parts: [{ function_call: { name, args } }] },
-        { role: 'user', parts: [{ function_response: { name, response: { result: toolResult } } }] },
+        candidate.content as GeminiContent,
+        { role: 'user', parts: [{ functionResponse: { name, response: { result: toolResult } } }] },
       ]
 
       const pass2Body = {
@@ -327,10 +349,7 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
         generationConfig: { maxOutputTokens: 768, temperature: 0.6 },
       }
 
-      const pass2Res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pass2Body) }
-      )
+      const pass2Res = await geminiPost(apiKey, pass2Body)
 
       if (!pass2Res.ok) {
         const errText = await pass2Res.text()
@@ -339,7 +358,9 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
       }
 
       const pass2Data = await pass2Res.json()
-      const finalText = pass2Data?.candidates?.[0]?.content?.parts?.[0]?.text ?? null
+      // gemini-2.5-flash (thinking model) may include thought parts — find the text part explicitly
+      const pass2Parts: GeminiPart[] = pass2Data?.candidates?.[0]?.content?.parts ?? []
+      const finalText = pass2Parts.find(p => p.text)?.text ?? null
 
       // Build clean args for the UI badge (string values only)
       const displayArgs: Record<string, string> = {}
