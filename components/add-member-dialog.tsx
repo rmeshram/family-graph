@@ -26,7 +26,8 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight, AlertTriangle, UserCheck } from 'lucide-react'
+import { scoreCandidate, normalizeStoredName } from '@/lib/match-detection'
 import { getInverseRelationship } from '@/lib/relationship-engine'
 import { computeRelationLabel } from '@/lib/relation-engine'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -84,7 +85,11 @@ interface AddMemberDialogProps {
   currentUserId?: string
   /** Logged-in user's bound member id; hides 'Relationship to You' when editing self. */
   selfMemberId?: string | null
+  /** Called when user opts to navigate to an existing node instead of creating a duplicate. */
+  onFocusExisting?: (id: string) => void
 }
+
+type DuplicateWarning = { member: FamilyMember; score: number; tier: 'high' | 'medium' }
 
 export function AddMemberDialog({
   open,
@@ -96,6 +101,7 @@ export function AddMemberDialog({
   familyId,
   currentUserId,
   selfMemberId,
+  onFocusExisting,
 }: AddMemberDialogProps) {
   const supabase = createClient()
   const isMobile = useIsMobile()
@@ -164,6 +170,8 @@ export function AddMemberDialog({
   const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
+  const [bypassDuplicate, setBypassDuplicate] = useState(false)
 
   // ── Smart co-parent auto-fill ───────────────────────────────────────────
   const handleFatherChange = (value: string) => {
@@ -269,6 +277,33 @@ export function AddMemberDialog({
     e.preventDefault()
     if (!validate()) return
     if (isSubmitting) return
+
+    // Duplicate detection — only when adding a new member (not editing)
+    if (!editingMember && !bypassDuplicate) {
+      const storedName = normalizeStoredName(name)
+      let bestMatch: DuplicateWarning | null = null
+      for (const m of existingMembers) {
+        const result = scoreCandidate(
+          {
+            nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
+            addedByName: null, relationship: m.relationship ?? null,
+            birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
+          },
+          { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null, phone: phone || null, email: email || null }
+        )
+        if (result && result.confidenceScore >= 40) {
+          const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
+          if (!bestMatch || result.confidenceScore > bestMatch.score) {
+            bestMatch = { member: m, score: result.confidenceScore, tier }
+          }
+        }
+      }
+      if (bestMatch) {
+        setDuplicateWarning(bestMatch)
+        return
+      }
+    }
+
     setIsSubmitting(true)
     setUploadError(null)
 
@@ -301,7 +336,7 @@ export function AddMemberDialog({
     }
 
     const memberData: Omit<FamilyMember, 'id'> = {
-      name,
+      name: normalizeStoredName(name),
       birthYear: birthYear ? parseInt(birthYear) : undefined,
       deathYear: deathYear ? parseInt(deathYear) : undefined,
       birthPlace: birthPlace || undefined,
@@ -369,6 +404,8 @@ export function AddMemberDialog({
     setPhotoPreview(null)
     setUploadError(null)
     setIsSubmitting(false)
+    setDuplicateWarning(null)
+    setBypassDuplicate(false)
   }
 
   return (
@@ -935,25 +972,67 @@ export function AddMemberDialog({
         </ScrollArea>
 
         <DialogFooter className={cn(
-          "p-6 pt-4 border-t border-border/50",
-          isMobile && "flex-row flex-wrap gap-2 sticky bottom-0 bg-background safe-area-pb"
+          "p-6 pt-4 border-t border-border/50 flex-col gap-3",
+          isMobile && "sticky bottom-0 bg-background safe-area-pb"
         )}>
-          {uploadError && (
-            <p className="text-xs text-amber-500 mr-auto">{uploadError}</p>
+          {/* Duplicate warning */}
+          {duplicateWarning && (
+            <div className={cn(
+              'w-full rounded-lg border p-3 text-sm space-y-2.5',
+              duplicateWarning.tier === 'high'
+                ? 'border-destructive/50 bg-destructive/10'
+                : 'border-amber-500/40 bg-amber-500/10'
+            )}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className={cn('h-4 w-4 mt-0.5 shrink-0', duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-500')} />
+                <div className="flex-1 min-w-0">
+                  <p className={cn('font-medium text-xs', duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400')}>
+                    {duplicateWarning.tier === 'high' ? 'This person likely already exists' : 'Possible duplicate found'}
+                  </p>
+                  <p className="text-muted-foreground text-xs mt-0.5 truncate">
+                    {duplicateWarning.member.name}
+                    {duplicateWarning.member.birthYear ? ` · Born ${duplicateWarning.member.birthYear}` : ''}
+                    {duplicateWarning.member.relationship ? ` · ${duplicateWarning.member.relationship}` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button" variant="outline" size="sm" className="flex-1 h-7 text-xs"
+                  onClick={() => { onFocusExisting?.(duplicateWarning.member.id); onOpenChange(false) }}
+                >
+                  <UserCheck className="h-3 w-3 mr-1" />
+                  Open Existing
+                </Button>
+                {duplicateWarning.tier === 'medium' && (
+                  <Button
+                    type="button" variant="ghost" size="sm" className="flex-1 h-7 text-xs"
+                    onClick={() => { setDuplicateWarning(null); setBypassDuplicate(true) }}
+                  >
+                    Add Anyway
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="add-member-form"
-            disabled={isSubmitting || !name.trim()}
-            className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
-          >
-            {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{editingMember ? 'Saving...' : 'Adding...'}</>
-            ) : editingMember ? 'Save Changes' : 'Add Member'}
-          </Button>
+          <div className={cn('flex gap-2', isMobile && 'flex-row flex-wrap')}>
+            {uploadError && (
+              <p className="text-xs text-amber-500 mr-auto self-center">{uploadError}</p>
+            )}
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="add-member-form"
+              disabled={isSubmitting || !name.trim() || duplicateWarning?.tier === 'high'}
+              className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
+            >
+              {isSubmitting ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{editingMember ? 'Saving...' : 'Adding...'}</>
+              ) : editingMember ? 'Save Changes' : 'Add Member'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

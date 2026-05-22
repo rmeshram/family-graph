@@ -55,6 +55,15 @@ function normalizeName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
 }
 
+/**
+ * Trims and collapses multiple whitespace characters into single spaces.
+ * Preserves original casing — suitable for storage and display.
+ * e.g. "  Shubham   Meshram  " → "Shubham Meshram"
+ */
+export function normalizeStoredName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ')
+}
+
 const MIN_SCORE = 40
 
 export function scoreCandidate(

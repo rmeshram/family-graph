@@ -54,6 +54,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
+import { normalizeStoredName } from '@/lib/match-detection'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
 function FamilyTreeSkeleton() {
@@ -802,6 +803,9 @@ export default function FamilyGraphApp() {
 
     const birthYear = birthYearStr ? parseInt(birthYearStr) : undefined
 
+    // Normalize stored name — collapses extra whitespace, preserves casing
+    const storedName = normalizeStoredName(name)
+
     // Derive parentIds / spouseIds for the new node
     const parentIds: string[] = relType === 'child' ? [anchorId]
       : relType === 'sibling' ? [...(anchor.parentIds ?? [])]
@@ -815,7 +819,7 @@ export default function FamilyGraphApp() {
           : anchor.generation ?? 0
 
     const memberData: Omit<FamilyMember, 'id'> = {
-      name,
+      name: storedName,
       gender: (gender || undefined) as FamilyMember['gender'],
       birthYear,
       parentIds,
@@ -1448,6 +1452,7 @@ export default function FamilyGraphApp() {
         familyId={familyId ?? undefined}
         currentUserId={user?.id}
         selfMemberId={selfMember?.id ?? null}
+        onFocusExisting={(id) => { setSelectedMemberId(id); setIsAddDialogOpen(false); setEditingMember(null) }}
       />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
       {/* Inline quick-add relative dialog */}
@@ -1459,6 +1464,8 @@ export default function FamilyGraphApp() {
             onOpenChange={(open) => { if (!open) setQuickAdd(null) }}
             relType={quickAdd.relType}
             anchorMember={anchor}
+            existingMembers={members}
+            onFocusExisting={(id) => { setSelectedMemberId(id); setQuickAdd(null) }}
             onAdd={handleQuickAddSubmit}
           />
         ) : null
