@@ -664,72 +664,72 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                       return (order[a.role as keyof typeof order] ?? 3) - (order[b.role as keyof typeof order] ?? 3)
                     })
                     .map(fp => (
-                    <div
-                      key={fp.id}
-                      className={`flex items-center gap-3 px-4 py-3 ${fp.role === 'admin' ? 'bg-amber-500/3' : ''}`}
-                    >
-                      <div className="relative shrink-0">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className={`text-xs font-bold ${fp.role === 'admin' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'}`}>
-                            {fp.display_name?.[0]?.toUpperCase() ?? '?'}
-                          </AvatarFallback>
-                        </Avatar>
-                        {fp.role === 'admin' && (
-                          <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-1 ring-background">
-                            <Crown className="h-2 w-2 text-white" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
-                          {fp.id === user?.id && (
-                            <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0 rounded-full border border-primary/20">you</span>
+                      <div
+                        key={fp.id}
+                        className={`flex items-center gap-3 px-4 py-3 ${fp.role === 'admin' ? 'bg-amber-500/3' : ''}`}
+                      >
+                        <div className="relative shrink-0">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className={`text-xs font-bold ${fp.role === 'admin' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'}`}>
+                              {fp.display_name?.[0]?.toUpperCase() ?? '?'}
+                            </AvatarFallback>
+                          </Avatar>
+                          {fp.role === 'admin' && (
+                            <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-1 ring-background">
+                              <Crown className="h-2 w-2 text-white" />
+                            </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          {roleIcon(fp.role)}
-                          <p className={`text-[10px] capitalize font-medium ${fp.role === 'admin' ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                            {fp.role}
-                            {fp.role === 'admin' && ' · Family Admin'}
-                          </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
+                            {fp.id === user?.id && (
+                              <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0 rounded-full border border-primary/20">you</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {roleIcon(fp.role)}
+                            <p className={`text-[10px] capitalize font-medium ${fp.role === 'admin' ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                              {fp.role}
+                              {fp.role === 'admin' && ' · Family Admin'}
+                            </p>
+                          </div>
                         </div>
+                        {/* Admin: show role selector + remove button for others */}
+                        {isAdmin && fp.id !== user?.id && (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={fp.role}
+                              onValueChange={v => updateRole(fp.id, v)}
+                            >
+                              <SelectTrigger className="h-7 w-28 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="viewer">Viewer</SelectItem>
+                                <SelectItem value="contributor">Contributor</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeFromFamily(fp.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                        {/* Non-admin or viewing own row: just show role badge */}
+                        {(!isAdmin || fp.id === user?.id) && (
+                          <Badge variant="outline" className={`text-[10px] shrink-0 ${roleBadgeClass(fp.role)}`}>
+                            {roleIcon(fp.role)}
+                            <span className="ml-1">{fp.role}</span>
+                          </Badge>
+                        )}
                       </div>
-                      {/* Admin: show role selector + remove button for others */}
-                      {isAdmin && fp.id !== user?.id && (
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={fp.role}
-                            onValueChange={v => updateRole(fp.id, v)}
-                          >
-                            <SelectTrigger className="h-7 w-28 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="viewer">Viewer</SelectItem>
-                              <SelectItem value="contributor">Contributor</SelectItem>
-                              <SelectItem value="admin">Admin</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => removeFromFamily(fp.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                      {/* Non-admin or viewing own row: just show role badge */}
-                      {(!isAdmin || fp.id === user?.id) && (
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${roleBadgeClass(fp.role)}`}>
-                          {roleIcon(fp.role)}
-                          <span className="ml-1">{fp.role}</span>
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
+                    ))}
                 </div>
               )}
             </CardContent>

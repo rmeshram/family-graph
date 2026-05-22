@@ -154,7 +154,7 @@ export function MemberDetail({
   const [showMilestoneForm, setShowMilestoneForm] = useLocalState(false)
   const [msTitle, setMsTitle] = useLocalState('')
   const [msYear, setMsYear] = useLocalState(String(new Date().getFullYear()))
-  const [msType, setMsType] = useLocalState<'birth'|'marriage'|'career'|'education'|'achievement'|'relocation'|'other'>('other')
+  const [msType, setMsType] = useLocalState<'birth' | 'marriage' | 'career' | 'education' | 'achievement' | 'relocation' | 'other'>('other')
   const [msDesc, setMsDesc] = useLocalState('')
   const [msSaving, setMsSaving] = useLocalState(false)
 
