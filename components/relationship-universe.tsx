@@ -390,6 +390,8 @@ interface Props {
   members: FamilyMember[]
   selfMemberId: string | null
   selectedMemberId: string | null
+  /** When false, nodes with showAsAnonymous=true are shown as "? Member" placeholders */
+  isAdmin?: boolean
   onSelectMember: (id: string) => void
   onOpenMemberDetail?: (memberId?: string) => void
   /** Path highlight injected from the dashboard's PathFinderPanel */
@@ -421,12 +423,15 @@ export function RelationshipUniverse({
   onAddMember,
   onAddRelative,
   loading = false,
+  isAdmin = false,
 }: Props) {
   const effectiveSelfId = selfMemberId ?? members[0]?.id ?? ''
 
   // ── Graph data ───────────────────────────────────────────────────────────
   const { people, edges } = useMemo(() => buildUniverse(members, effectiveSelfId), [members, effectiveSelfId])
   const peopleById = useMemo(() => new Map(people.map(p => [p.id, p])), [people])
+  // Full FamilyMember lookup — used for anonymous display + NodeActionRing
+  const membersById = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
   const maxDepth = useMemo(() => Math.max(0, ...people.map(p => p.depth)), [people])
 
   // Adjacency map — used for focus-mode opacity
@@ -1203,6 +1208,12 @@ export function RelationshipUniverse({
             const showCity = zoomLevel === 'full'
             const label = relationLabels.get(p.id) ?? p.relation
 
+            // Anonymous display: non-admins see "?" placeholder for members with showAsAnonymous=true
+            const fullMemberForAnon = membersById.get(p.id)
+            const isNodeAnonymous = !isAdmin && (fullMemberForAnon?.showAsAnonymous ?? false)
+            const displayInitials = isNodeAnonymous ? '?' : p.initials
+            const displayNodeName = isNodeAnonymous ? '? Member' : p.name
+
             return (
               <motion.div
                 key={p.id}
@@ -1341,13 +1352,16 @@ export function RelationshipUniverse({
                   <span
                     className="absolute inset-0 rounded-full grid place-items-center font-semibold text-white"
                     style={{
-                      background: `radial-gradient(circle at 30% 25%, oklch(0.92 0.07 ${p.hue} / ${isSelected ? 1 : 0.88}), oklch(0.30 0.15 ${p.hue} / 0.96) 62%, oklch(0.16 0.08 ${p.hue}) 100%)`,
+                      background: isNodeAnonymous
+                        ? 'oklch(0.28 0.02 250)'
+                        : `radial-gradient(circle at 30% 25%, oklch(0.92 0.07 ${p.hue} / ${isSelected ? 1 : 0.88}), oklch(0.30 0.15 ${p.hue} / 0.96) 62%, oklch(0.16 0.08 ${p.hue}) 100%)`,
                       fontSize: Math.max(9, r * 0.50),
                       border: `1px solid oklch(1 0 0 / ${isSelected ? 0.22 : 0.12})`,
-                      boxShadow: isSelected ? `inset 0 0 16px ${color}` : isHovered ? `inset 0 0 8px ${color}` : undefined,
+                      boxShadow: isNodeAnonymous ? undefined : isSelected ? `inset 0 0 16px ${color}` : isHovered ? `inset 0 0 8px ${color}` : undefined,
+                      opacity: isNodeAnonymous ? 0.6 : undefined,
                     }}
                   >
-                    {p.initials}
+                    {displayInitials}
                   </span>
                   {/* Semantic zoom labels — theme-aware via tokens */}
                   {showName && (
@@ -1356,8 +1370,8 @@ export function RelationshipUniverse({
                       style={{ top: r * 2 + 5 }}
                     >
                       <span className="block font-medium leading-tight drop-shadow-sm"
-                        style={{ fontSize: Math.max(9, Math.min(13, r * 0.44)), color: 'var(--universe-label-name)' }}>
-                        {p.name}
+                        style={{ fontSize: Math.max(9, Math.min(13, r * 0.44)), color: isNodeAnonymous ? 'var(--muted-foreground)' : 'var(--universe-label-name)', fontStyle: isNodeAnonymous ? 'italic' : undefined }}>
+                        {displayNodeName}
                       </span>
                       {showRelation && (label || showCity) && (
                         <span className="block leading-tight"

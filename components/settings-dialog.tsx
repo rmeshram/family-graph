@@ -21,12 +21,14 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2, Copy, Share2, AlertCircle, UserCheck,
+  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2, Copy, Share2, AlertCircle, UserCheck, EyeOff, UserX,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
+import { usePrivacySettings } from '@/hooks/use-members'
+import type { FamilyMember } from '@/lib/types'
 
 interface FamilyProfile {
   id: string
@@ -55,13 +57,22 @@ interface SettingsDialogProps {
   onExport?: () => void
   onImport?: () => void
   defaultTab?: string
+  /** The logged-in user's own family member node (for profile privacy controls) */
+  selfMember?: FamilyMember | null
+  /** Callback to update visibility on the user's own node */
+  onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
+  /** Callback to toggle anonymous display mode on the user's own node */
+  onSetAnonymous?: (memberId: string, anon: boolean) => void
 }
 
-export function SettingsDialog({ open, onOpenChange, onExport, onImport, defaultTab = 'general' }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onExport, onImport, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous }: SettingsDialogProps) {
   const isMobile = useIsMobile()
   const { user, profile, familyId, loading: authLoading } = useAuth()
   const supabase = createClient()
   const isAdmin = (profile as any)?.role === 'admin'
+
+  // Account-level privacy settings
+  const { settings: privacySettings, saving: savingPrivacySettings, saveSettings: savePrivacySettings } = usePrivacySettings(user?.id)
 
   // Persistent preferences
   const [showDeceased, setShowDeceased] = usePref('showDeceased', true)
@@ -653,72 +664,72 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                       return (order[a.role as keyof typeof order] ?? 3) - (order[b.role as keyof typeof order] ?? 3)
                     })
                     .map(fp => (
-                    <div
-                      key={fp.id}
-                      className={`flex items-center gap-3 px-4 py-3 ${fp.role === 'admin' ? 'bg-amber-500/3' : ''}`}
-                    >
-                      <div className="relative shrink-0">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className={`text-xs font-bold ${fp.role === 'admin' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'}`}>
-                            {fp.display_name?.[0]?.toUpperCase() ?? '?'}
-                          </AvatarFallback>
-                        </Avatar>
-                        {fp.role === 'admin' && (
-                          <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-1 ring-background">
-                            <Crown className="h-2 w-2 text-white" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
-                          {fp.id === user?.id && (
-                            <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0 rounded-full border border-primary/20">you</span>
+                      <div
+                        key={fp.id}
+                        className={`flex items-center gap-3 px-4 py-3 ${fp.role === 'admin' ? 'bg-amber-500/3' : ''}`}
+                      >
+                        <div className="relative shrink-0">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className={`text-xs font-bold ${fp.role === 'admin' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'}`}>
+                              {fp.display_name?.[0]?.toUpperCase() ?? '?'}
+                            </AvatarFallback>
+                          </Avatar>
+                          {fp.role === 'admin' && (
+                            <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 ring-1 ring-background">
+                              <Crown className="h-2 w-2 text-white" />
+                            </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          {roleIcon(fp.role)}
-                          <p className={`text-[10px] capitalize font-medium ${fp.role === 'admin' ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                            {fp.role}
-                            {fp.role === 'admin' && ' · Family Admin'}
-                          </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-medium truncate">{fp.display_name ?? 'Unknown'}</p>
+                            {fp.id === user?.id && (
+                              <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0 rounded-full border border-primary/20">you</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {roleIcon(fp.role)}
+                            <p className={`text-[10px] capitalize font-medium ${fp.role === 'admin' ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                              {fp.role}
+                              {fp.role === 'admin' && ' · Family Admin'}
+                            </p>
+                          </div>
                         </div>
+                        {/* Admin: show role selector + remove button for others */}
+                        {isAdmin && fp.id !== user?.id && (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={fp.role}
+                              onValueChange={v => updateRole(fp.id, v)}
+                            >
+                              <SelectTrigger className="h-7 w-28 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="viewer">Viewer</SelectItem>
+                                <SelectItem value="contributor">Contributor</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeFromFamily(fp.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                        {/* Non-admin or viewing own row: just show role badge */}
+                        {(!isAdmin || fp.id === user?.id) && (
+                          <Badge variant="outline" className={`text-[10px] shrink-0 ${roleBadgeClass(fp.role)}`}>
+                            {roleIcon(fp.role)}
+                            <span className="ml-1">{fp.role}</span>
+                          </Badge>
+                        )}
                       </div>
-                      {/* Admin: show role selector + remove button for others */}
-                      {isAdmin && fp.id !== user?.id && (
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={fp.role}
-                            onValueChange={v => updateRole(fp.id, v)}
-                          >
-                            <SelectTrigger className="h-7 w-28 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="viewer">Viewer</SelectItem>
-                              <SelectItem value="contributor">Contributor</SelectItem>
-                              <SelectItem value="admin">Admin</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => removeFromFamily(fp.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                      {/* Non-admin or viewing own row: just show role badge */}
-                      {(!isAdmin || fp.id === user?.id) && (
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${roleBadgeClass(fp.role)}`}>
-                          {roleIcon(fp.role)}
-                          <span className="ml-1">{fp.role}</span>
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
+                    ))}
                 </div>
               )}
             </CardContent>
@@ -727,6 +738,98 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
 
         {/* ── Privacy ───────────────────────────────────────────── */}
         <TabsContent value="privacy" className="space-y-4 mt-0">
+
+          {/* ── Your Profile Node ────────────────────────────────── */}
+          {selfMember && (
+            <Card className="bg-muted/30 border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-muted-foreground" />
+                  Your Profile Visibility
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Control how your member node appears in the family tree.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: 'public' as const, label: 'Public', icon: Globe, color: 'border-green-500/40 bg-green-500/10 text-green-400' },
+                    { key: 'family' as const, label: 'Family', icon: Users, color: 'border-primary/40 bg-primary/10 text-primary' },
+                    { key: 'private' as const, label: 'Private', icon: Lock, color: 'border-red-500/40 bg-red-500/10 text-red-400' },
+                  ]).map(({ key, label, icon: Icon, color }) => {
+                    const active = (selfMember.visibility ?? 'family') === key
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => onSetVisibility?.(selfMember.id, key)}
+                        className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition-all ${active ? color : 'border-border/40 text-muted-foreground hover:border-border/60'}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground rounded-lg bg-muted/40 p-2">
+                  {(selfMember.visibility ?? 'family') === 'public' && '🌍 Visible to anyone with the invite link'}
+                  {(selfMember.visibility ?? 'family') === 'family' && '👨‍👩‍👧 Visible to all family members'}
+                  {(selfMember.visibility ?? 'family') === 'private' && '🔒 Only visible to family admins'}
+                </p>
+                <Separator className="bg-border/40" />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm flex items-center gap-1.5">
+                      <UserX className="h-3.5 w-3.5 text-muted-foreground" />
+                      Show as anonymous
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Display your node as "? Member" — family can see you're in the tree but not your name</p>
+                  </div>
+                  <Switch
+                    checked={selfMember.showAsAnonymous ?? false}
+                    onCheckedChange={(v) => onSetAnonymous?.(selfMember.id, v)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Contact Info Privacy ──────────────────────────────── */}
+          <Card className="bg-muted/30 border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                Contact Info
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Hide my phone &amp; email</Label>
+                  <p className="text-xs text-muted-foreground">Only family admins can see your contact details. Other members see "••••••••"</p>
+                </div>
+                <Switch
+                  checked={privacySettings.hideContactInfo}
+                  disabled={savingPrivacySettings}
+                  onCheckedChange={(v) => savePrivacySettings({ hideContactInfo: v }).then(() => toast.success(v ? 'Contact info hidden' : 'Contact info visible to family'))}
+                />
+              </div>
+              <Separator className="bg-border/40" />
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Hide from family search</Label>
+                  <p className="text-xs text-muted-foreground">Your node won't appear in family member search results</p>
+                </div>
+                <Switch
+                  checked={privacySettings.hideFromSearch}
+                  disabled={savingPrivacySettings}
+                  onCheckedChange={(v) => savePrivacySettings({ hideFromSearch: v }).then(() => toast.success(v ? 'Hidden from search' : 'Visible in search'))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ── Family Visibility (admin only) ────────────────────── */}
           <Card className="bg-muted/30 border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -777,7 +880,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
               <p className="text-xs text-muted-foreground rounded-lg bg-muted/40 p-2.5">
                 {privacyMode === 'open' && '🌍 Open — Anyone with the invite link can view the family tree and request to join.'}
                 {privacyMode === 'protected' && '🔒 Protected — The tree is only visible to joined members. New joiners need admin approval.'}
-                {privacyMode === 'closed' && '🚫 Closed — Fully invite-only. The public bio-link (/family/code) shows no member data.'}
+                {privacyMode === 'closed' && '🚫 Closed — Fully invite-only. The public join page shows no member data.'}
               </p>
             </CardContent>
           </Card>
@@ -791,7 +894,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
-                Set per-member visibility (Public / Family / Private) by selecting a member in the tree and using the Privacy panel in the detail view.
+                Set per-member visibility (Public / Family / Private) or anonymous mode by selecting a member in the tree and using the Privacy panel in their detail view.
               </p>
             </CardContent>
           </Card>

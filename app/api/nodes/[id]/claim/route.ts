@@ -266,15 +266,17 @@ export async function POST(
     )
   }
 
-  // Success path
-  const requiresReview = score < 70
-  const newStatus = requiresReview ? 'claim_pending' : 'claimed'
+  // Success path — for MVP, auto-approve all identity-verified claims.
+  // The claim review queue (admin approval) is reserved for edge cases flagged
+  // by external signals. requiresReview=false means instant claim.
+  const requiresReview = false
+  const newStatus = 'claimed'
 
   const { data: upsertedReq } = await admin.from('claim_requests').upsert(
     {
       node_id: nodeId,
       claimant_user_id: user.id,
-      status: requiresReview ? 'pending' : 'verified',
+      status: 'verified',
       submitted_name: submittedName,
       submitted_birth_year: submittedBirthYear ?? null,
       confidence_score: score,
@@ -285,14 +287,14 @@ export async function POST(
     { onConflict: 'node_id,claimant_user_id' }
   ).select('id').single()
 
-  // Update node state
-  const memberUpdate: Record<string, unknown> = { claim_status: newStatus }
-  if (!requiresReview) {
-    memberUpdate.is_claimed = true
-    memberUpdate.claimed_by_user_id = user.id
-    memberUpdate.claimed_at = new Date().toISOString()
-    if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
+  // Update node state — always claimed (no pending state for MVP)
+  const memberUpdate: Record<string, unknown> = {
+    claim_status: newStatus,
+    is_claimed: true,
+    claimed_by_user_id: user.id,
+    claimed_at: new Date().toISOString(),
   }
+  if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
   await admin.from('family_members').update(memberUpdate as any).eq('id', nodeId)
 
   // Audit
@@ -300,26 +302,22 @@ export async function POST(
     node_id: nodeId,
     family_id: (node as any).family_id,
     actor_id: user.id,
-    action: requiresReview ? 'claim_initiated' : 'claim_completed',
-    metadata: { score, reasons, requiresReview },
+    action: 'claim_completed',
+    metadata: { score, reasons, requiresReview: false },
   })
 
-  // Link user → node
-  if (!requiresReview) {
-    await admin.from('user_node_links').upsert(
-      { user_id: user.id, node_id: nodeId, family_id: (node as any).family_id, is_primary: true },
-      { onConflict: 'user_id,node_id' }
-    )
-    await admin.from('profiles').update({ member_id: nodeId } as any).eq('id', user.id)
-  }
+  // Link user → node (always for MVP auto-approve flow)
+  await admin.from('user_node_links').upsert(
+    { user_id: user.id, node_id: nodeId, family_id: (node as any).family_id, is_primary: true },
+    { onConflict: 'user_id,node_id' }
+  )
+  await admin.from('profiles').update({ member_id: nodeId } as any).eq('id', user.id)
 
   return NextResponse.json({
     status: newStatus,
     confidenceScore: score,
-    requiresReview,
+    requiresReview: false,
     claimRequestId: (upsertedReq as any)?.id ?? null,
-    message: requiresReview
-      ? 'Your claim is pending manual review by the tree owner.'
-      : 'Profile successfully claimed!',
+    message: 'Profile successfully claimed!',
   })
 }

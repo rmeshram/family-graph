@@ -6,7 +6,7 @@ import { FamilyMember, Story, FamilyEvent } from '@/lib/types'
 import { sampleFamilyMembers } from '@/lib/sample-data'
 import { filterByDegree, computeProfileCompleteness, copyToClipboard } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
-import { useMembers, useStories } from '@/hooks/use-members'
+import { useMembers, useStories, usePrivacySettings } from '@/hooks/use-members'
 import { useInvites } from '@/hooks/use-invites'
 import { useLinkedFamilies } from '@/hooks/use-linked-families'
 import { LinkFamilyDialog } from '@/components/link-family-dialog'
@@ -14,6 +14,7 @@ import { FamilyLinkRequestsBanner } from '@/components/family-link-requests-bann
 import { FamilyTree } from '@/components/family-tree'
 import { MemberListSidebar } from '@/components/member-list-sidebar'
 import { MemberDetail } from '@/components/member-detail'
+import { MobileNodeMenu } from '@/components/mobile-node-menu'
 import { AddMemberDialog } from '@/components/add-member-dialog'
 import { QuickAddMemberDialog, type QuickRelType, QUICK_REL_LABELS } from '@/components/quick-add-member-dialog'
 import { SearchDialog } from '@/components/search-dialog'
@@ -48,7 +49,7 @@ import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
-  Link2, TreePine,
+  Link2, TreePine, Eye,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -459,7 +460,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 export default function FamilyGraphApp() {
   const isMobile = useIsMobile()
   const { user, familyId, profile, loading: authLoading } = useAuth()
-  const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility } = useMembers(familyId)
+  const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility, setAnonymous } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
   const isDemoMode = !authLoading && !user
@@ -479,6 +480,9 @@ export default function FamilyGraphApp() {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  // Mobile-only: tracks which node was tapped to show the compact context menu.
+  // The full MemberDetail drawer only opens after the user taps "View Full Profile".
+  const [mobileMenuMemberId, setMobileMenuMemberId] = useState<string | null>(null)
   const [detailMemberId, setDetailMemberId] = useState<string | null>(null)
   // Phase 2.5 — relationship exploration trail ("You → Brother → Brother's Wife → …")
   // Capped at 8 hops so the breadcrumb stays readable.
@@ -645,6 +649,12 @@ export default function FamilyGraphApp() {
     ?? members.find(m => m.claimedByUserId === user?.id)
     ?? (isDemoMode ? members.find(m => m.relationship === 'self') : null)
     ?? null
+
+  const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
+  const isViewer = !isDemoMode && (profile as any)?.role === 'viewer'
+
+  // Account-level privacy settings for the current user — used for contact info masking
+  const { settings: myPrivacySettings } = usePrivacySettings(isDemoMode ? undefined : user?.id)
   const filteredMembers = useMemo(() => {
     let base = maxDegree < 10 && selfMember
       ? filterByDegree(members, selfMember.id, maxDegree)
@@ -667,7 +677,24 @@ export default function FamilyGraphApp() {
       return
     }
     setSelectedMemberId(null)
+    setMobileMenuMemberId(null)
   }, [viewMode])
+
+  // Mobile: tap node → compact context menu (not full detail)
+  const handleSelectMemberMobile = useCallback((id: string) => {
+    setMobileMenuMemberId(prev => prev === id ? null : id)
+    setExplorationTrail((trail) => {
+      if (trail[trail.length - 1] === id) return trail
+      const existingIdx = trail.indexOf(id)
+      if (existingIdx !== -1) return trail.slice(0, existingIdx + 1)
+      return [...trail, id].slice(-8)
+    })
+  }, [])
+
+  // Mobile: "View Full Profile" from context menu → open full drawer
+  const handleOpenMobileDetail = useCallback(() => {
+    if (mobileMenuMemberId) setSelectedMemberId(mobileMenuMemberId)
+  }, [mobileMenuMemberId])
 
   const handleSelectMember = useCallback((id: string) => {
     setSelectedMemberId((prev) => (prev === id ? null : id))
@@ -924,6 +951,14 @@ export default function FamilyGraphApp() {
           </div>
         )}
 
+        {/* Viewer mode banner */}
+        {isViewer && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-[11px] text-blue-400">
+            <Eye className="h-3 w-3 shrink-0" />
+            <span>You have <strong>view-only access</strong> — contact the family admin to request contributor or admin access</span>
+          </div>
+        )}
+
         {/* ── Top Bar ──────────────────────────────────────────────── */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
           <div className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
@@ -990,10 +1025,12 @@ export default function FamilyGraphApp() {
 
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
-            <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
-              <UserPlus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Add</span>
-            </Button>
+            {!isViewer && (
+              <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
+                <UserPlus className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Add</span>
+              </Button>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setIsSettingsOpen(true)}>
@@ -1088,17 +1125,18 @@ export default function FamilyGraphApp() {
             {viewMode === 'graph' && (
               <FamilyTree
                 members={filteredMembers}
-                selectedMemberId={selectedMemberId}
-                onSelectMember={handleSelectMember}
+                selectedMemberId={isMobile ? (mobileMenuMemberId ?? selectedMemberId) : selectedMemberId}
+                onSelectMember={isMobile ? handleSelectMemberMobile : handleSelectMember}
                 onDoubleClickMember={(id) => {
                   setClaimTargetId(id)
                   setIsClaimDialogOpen(true)
                 }}
-                onAddRelative={!isDemoMode ? handleAddRelative : undefined}
+                onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+                isAdmin={isAdmin}
               />
             )}
             {viewMode === 'orgchart' && (
-              <OrgChartView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} onAddRelative={!isDemoMode ? handleAddRelative : undefined} />
+              <OrgChartView members={filteredMembers} onSelect={isMobile ? handleSelectMemberMobile : handleSelectMember} selectedId={isMobile ? (mobileMenuMemberId ?? selectedMemberId) : selectedMemberId} onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined} />
             )}
             {viewMode === 'list' && (
               <ListView members={filteredMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
@@ -1115,8 +1153,9 @@ export default function FamilyGraphApp() {
                 pathFinderOpen={pathFinderOpen}
                 detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
-                onAddRelative={!isDemoMode ? handleAddRelative : undefined}
+                onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
+                isAdmin={isAdmin}
               />
             )}
 
@@ -1280,52 +1319,110 @@ export default function FamilyGraphApp() {
                 onDelete={() => setIsDeleteDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
                 onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
-                onAddRelative={!isDemoMode ? handleAddRelative : undefined}
-                isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
+                onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+                isAdmin={isAdmin}
                 currentUserId={user?.id}
                 selfMemberId={selfMember?.id ?? null}
-                onSetVisibility={async (memberId, v) => {
+                familyId={isDemoMode ? null : familyId}
+                userId={user?.id ?? null}
+                memberPrivacySettings={selectedMember.claimedByUserId === user?.id ? myPrivacySettings : undefined}
+                onSetVisibility={!isViewer ? async (memberId, v) => {
                   try {
                     await setVisibility(memberId, v)
                     toast({ title: 'Visibility updated' })
                   } catch (e: unknown) {
                     toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
                   }
-                }}
+                } : undefined}
+                onSetAnonymous={!isViewer ? async (memberId, anon) => {
+                  try {
+                    await setAnonymous(memberId, anon)
+                    toast({ title: anon ? 'Node shown as anonymous' : 'Node name restored' })
+                  } catch (e: unknown) {
+                    toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+                  }
+                } : undefined}
               />
             </aside>
           )}
 
-          {/* Member Detail — mobile bottom sheet */}
+          {/* ── Mobile: compact context menu (appears on first node tap) ── */}
+          {isMobile && (
+            <MobileNodeMenu
+              member={members.find(m => m.id === mobileMenuMemberId) ?? null}
+              open={!!mobileMenuMemberId && !selectedMemberId && !showAIWidget && !showInviteWidget}
+              onClose={() => setMobileMenuMemberId(null)}
+              onViewProfile={handleOpenMobileDetail}
+              onEdit={() => {
+                const m = members.find(m => m.id === mobileMenuMemberId)
+                if (m) { setEditingMember(m); setMobileMenuMemberId(null) }
+              }}
+              onInvite={() => { setMobileMenuMemberId(null); setShowInviteWidget(true) }}
+              onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+              allMembers={members}
+              selfMemberId={selfMember?.id ?? null}
+              isViewer={isViewer}
+            />
+          )}
+
+          {/* Member Detail — mobile bottom sheet (full profile, opens from context menu) */}
           {isMobile && (
             <Drawer
               open={!!selectedMember && !showAIWidget && !showInviteWidget}
               onOpenChange={(open) => { if (!open) closeMemberDetail() }}
               direction="bottom"
             >
-              <DrawerContent className="h-[88vh] flex flex-col overflow-hidden">
+              <DrawerContent className="h-[88vh] flex flex-col">
+                {/* Sticky drawer close bar — always visible even when content scrolls */}
+                <div className="flex items-center justify-between px-4 py-2 border-b border-border/30 shrink-0">
+                  <p className="text-sm font-semibold text-foreground truncate pr-4">
+                    {selectedMember?.name ?? 'Profile'}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0"
+                    onClick={closeMemberDetail}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Done
+                  </Button>
+                </div>
                 {selectedMember && (
-                  <MemberDetail
-                    member={selectedMember}
-                    allMembers={members}
-                    onClose={closeMemberDetail}
-                    onEdit={() => setEditingMember(selectedMember)}
-                    onDelete={() => setIsDeleteDialogOpen(true)}
-                    onAddStory={() => setIsStoryDialogOpen(true)}
-                    onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
-                    onAddRelative={!isDemoMode ? handleAddRelative : undefined}
-                    isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
-                    currentUserId={user?.id}
-                    selfMemberId={selfMember?.id ?? null}
-                    onSetVisibility={async (memberId, v) => {
-                      try {
-                        await setVisibility(memberId, v)
-                        toast({ title: 'Visibility updated' })
-                      } catch (e: unknown) {
-                        toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
-                      }
-                    }}
-                  />
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <MemberDetail
+                      member={selectedMember}
+                      allMembers={members}
+                      onClose={closeMemberDetail}
+                      onEdit={() => setEditingMember(selectedMember)}
+                      onDelete={() => setIsDeleteDialogOpen(true)}
+                      onAddStory={() => setIsStoryDialogOpen(true)}
+                      onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
+                      onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+                      isAdmin={isAdmin}
+                      currentUserId={user?.id}
+                      selfMemberId={selfMember?.id ?? null}
+                      familyId={isDemoMode ? null : familyId}
+                      userId={user?.id ?? null}
+                      memberPrivacySettings={selectedMember?.claimedByUserId === user?.id ? myPrivacySettings : undefined}
+                      onSetVisibility={!isViewer ? async (memberId, v) => {
+                        try {
+                          await setVisibility(memberId, v)
+                          toast({ title: 'Visibility updated' })
+                        } catch (e: unknown) {
+                          toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+                        }
+                      } : undefined}
+                      onSetAnonymous={!isViewer ? async (memberId, anon) => {
+                        try {
+                          await setAnonymous(memberId, anon)
+                          toast({ title: anon ? 'Node shown as anonymous' : 'Node name restored' })
+                        } catch (e: unknown) {
+                          toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+                        }
+                      } : undefined}
+                    />
+                  </div>
                 )}
               </DrawerContent>
             </Drawer>
@@ -1368,7 +1465,20 @@ export default function FamilyGraphApp() {
       })()}
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
-      <SettingsDialog open={isSettingsOpen} onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }} onExport={handleExport} onImport={handleImport} defaultTab={settingsDefaultTab} />
+      <SettingsDialog
+        open={isSettingsOpen}
+        onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }}
+        onExport={handleExport}
+        onImport={handleImport}
+        defaultTab={settingsDefaultTab}
+        selfMember={selfMember}
+        onSetVisibility={async (memberId, v) => {
+          try { await setVisibility(memberId, v) } catch { /* ignore */ }
+        }}
+        onSetAnonymous={async (memberId, anon) => {
+          try { await setAnonymous(memberId, anon) } catch { /* ignore */ }
+        }}
+      />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}
         onOpenChange={setIsLinkFamilyOpen}

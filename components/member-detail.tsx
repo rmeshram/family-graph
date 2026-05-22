@@ -33,10 +33,17 @@ import {
   Shield,
   UserPlus,
   UserRoundPlus,
+  Phone,
+  Mail,
+  UserX,
+  EyeOff,
 } from 'lucide-react'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { cn, computeProfileCompleteness } from '@/lib/utils'
 import { findRelationshipPath, computeRelationLabel } from '@/lib/relation-engine'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
+import { useMilestones } from '@/hooks/use-milestones'
+import { useState as useLocalState } from 'react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,8 +65,19 @@ interface MemberDetailProps {
    */
   selfMemberId?: string | null
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
+  /** Called to toggle anonymous display mode on this member */
+  onSetAnonymous?: (memberId: string, anon: boolean) => void
+  /**
+   * Privacy settings of the user who has claimed this member node.
+   * When hideContactInfo=true and the viewer is not admin, phone/email are masked.
+   */
+  memberPrivacySettings?: { hideContactInfo?: boolean }
   /** Called when user clicks a quick-add relative button; parent opens QuickAddMemberDialog. */
   onAddRelative?: (anchorId: string, relType: QuickRelType) => void
+  /** Family context — required for milestone DB CRUD */
+  familyId?: string | null
+  /** Logged-in user id — required for milestone creation */
+  userId?: string | null
 }
 
 const milestoneIcons: Record<string, React.ReactNode> = {
@@ -93,6 +111,10 @@ export function MemberDetail({
   currentUserId,
   selfMemberId,
   onSetVisibility,
+  onSetAnonymous,
+  memberPrivacySettings,
+  familyId,
+  userId,
 }: MemberDetailProps) {
   const initials = member.name
     .split(' ')
@@ -119,7 +141,33 @@ export function MemberDetail({
       : new Date().getFullYear() - member.birthYear
     : null
 
-  const sortedMilestones = [...(member.milestones || [])].sort((a, b) => a.year - b.year)
+  // Milestone CRUD — live from DB when familyId is available; falls back to sample-data milestones
+  const { milestones: dbMilestones, addMilestone, deleteMilestone } = useMilestones(
+    familyId ?? null,
+    member.id,
+  )
+  const sortedMilestones = familyId
+    ? [...dbMilestones].sort((a, b) => a.year - b.year)
+    : [...(member.milestones || [])].sort((a, b) => a.year - b.year)
+
+  // Inline Add Milestone form state
+  const [showMilestoneForm, setShowMilestoneForm] = useLocalState(false)
+  const [msTitle, setMsTitle] = useLocalState('')
+  const [msYear, setMsYear] = useLocalState(String(new Date().getFullYear()))
+  const [msType, setMsType] = useLocalState<'birth' | 'marriage' | 'career' | 'education' | 'achievement' | 'relocation' | 'other'>('other')
+  const [msDesc, setMsDesc] = useLocalState('')
+  const [msSaving, setMsSaving] = useLocalState(false)
+
+  const handleAddMilestone = async () => {
+    if (!msTitle.trim() || !msYear || !userId || !familyId) return
+    setMsSaving(true)
+    try {
+      await addMilestone({ title: msTitle.trim(), year: parseInt(msYear), type: msType, description: msDesc.trim() || undefined }, userId)
+      setShowMilestoneForm(false)
+      setMsTitle(''); setMsYear(String(new Date().getFullYear())); setMsType('other'); setMsDesc('')
+    } catch (err) { console.error('[milestone] add failed:', err) }
+    finally { setMsSaving(false) }
+  }
 
   // DECISION 4: Self is resolved dynamically from the logged-in user's bound
   // member_id (passed via prop). Fall back to legacy `relationship === 'self'`
@@ -133,6 +181,9 @@ export function MemberDetail({
   const relationLabel = selfMember && member.id !== selfMember.id
     ? computeRelationLabel(selfMember.id, member.id, allMembers)
     : null
+
+  // Contact info is masked for non-admins when the member's claimer has enabled hideContactInfo
+  const contactInfoMasked = !isAdmin && (memberPrivacySettings?.hideContactInfo ?? false)
 
   return (
     <Card className="flex flex-col h-full min-h-0 overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
@@ -160,6 +211,12 @@ export function MemberDetail({
                     {member.id === selfMemberId ? 'You' : member.relationship}
                   </Badge>
                 ) : null}
+                {member.showAsAnonymous && (
+                  <Badge variant="outline" className="border-orange-500/40 text-orange-400 bg-orange-500/10 text-[10px]">
+                    <UserX className="h-2.5 w-2.5 mr-1" />
+                    Anonymous
+                  </Badge>
+                )}
                 {age && (
                   <Badge variant="outline" className="text-muted-foreground border-border/50">
                     {member.deathYear ? `Lived ${age} years` : `Age ${age}`}
@@ -216,6 +273,24 @@ export function MemberDetail({
                     </div>
                   </div>
                 )}
+                {member.currentPlace && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-muted/30 border border-border/40">
+                    <MapPin className="h-4 w-4 text-primary/70 shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Current City</p>
+                      <p className="text-xs font-medium text-foreground">{member.currentPlace}</p>
+                    </div>
+                  </div>
+                )}
+                {member.hometown && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-muted/30 border border-border/40">
+                    <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Native Place</p>
+                      <p className="text-xs font-medium text-foreground">{member.hometown}</p>
+                    </div>
+                  </div>
+                )}
                 {member.occupation && (
                   <div className="flex items-center gap-2 p-3 rounded-xl bg-muted/30 border border-border/40">
                     <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -239,6 +314,37 @@ export function MemberDetail({
                         @{member.instagramHandle}
                       </a>
                     </div>
+                  </div>
+                )}
+                {(member.phone || member.email) && (
+                  <div className="col-span-2 rounded-xl bg-muted/30 border border-border/40 p-3 space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium">Contact</p>
+                    {member.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        {contactInfoMasked ? (
+                          <span className="text-xs text-muted-foreground tracking-widest">••••••••</span>
+                        ) : (
+                          <a href={`tel:${member.phone}`} className="text-xs font-medium text-foreground hover:text-primary transition-colors">{member.phone}</a>
+                        )}
+                      </div>
+                    )}
+                    {member.email && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        {contactInfoMasked ? (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <EyeOff className="h-3 w-3" />
+                            <span className="tracking-widest">••••••••</span>
+                          </span>
+                        ) : (
+                          <a href={`mailto:${member.email}`} className="text-xs font-medium text-foreground hover:text-primary transition-colors">{member.email}</a>
+                        )}
+                      </div>
+                    )}
+                    {contactInfoMasked && (
+                      <p className="text-[10px] text-muted-foreground/70">This member has hidden their contact info</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -346,6 +452,34 @@ export function MemberDetail({
                     {(member.visibility ?? 'family') === 'family' && 'Visible to all family members'}
                     {(member.visibility ?? 'family') === 'private' && 'Only visible to admins'}
                   </p>
+                  {onSetAnonymous && (
+                    <>
+                      <div className="h-px bg-border/40 my-1" />
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <p className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                            <UserX className="h-3 w-3 text-muted-foreground" />
+                            Show as anonymous
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">Display as "? Member" — hides name from others</p>
+                        </div>
+                        <button
+                          onClick={() => onSetAnonymous(member.id, !(member.showAsAnonymous ?? false))}
+                          className={cn(
+                            'h-5 w-9 rounded-full border transition-colors',
+                            member.showAsAnonymous
+                              ? 'bg-orange-500 border-orange-600'
+                              : 'bg-muted border-border/50'
+                          )}
+                        >
+                          <span className={cn(
+                            'block h-4 w-4 rounded-full bg-white shadow transition-transform',
+                            member.showAsAnonymous ? 'translate-x-[18px]' : 'translate-x-0.5'
+                          )} />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -419,6 +553,14 @@ export function MemberDetail({
             </TabsContent>
 
             <TabsContent value="timeline" className="p-4 mt-0">
+              {FEATURE_FLAGS.enableMilestoneEditor && familyId && sortedMilestones.length > 0 && (
+                <div className="flex justify-end mb-3">
+                  <Button variant="outline" size="sm" onClick={() => setShowMilestoneForm(v => !v)}>
+                    <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                    Add
+                  </Button>
+                </div>
+              )}
               {sortedMilestones.length > 0 ? (
                 <div className="relative">
                   <div className="absolute left-3 top-0 bottom-0 w-px bg-border/50" />
@@ -452,10 +594,72 @@ export function MemberDetail({
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Clock className="h-12 w-12 text-muted-foreground/30 mb-4" />
                   <p className="text-sm text-muted-foreground">No milestones recorded yet</p>
-                  <Button variant="outline" size="sm" className="mt-4">
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Add Milestone
-                  </Button>
+                  {FEATURE_FLAGS.enableMilestoneEditor && familyId && (
+                    <Button variant="outline" size="sm" className="mt-4" onClick={() => setShowMilestoneForm(true)}>
+                      <PlusCircle className="h-4 w-4 mr-2" />
+                      Add Milestone
+                    </Button>
+                  )}
+                </div>
+              )}
+              {/* Inline Add Milestone form */}
+              {FEATURE_FLAGS.enableMilestoneEditor && showMilestoneForm && familyId && (
+                <div className="mt-4 rounded-xl border border-border/50 bg-muted/30 p-4 space-y-3">
+                  <p className="text-sm font-semibold">Add Milestone</p>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Title *</label>
+                    <input
+                      className="w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary/50"
+                      placeholder="e.g. Graduated college"
+                      value={msTitle}
+                      onChange={e => setMsTitle(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Year *</label>
+                      <input
+                        type="number"
+                        className="w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary/50"
+                        placeholder="2020"
+                        value={msYear}
+                        onChange={e => setMsYear(e.target.value)}
+                        min="1900"
+                        max={new Date().getFullYear() + 10}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Type</label>
+                      <select
+                        className="w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary/50"
+                        value={msType}
+                        onChange={e => setMsType(e.target.value as typeof msType)}
+                      >
+                        <option value="career">Career</option>
+                        <option value="education">Education</option>
+                        <option value="marriage">Marriage</option>
+                        <option value="achievement">Achievement</option>
+                        <option value="relocation">Relocation</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Description</label>
+                    <textarea
+                      className="w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary/50 resize-none"
+                      placeholder="Optional details..."
+                      rows={2}
+                      value={msDesc}
+                      onChange={e => setMsDesc(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" size="sm" onClick={() => setShowMilestoneForm(false)}>Cancel</Button>
+                    <Button size="sm" disabled={!msTitle.trim() || !msYear || msSaving} onClick={handleAddMilestone}>
+                      {msSaving ? 'Saving…' : 'Save'}
+                    </Button>
+                  </div>
                 </div>
               )}
             </TabsContent>

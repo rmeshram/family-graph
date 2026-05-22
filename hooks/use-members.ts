@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/lib/supabase/database.types'
-import type { FamilyMember, Story } from '@/lib/types'
+import type { FamilyMember, Story, PrivacySettings } from '@/lib/types'
 
 type DBMember = Database['public']['Tables']['family_members']['Row']
 
@@ -50,6 +50,8 @@ function dbToMember(row: DBMember): FamilyMember {
     claimRevokedReason: (row as any).claim_revoke_reason ?? undefined,
     isDeceased: (row as any).is_deceased ?? false,
     dateOfBirth: (row as any).date_of_birth ?? undefined,
+    // Migration 016: anonymous display mode
+    showAsAnonymous: (row as any).show_as_anonymous ?? false,
     // Migration 003: extended & affiliated family
     networkGroup: ((row as any).network_group as FamilyMember['networkGroup']) ?? 'core',
     affiliatedFamilyId: (row as any).affiliated_family_id ?? undefined,
@@ -385,7 +387,16 @@ export function useMembers(familyId: string | null) {
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, visibility } : m))
   }, [supabase])
 
-  return { members, loading, error, totalCount, hasMore, loadMore, addMember, updateMember, deleteMember, claimMember, setVisibility, refetch: fetchMembers }
+  const setAnonymous = useCallback(async (memberId: string, showAsAnonymous: boolean) => {
+    const { error } = await supabase
+      .from('family_members')
+      .update({ show_as_anonymous: showAsAnonymous } as any)
+      .eq('id', memberId)
+    if (error) throw new Error(error.message)
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, showAsAnonymous } : m))
+  }, [supabase])
+
+  return { members, loading, error, totalCount, hasMore, loadMore, addMember, updateMember, deleteMember, claimMember, setVisibility, setAnonymous, refetch: fetchMembers }
 }
 
 // ─── useStories hook ──────────────────────────────────────────────────────────
@@ -472,4 +483,53 @@ export function useStories(familyId: string | null) {
   }, [supabase])
 
   return { storiesByMember, addStory }
+}
+
+// ─── usePrivacySettings hook ──────────────────────────────────────────────────
+// Fetches and saves the current user's account-level privacy settings from
+// profiles.privacy_settings (jsonb). Only operates on the authenticated user's
+// own row — never reads another user's privacy settings.
+
+const DEFAULT_PRIVACY: PrivacySettings = {
+  hideContactInfo: false,
+  hideFromSearch: false,
+  defaultNodeVisibility: 'family',
+}
+
+export function usePrivacySettings(userId: string | undefined) {
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+  const [settings, setSettings] = useState<PrivacySettings>(DEFAULT_PRIVACY)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return
+    setLoading(true)
+    supabase
+      .from('profiles')
+      .select('privacy_settings')
+      .eq('id', userId)
+      .single()
+      .then(({ data }) => {
+        if ((data as any)?.privacy_settings) {
+          setSettings({ ...DEFAULT_PRIVACY, ...(data as any).privacy_settings })
+        }
+        setLoading(false)
+      })
+  }, [userId, supabase])
+
+  const saveSettings = useCallback(async (patch: Partial<PrivacySettings>) => {
+    if (!userId) return
+    const next = { ...settings, ...patch }
+    setSettings(next)
+    setSaving(true)
+    await supabase
+      .from('profiles')
+      .update({ privacy_settings: next } as any)
+      .eq('id', userId)
+    setSaving(false)
+  }, [userId, settings, supabase])
+
+  return { settings, loading, saving, saveSettings }
 }
