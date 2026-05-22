@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { FamilyMember } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, copyToClipboard } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 
@@ -102,11 +102,11 @@ export function InviteToClaimDialog({
 
   const copyLink = async () => {
     if (!inviteLink) return
-    try {
-      await navigator.clipboard.writeText(inviteLink)
+    const ok = await copyToClipboard(inviteLink)
+    if (ok) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } else {
       toast.error('Could not copy to clipboard')
     }
   }

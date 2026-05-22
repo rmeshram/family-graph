@@ -1,18 +1,50 @@
 'use client'
 
-import { useMemo } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { FamilyMember } from '@/lib/types'
+/**
+ * PathFinderPanel — Relationship Intelligence Card
+ *
+ * Converts the raw BFS graph path between two people into a rich semantic
+ * relationship card:
+ *  • Canonical relationship label + Indian cultural term (devanagari)
+ *  • Human-readable chain sentence ("Sanjay is your father's brother's son")
+ *  • Annotated graph traversal path with step labels per hop
+ *  • Metadata chips (family side, blood/marriage, generation, cousin degree)
+ *  • Confidence indicator
+ *
+ * Graph highlighting (dim non-path nodes, pulsing ring on path nodes) is
+ * driven by `pathSequence` → `pfPathNodes` set on the dashboard.
+ */
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+import { useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
+import { FamilyMember } from '@/lib/types'
+import { computeSemanticRelationship } from '@/lib/relation-engine'
+import { lookupIndianTerm } from '@/lib/cultural-terms'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getInitials(name: string) {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function confidenceTier(score: number): { label: string; color: string } {
+  if (score >= 0.95) return { label: 'Direct', color: '#22d3ee' }
+  if (score >= 0.88) return { label: 'High', color: '#4ade80' }
+  if (score >= 0.72) return { label: 'Medium', color: '#facc15' }
+  return { label: 'Approx', color: '#f97316' }
+}
+
+function genLabel(delta: number): string {
+  if (delta === 0) return 'Same generation'
+  return delta > 0 ? `${delta} gen older` : `${Math.abs(delta)} gen younger`
+}
+
+function edgeArrow(edgeType: string): string {
+  if (edgeType === 'UP') return '↑'
+  if (edgeType === 'DOWN') return '↓'
+  if (edgeType === 'SPOUSE') return '↔'
+  return '·'
 }
 
 function getMemberColor(m: FamilyMember): string {
@@ -41,6 +73,8 @@ export interface PathFinderPanelProps {
   onPfToSearchChange: (s: string) => void
   onSelectMember?: (id: string) => void
   onClose: () => void
+  /** If provided and pfFrom matches, shows "you" in chain sentence */
+  selfMemberId?: string | null
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -58,6 +92,7 @@ export function PathFinderPanel({
   onPfToSearchChange,
   onSelectMember,
   onClose,
+  selfMemberId,
 }: PathFinderPanelProps) {
   const sortedMembers = useMemo(
     () => [...members].sort((a, b) => a.name.localeCompare(b.name)),
@@ -66,6 +101,20 @@ export function PathFinderPanel({
 
   const fromMember = members.find((m) => m.id === pfFrom)
   const toMember = members.find((m) => m.id === pfTo)
+
+  // ── Semantic intelligence ──────────────────────────────────────────────
+  const semanticResult = useMemo(() => {
+    if (!pfFrom || !pfTo || pfFrom === pfTo || pathSequence.length < 2) return null
+    const fromLabel = pfFrom === selfMemberId ? 'your' : `${fromMember?.name?.split(' ')[0] ?? ''}'s`
+    return computeSemanticRelationship(pfFrom, pfTo, members, fromLabel, selfMemberId)
+  }, [pfFrom, pfTo, members, pathSequence.length, selfMemberId, fromMember])
+
+  const indianTerm = useMemo(() => {
+    if (!semanticResult?.found || !toMember) return null
+    return lookupIndianTerm(semanticResult.canonicalLabel, toMember.gender)
+  }, [semanticResult, toMember])
+
+  const conf = semanticResult ? confidenceTier(semanticResult.confidence) : null
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--surface-header)' }}>
@@ -245,7 +294,7 @@ export function PathFinderPanel({
             <div
               className="flex items-center gap-3 rounded-xl border px-3 py-2.5"
               style={{
-                background: 'color-mix(in oklab, var(--maternal) 12%, transparent)',
+                background: 'color-mix(in srgb, var(--maternal) 12%, transparent)',
                 borderColor: 'var(--maternal)',
               }}
             >
@@ -345,28 +394,118 @@ export function PathFinderPanel({
               className="rounded-2xl border overflow-hidden"
               style={{ borderColor: 'var(--primary)', background: 'var(--glow-primary)' }}
             >
-              {/* Result header */}
+              {/* ── Relationship Intelligence header ── */}
               <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                <p
-                  className="text-[10px] uppercase tracking-widest font-semibold"
-                  style={{ color: 'var(--muted-foreground)' }}
-                >
+                <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--muted-foreground)' }}>
                   Connection Found
                 </p>
-                <div className="flex items-end gap-2 mt-1">
-                  <span className="text-[28px] font-black leading-none" style={{ color: 'var(--foreground)' }}>
-                    {pathSequence.length - 1}
-                  </span>
-                  <span className="text-[13px] font-medium mb-0.5" style={{ color: 'var(--muted-foreground)' }}>
-                    {pathSequence.length - 1 === 1 ? 'degree' : 'degrees'} of separation
-                  </span>
-                </div>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--muted-foreground)' }}>
-                  {pathSequence.length === 2 && '✦ Direct family connection — one step apart'}
-                  {pathSequence.length === 3 && '✦ Connected through 1 shared relative'}
-                  {pathSequence.length >= 4 &&
-                    `✦ ${pathSequence.length - 2} intermediate ${pathSequence.length - 2 === 1 ? 'person' : 'people'} in between`}
-                </p>
+
+                {/* Canonical relationship label */}
+                {semanticResult?.found ? (
+                  <>
+                    <div className="mt-1.5 mb-0.5">
+                      <span className="text-[22px] font-black leading-tight" style={{ color: 'var(--foreground)' }}>
+                        {semanticResult.canonicalLabel}
+                      </span>
+                      {indianTerm && (
+                        <span className="ml-2.5 text-[13px] font-semibold" style={{ color: 'var(--primary)' }}>
+                          {indianTerm.term}
+                          {indianTerm.devanagari && (
+                            <span className="ml-1.5 font-normal" style={{ color: 'var(--muted-foreground)', fontFamily: 'serif' }}>
+                              {indianTerm.devanagari}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Chain sentence */}
+                    <p className="text-[11px] italic mt-0.5 leading-snug" style={{ color: 'var(--muted-foreground)' }}>
+                      &ldquo;{semanticResult.chainSentence}&rdquo;
+                    </p>
+
+                    {/* Semantic chain breadcrumb */}
+                    {semanticResult.semanticChain.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap mt-2">
+                        {semanticResult.semanticChain.map((step, i) => (
+                          <span key={i} className="flex items-center gap-1">
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                              style={{ background: 'var(--glow-primary)', color: 'var(--primary)', border: '1px solid color-mix(in srgb, var(--primary) 40%, transparent)' }}
+                            >
+                              {step}
+                            </span>
+                            {i < semanticResult.semanticChain.length - 1 && (
+                              <span style={{ color: 'var(--muted-foreground)', fontSize: 9 }}>›</span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Metadata chips */}
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {semanticResult.metadata.side && (
+                        <span
+                          className="text-[9px] font-semibold px-2 py-0.5 rounded-full border"
+                          style={{
+                            color: semanticResult.metadata.side === 'paternal' ? 'var(--paternal)' : semanticResult.metadata.side === 'maternal' ? 'var(--maternal)' : 'var(--marriage)',
+                            borderColor: 'currentColor',
+                            background: 'color-mix(in srgb, currentColor 12%, transparent)',
+                          }}
+                        >
+                          {semanticResult.metadata.side === 'paternal' ? '⊕ Paternal' : semanticResult.metadata.side === 'maternal' ? '⊗ Maternal' : '⊙ Spouse'}
+                        </span>
+                      )}
+                      <span
+                        className="text-[9px] font-semibold px-2 py-0.5 rounded-full border"
+                        style={{ color: semanticResult.metadata.type === 'blood' ? '#4ade80' : '#f97316', borderColor: 'currentColor', background: 'color-mix(in srgb, currentColor 12%, transparent)' }}
+                      >
+                        {semanticResult.metadata.type === 'blood' ? '❤ Blood' : '💍 Marriage'}
+                      </span>
+                      <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: 'var(--muted-foreground)', borderColor: 'var(--border)', background: 'var(--muted)' }}>
+                        {genLabel(semanticResult.metadata.generationDelta)}
+                      </span>
+                      {semanticResult.metadata.cousinDegree !== null && (
+                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: '#a78bfa', borderColor: 'currentColor', background: 'color-mix(in srgb, currentColor 12%, transparent)' }}>
+                          {semanticResult.metadata.cousinDegree === 1 ? '1st' : semanticResult.metadata.cousinDegree === 2 ? '2nd' : `${semanticResult.metadata.cousinDegree}th`} Cousin
+                          {semanticResult.metadata.removedLevel ? ` ·${semanticResult.metadata.removedLevel}× removed` : ''}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Confidence bar */}
+                    {conf && (
+                      <div className="mt-2.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] uppercase tracking-widest font-semibold" style={{ color: 'var(--muted-foreground)' }}>Confidence</span>
+                          <span className="text-[9px] font-bold" style={{ color: conf.color }}>{conf.label} · {Math.round(semanticResult.confidence * 100)}%</span>
+                        </div>
+                        <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--muted)' }}>
+                          <div
+                            className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${semanticResult.confidence * 100}%`, background: conf.color }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* Fallback: degrees of separation (shown while semantic result loads) */
+                  <>
+                    <div className="flex items-end gap-2 mt-1">
+                      <span className="text-[28px] font-black leading-none" style={{ color: 'var(--foreground)' }}>{pathSequence.length - 1}</span>
+                      <span className="text-[13px] font-medium mb-0.5" style={{ color: 'var(--muted-foreground)' }}>
+                        {pathSequence.length - 1 === 1 ? 'degree' : 'degrees'} of separation
+                      </span>
+                    </div>
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--muted-foreground)' }}>
+                      {pathSequence.length === 2 && '✦ Direct family connection'}
+                      {pathSequence.length === 3 && '✦ Connected through 1 shared relative'}
+                      {pathSequence.length >= 4 && `✦ ${pathSequence.length - 2} people in between`}
+                    </p>
+                  </>
+                )}
               </div>
 
               {/* Path chain — each node tappable */}
@@ -385,7 +524,7 @@ export function PathFinderPanel({
                         style={{
                           background:
                             isStart || isEnd
-                              ? `color-mix(in oklab, ${col} 18%, var(--surface-card))`
+                              ? `color-mix(in srgb, ${col} 18%, var(--surface-card))`
                               : 'var(--muted)',
                           border: `1px solid ${isStart || isEnd ? col : 'var(--border)'}`,
                         }}
@@ -433,11 +572,25 @@ export function PathFinderPanel({
                           tap →
                         </span>
                       </button>
-                      {idx < pathSequence.length - 1 && (
-                        <div className="flex items-center pl-[22px] py-0.5">
-                          <div className="w-px h-3" style={{ background: 'var(--border)', marginLeft: 2 }} />
-                        </div>
-                      )}
+                      {idx < pathSequence.length - 1 && (() => {
+                        const nextId = pathSequence[idx + 1]
+                        const nextNode = semanticResult?.pathWithLabels.find(n => n.member.id === nextId)
+                        return (
+                          <div className="flex items-center pl-[22px] py-0.5 gap-1.5">
+                            <div className="w-px h-4 shrink-0" style={{ background: 'var(--border)', marginLeft: 2 }} />
+                            {nextNode && nextNode.edgeType !== 'START' && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-[11px] font-bold w-3" style={{ color: 'var(--primary)' }}>
+                                  {edgeArrow(nextNode.edgeType)}
+                                </span>
+                                <span className="text-[10px] font-medium" style={{ color: 'var(--muted-foreground)' }}>
+                                  {nextNode.stepLabel}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}

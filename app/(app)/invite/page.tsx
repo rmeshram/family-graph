@@ -29,7 +29,7 @@ import {
   Trash2,
   RefreshCw,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth"
 import { useInvites } from "@/hooks/use-invites"
 import { useToast } from "@/hooks/use-toast"
@@ -69,7 +69,7 @@ interface InviteLink {
 }
 
 export default function InvitePage() {
-  const { familyId, user } = useAuth()
+  const { familyId, user, profile } = useAuth()
   const { createInviteLink, getActiveLinks } = useInvites(familyId)
   const { toast } = useToast()
   const [selectedRole, setSelectedRole] = useState<string>('contributor')
@@ -80,6 +80,15 @@ export default function InvitePage() {
   const [activeUrl, setActiveUrl] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const isSharing = useRef(false)
+  const currentRole = (profile?.role ?? 'viewer') as 'admin' | 'contributor' | 'viewer'
+  const canCreateInvites = currentRole !== 'viewer'
+  const visibleRoles = currentRole === 'admin' ? ROLES : ROLES.filter(role => role.value !== 'admin')
+
+  useEffect(() => {
+    if (currentRole !== 'admin' && selectedRole === 'admin') {
+      setSelectedRole('contributor')
+    }
+  }, [currentRole, selectedRole])
 
   // Load existing invite links for signed-in users
   useEffect(() => {
@@ -128,7 +137,7 @@ export default function InvitePage() {
         expiresIn: expiresIn === 'never' ? 'Never' : `${expiresIn} day${expiresIn !== '1' ? 's' : ''}`,
       }
       setLinks(prev => [newLink, ...prev])
-      navigator.clipboard.writeText(url)
+      copyToClipboard(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Invite link created!', description: 'Link copied to clipboard.' })
@@ -140,7 +149,7 @@ export default function InvitePage() {
   }
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteUrl)
+    copyToClipboard(inviteUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
     toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' })
@@ -195,13 +204,19 @@ export default function InvitePage() {
           {/* Role Selector */}
           <div>
             <h3 className="text-sm font-semibold mb-3">Select Permission Level</h3>
+            {!canCreateInvites && (
+              <p className="text-xs text-muted-foreground mb-3">
+                Your current role is viewer. Ask a contributor or admin to send invite links.
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {ROLES.map(role => (
+              {visibleRoles.map(role => (
                 <button
                   key={role.value}
-                  onClick={() => setSelectedRole(role.value)}
+                  onClick={() => canCreateInvites && setSelectedRole(role.value)}
+                  disabled={!canCreateInvites}
                   className={cn(
-                    "flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all",
+                    "flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50",
                     selectedRole === role.value
                       ? `${role.color} border-current`
                       : "border-border/50 bg-card hover:border-primary/30"
@@ -320,7 +335,7 @@ export default function InvitePage() {
                   <button
                     className="flex items-center gap-2 rounded-xl border border-border/50 bg-card p-3 text-sm hover:border-primary/30 transition-colors"
                     onClick={() => {
-                      navigator.clipboard.writeText(decodeURIComponent(whatsappMessage)).catch(() => { })
+                      copyToClipboard(decodeURIComponent(whatsappMessage))
                       toast({ title: 'Message copied!', description: 'Paste it anywhere.' })
                     }}
                   >
@@ -471,7 +486,7 @@ export default function InvitePage() {
                   </div>
                 )
               })}
-              <Button variant="outline" size="sm" className="w-full gap-1.5 mt-1" onClick={handleGenerateLink} disabled={isGenerating}>
+              <Button variant="outline" size="sm" className="w-full gap-1.5 mt-1" onClick={handleGenerateLink} disabled={!canCreateInvites || isGenerating}>
                 <RefreshCw className="h-3.5 w-3.5" />
                 {isGenerating ? 'Generating...' : 'Generate New Link'}
               </Button>

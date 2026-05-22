@@ -88,3 +88,35 @@ export function computeProfileCompleteness(member: FamilyMember): { score: numbe
   const missing = checks.filter(c => !c.has).map(c => c.label)
   return { score: Math.round((done.length / checks.length) * 100), missing }
 }
+
+/**
+ * Robust clipboard copy — uses the Clipboard API when available (requires
+ * a secure context), and falls back to the legacy execCommand path for
+ * environments that don't support it (e.g. non-HTTPS mobile browsers).
+ * Returns true if the text was successfully copied.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  // Modern path — requires HTTPS / localhost
+  if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // fall through to legacy path
+    }
+  }
+  // Legacy fallback — works in HTTP contexts and older iOS Safari
+  try {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none'
+    document.body.appendChild(el)
+    el.focus()
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
+  }
+}

@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { FamilyMember, Story, FamilyEvent } from '@/lib/types'
 import { sampleFamilyMembers } from '@/lib/sample-data'
-import { filterByDegree, computeProfileCompleteness } from '@/lib/utils'
+import { filterByDegree, computeProfileCompleteness, copyToClipboard } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers, useStories } from '@/hooks/use-members'
 import { useInvites } from '@/hooks/use-invites'
@@ -23,6 +23,9 @@ import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-fe
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
+import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
+import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
+import { computePostAddSuggestions, type RelationshipSuggestion, type RelationshipAction } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -364,7 +367,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
   const displayLink = link ?? (familyId ? '' : 'https://familygraph.app/join/DEMO')
   const copy = () => {
     if (!displayLink) return
-    navigator.clipboard.writeText(displayLink).catch(() => { })
+    copyToClipboard(displayLink)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -446,6 +449,7 @@ export default function FamilyGraphApp() {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [detailMemberId, setDetailMemberId] = useState<string | null>(null)
   // Phase 2.5 — relationship exploration trail ("You → Brother → Brother's Wife → …")
   // Capped at 8 hops so the breadcrumb stays readable.
   const [explorationTrail, setExplorationTrail] = useState<string[]>([])
@@ -455,9 +459,22 @@ export default function FamilyGraphApp() {
   const [isAIInsightsOpen, setIsAIInsightsOpen] = useState(false)
   const [isStoryDialogOpen, setIsStoryDialogOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<string>('general')
+
+  // Listen for fg:open-settings custom event fired from notification bell
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ tab?: string }>) => {
+      setSettingsDefaultTab(e.detail?.tab ?? 'general')
+      setIsSettingsOpen(true)
+    }
+    window.addEventListener('fg:open-settings', handler as EventListener)
+    return () => window.removeEventListener('fg:open-settings', handler as EventListener)
+  }, [])
   const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
   const [claimTargetId, setClaimTargetId] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  // ── Relationship intelligence suggestions ─────────────────────────────────
+  const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
   const [viewMode, setViewMode] = useState<TreeViewMode>('universe')
@@ -483,9 +500,11 @@ export default function FamilyGraphApp() {
       if (!map.has(b)) map.set(b, new Set())
       map.get(a)!.add(b); map.get(b)!.add(a)
     }
-    // Use the raw dbMembers for adjacency so filtering doesn't break paths
+    // Use enriched members: derives edges from relationship labels for isolated nodes
     const base = isDemoMode ? sampleFamilyMembers : dbMembers
-    base.forEach(m => {
+    const selfMemberForEnrich = base.find(m => m.relationship === 'self')
+    const enriched = selfMemberForEnrich ? enrichMembersWithDerivedEdges(base, selfMemberForEnrich.id) : base
+    enriched.forEach(m => {
       m.parentIds.forEach(pid => add(m.id, pid))
       m.spouseIds.forEach(sid => add(m.id, sid))
     })
@@ -596,14 +615,25 @@ export default function FamilyGraphApp() {
     let base = maxDegree < 10 && selfMember
       ? filterByDegree(members, selfMember.id, maxDegree)
       : members
-    if (!showExtended) {
+    // In demo mode always show all sample members regardless of screen size —
+    // the sample data has no 'core' networkGroup entries so skipping the filter
+    // prevents an empty canvas on mobile.
+    if (!isDemoMode && !showExtended) {
       base = base.filter(m => !m.networkGroup || m.networkGroup === 'core')
     }
     return base
-  }, [members, maxDegree, selfMember, showExtended])
+  }, [isDemoMode, members, maxDegree, selfMember, showExtended])
 
   const { toast } = useToast()
-  const selectedMember = members.find((m) => m.id === selectedMemberId)
+  const selectedMember = members.find((m) => m.id === (viewMode === 'universe' ? detailMemberId : selectedMemberId))
+
+  const closeMemberDetail = useCallback(() => {
+    if (viewMode === 'universe') {
+      setDetailMemberId(null)
+      return
+    }
+    setSelectedMemberId(null)
+  }, [viewMode])
 
   const handleSelectMember = useCallback((id: string) => {
     setSelectedMemberId((prev) => (prev === id ? null : id))
@@ -616,8 +646,27 @@ export default function FamilyGraphApp() {
     })
   }, [])
 
+  const handleSelectUniverseMember = useCallback((id: string) => {
+    setDetailMemberId(null)
+    setSelectedMemberId((prev) => (prev === id ? null : id))
+    setExplorationTrail((trail) => {
+      if (trail[trail.length - 1] === id) return trail
+      const existingIdx = trail.indexOf(id)
+      if (existingIdx !== -1) return trail.slice(0, existingIdx + 1)
+      return [...trail, id].slice(-8)
+    })
+  }, [])
+
+  const handleOpenSelectedMemberDetail = useCallback((id?: string) => {
+    const nextId = id ?? selectedMemberId
+    if (!nextId) return
+    setSelectedMemberId(nextId)
+    setDetailMemberId(nextId)
+  }, [selectedMemberId])
+
   const handleTrailJump = useCallback((id: string) => {
     setSelectedMemberId(id)
+    setDetailMemberId(null)
     setExplorationTrail((trail) => {
       const idx = trail.indexOf(id)
       return idx !== -1 ? trail.slice(0, idx + 1) : [id]
@@ -627,6 +676,7 @@ export default function FamilyGraphApp() {
   const handleTrailClear = useCallback(() => {
     setExplorationTrail([])
     setSelectedMemberId(null)
+    setDetailMemberId(null)
   }, [])
 
   const handleAddMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>) => {
@@ -649,8 +699,14 @@ export default function FamilyGraphApp() {
       return
     }
     try {
-      await dbAddMember(memberData, user.id)
+      const newMember = await dbAddMember(memberData, user.id)
       toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
+      // Run relationship intelligence: surface actionable suggestions to the user
+      if (newMember) {
+        const allWithNew = [...members, newMember]
+        const suggestions = computePostAddSuggestions(newMember.id, allWithNew)
+        if (suggestions.length > 0) setPendingSuggestions(suggestions)
+      }
     } catch (e: unknown) {
       toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
     }
@@ -753,16 +809,17 @@ export default function FamilyGraphApp() {
         {/* Demo mode banner */}
         {!user && (
           <div
-            className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
+            className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2"
             style={{ background: 'var(--demo-banner-bg)', borderColor: 'var(--demo-banner-border)' }}
           >
-            <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--demo-banner-text)' }}>
-              <span className="h-1.5 w-1.5 rounded-full animate-pulse shrink-0" style={{ background: 'var(--demo-banner-text)' }} />
-              <span>You're viewing <strong>demo data</strong> — this is what your family tree could look like</span>
+            <div className="flex min-w-0 items-center gap-2 text-[12px]" style={{ color: 'var(--demo-banner-text)' }}>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full animate-pulse" style={{ background: 'var(--demo-banner-text)' }} />
+              <span className="truncate hidden sm:inline">You're viewing <strong>demo data</strong> — this is what your family tree could look like</span>
+              <span className="truncate sm:hidden">Viewing <strong>demo data</strong></span>
             </div>
             <Link
               href="/auth/signup"
-              className="shrink-0 rounded-lg border px-3 py-1 text-[11px] font-semibold transition-colors hover:opacity-80"
+              className="shrink-0 rounded-lg border px-3 py-1 text-[11px] font-semibold transition-colors hover:opacity-80 active:scale-95"
               style={{ background: 'var(--demo-banner-bg)', borderColor: 'var(--demo-banner-border)', color: 'var(--demo-banner-link)' }}
             >
               Get started free →
@@ -968,10 +1025,34 @@ export default function FamilyGraphApp() {
                 members={filteredMembers}
                 selfMemberId={selfMember?.id ?? null}
                 selectedMemberId={selectedMemberId}
-                onSelectMember={handleSelectMember}
+                onSelectMember={handleSelectUniverseMember}
                 pathHighlight={pfPathSequence.length > 0 ? { nodes: pfPathNodes, edges: pfPathEdges, sequence: pfPathSequence } : undefined}
                 onOpenPathFinder={handleOpenPathFinder}
+                onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 pathFinderOpen={pathFinderOpen}
+                detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
+                onAddMember={() => setIsAddDialogOpen(true)}
+                loading={!isDemoMode && (dbLoading || authLoading)}
+              />
+            )}
+
+            {/* ── Relationship Intelligence suggestions banner ──────── */}
+            {viewMode === 'universe' && pendingSuggestions.length > 0 && (
+              <RelationshipSuggestionsBanner
+                suggestions={pendingSuggestions}
+                onAccept={async (actions: RelationshipAction[]) => {
+                  for (const action of actions) {
+                    const target = members.find(m => m.id === action.memberId)
+                    if (!target) continue
+                    if (action.field === 'spouseIds') {
+                      const updated = [...new Set([...target.spouseIds, action.value])]
+                      await dbUpdateMember(action.memberId, { spouseIds: updated })
+                    }
+                  }
+                  toast({ title: 'Connected!', description: 'Relationship updated in the tree.' })
+                }}
+                onDismiss={(id) => setPendingSuggestions(prev => prev.filter(s => s.id !== id))}
+                onDismissAll={() => setPendingSuggestions([])}
               />
             )}
 
@@ -1050,14 +1131,14 @@ export default function FamilyGraphApp() {
             )}
 
             {/* Presence avatars — top right of canvas */}
-            {viewMode === 'graph' && (
+            {viewMode === 'graph' && FEATURE_FLAGS.enablePresenceAvatars && (
               <div className="absolute top-3 right-3 z-20">
                 <PresenceAvatars isDemoMode={isDemoMode} />
               </div>
             )}
 
             {/* Live activity feed — bottom left of canvas (visible when no member selected) */}
-            {viewMode === 'graph' && (
+            {viewMode === 'graph' && FEATURE_FLAGS.enableLiveActivityWidget && (
               <div className="absolute bottom-4 left-4 z-20">
                 <LiveActivityFeed isDemoMode={isDemoMode} />
               </div>
@@ -1098,6 +1179,7 @@ export default function FamilyGraphApp() {
                   setPfFrom(''); setPfTo(''); setPfFromSearch(''); setPfToSearch('')
                   setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
                 }}
+                selfMemberId={selfMember?.id ?? null}
               />
             </aside>
           )}
@@ -1108,13 +1190,14 @@ export default function FamilyGraphApp() {
               <MemberDetail
                 member={selectedMember}
                 allMembers={members}
-                onClose={() => setSelectedMemberId(null)}
+                onClose={closeMemberDetail}
                 onEdit={() => setEditingMember(selectedMember)}
                 onDelete={() => setIsDeleteDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
-                onInvite={() => { setSelectedMemberId(null); setShowInviteWidget(true) }}
+                onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
                 isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
                 currentUserId={user?.id}
+                selfMemberId={selfMember?.id ?? null}
                 onSetVisibility={async (memberId, v) => {
                   try {
                     await setVisibility(memberId, v)
@@ -1131,21 +1214,22 @@ export default function FamilyGraphApp() {
           {isMobile && (
             <Drawer
               open={!!selectedMember && !showAIWidget && !showInviteWidget}
-              onOpenChange={(open) => { if (!open) setSelectedMemberId(null) }}
+              onOpenChange={(open) => { if (!open) closeMemberDetail() }}
               direction="bottom"
             >
-              <DrawerContent className="max-h-[88vh] overflow-y-auto">
+              <DrawerContent className="h-[88vh] flex flex-col overflow-hidden">
                 {selectedMember && (
                   <MemberDetail
                     member={selectedMember}
                     allMembers={members}
-                    onClose={() => setSelectedMemberId(null)}
+                    onClose={closeMemberDetail}
                     onEdit={() => setEditingMember(selectedMember)}
                     onDelete={() => setIsDeleteDialogOpen(true)}
                     onAddStory={() => setIsStoryDialogOpen(true)}
-                    onInvite={() => { setSelectedMemberId(null); setShowInviteWidget(true) }}
+                    onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
                     isAdmin={!!profile && (profile as { role?: string }).role === 'admin'}
                     currentUserId={user?.id}
+                    selfMemberId={selfMember?.id ?? null}
                     onSetVisibility={async (memberId, v) => {
                       try {
                         await setVisibility(memberId, v)
@@ -1179,11 +1263,12 @@ export default function FamilyGraphApp() {
         editingMember={editingMember}
         familyId={familyId ?? undefined}
         currentUserId={user?.id}
+        selfMemberId={selfMember?.id ?? null}
       />
       <SearchDialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen} members={members} onSelectMember={handleSelectMember} />
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
-      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} onExport={handleExport} onImport={handleImport} />
+      <SettingsDialog open={isSettingsOpen} onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }} onExport={handleExport} onImport={handleImport} defaultTab={settingsDefaultTab} />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}
         onOpenChange={setIsLinkFamilyOpen}

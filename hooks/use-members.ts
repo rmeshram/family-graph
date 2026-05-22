@@ -222,9 +222,18 @@ export function useMembers(familyId: string | null) {
           await supabase.from('family_members').update({
             spouse_ids: [...spouse.spouseIds, newMember.id] as string[],
           }).eq('id', spouseId)
+          // Optimistically reflect on the spouse side too
+          setMembers(prev => prev.map(m =>
+            m.id === spouseId ? { ...m, spouseIds: [...m.spouseIds, newMember.id] } : m
+          ))
         }
       }
     }
+
+    // Immediately add to local state (real-time will also fire but deduplicates)
+    setMembers(prev => prev.some(m => m.id === newMember.id) ? prev : [...prev, newMember])
+    setTotalCount(c => c + 1)
+
     return newMember
   }, [familyId, supabase, members])
 
@@ -256,8 +265,9 @@ export function useMembers(familyId: string | null) {
     if ('instagramHandle' in updates) patch.instagram_handle = (updates as any).instagramHandle ?? null
     if ('visibility' in updates) patch.visibility = updates.visibility
 
-    // Snapshot for rollback
+    // Snapshot for rollback + bidirectional spouse diff
     const previous = members
+    const target = members.find(m => m.id === id)
     // Optimistic update first so UI reflects immediately
     setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m))
 
@@ -266,6 +276,35 @@ export function useMembers(familyId: string | null) {
       // Rollback on failure
       setMembers(previous)
       throw new Error(error.message)
+    }
+
+    // ── Bidirectional spouse sync ────────────────────────────────────────────
+    // When spouseIds changes on this member, mirror the change on the other side.
+    if ('spouseIds' in updates) {
+      const prevSpouseIds = target?.spouseIds ?? []
+      const nextSpouseIds = updates.spouseIds ?? []
+
+      // Newly added spouses → add this member to their spouseIds
+      const added = nextSpouseIds.filter(sid => !prevSpouseIds.includes(sid))
+      for (const sid of added) {
+        const spouse = previous.find(m => m.id === sid)
+        if (spouse && !spouse.spouseIds.includes(id)) {
+          const updated = [...spouse.spouseIds, id]
+          await supabase.from('family_members').update({ spouse_ids: updated as string[] }).eq('id', sid)
+          setMembers(prev => prev.map(m => m.id === sid ? { ...m, spouseIds: updated } : m))
+        }
+      }
+
+      // Removed spouses → remove this member from their spouseIds
+      const removed = prevSpouseIds.filter(sid => !nextSpouseIds.includes(sid))
+      for (const sid of removed) {
+        const spouse = previous.find(m => m.id === sid)
+        if (spouse && spouse.spouseIds.includes(id)) {
+          const updated = spouse.spouseIds.filter(s => s !== id)
+          await supabase.from('family_members').update({ spouse_ids: updated as string[] }).eq('id', sid)
+          setMembers(prev => prev.map(m => m.id === sid ? { ...m, spouseIds: updated } : m))
+        }
+      }
     }
   }, [supabase, members])
 

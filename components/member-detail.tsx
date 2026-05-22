@@ -48,6 +48,13 @@ interface MemberDetailProps {
   onInvite?: () => void
   isAdmin?: boolean
   currentUserId?: string
+  /**
+   * The logged-in user's bound member id (from profiles.member_id).
+   * Use this — NOT `relationship === 'self'` — to determine "this is you".
+   * Static relationship strings break in multi-user families where multiple
+   * profiles point at different nodes within the same tree.
+   */
+  selfMemberId?: string | null
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
 }
 
@@ -79,6 +86,7 @@ export function MemberDetail({
   onInvite,
   isAdmin = false,
   currentUserId,
+  selfMemberId,
   onSetVisibility,
 }: MemberDetailProps) {
   const initials = member.name
@@ -108,7 +116,11 @@ export function MemberDetail({
 
   const sortedMilestones = [...(member.milestones || [])].sort((a, b) => a.year - b.year)
 
-  const selfMember = allMembers.find(m => m.relationship === 'self')
+  // DECISION 4: Self is resolved dynamically from the logged-in user's bound
+  // member_id (passed via prop). Fall back to legacy `relationship === 'self'`
+  // for demo data / unauthenticated views where no profile binding exists.
+  const selfMember = (selfMemberId && allMembers.find(m => m.id === selfMemberId))
+    || allMembers.find(m => m.relationship === 'self')
   const completeness = computeProfileCompleteness(member)
   const relationPath = selfMember && member.id !== selfMember.id
     ? findRelationshipPath(selfMember.id, member.id, allMembers)

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Bell, Users, Camera, ChevronRight, Calendar } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
+import { Bell, Users, Camera, ChevronRight, Calendar, UserCheck, ShieldAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import type { AppNotification } from '@/hooks/use-notifications'
+import { useRelativeTime } from '@/hooks/use-relative-time'
 import Link from 'next/link'
 
 const TYPE_ICON: Record<string, React.ElementType> = {
@@ -20,6 +22,12 @@ const TYPE_ICON: Record<string, React.ElementType> = {
   event_upcoming: Calendar,
   anniversary: Bell,
   memory_added: Camera,
+  claim_submitted: UserCheck,
+  node_claimed: UserCheck,
+  claim_accepted: UserCheck,
+  claim_revoked: ShieldAlert,
+  node_match_found: Users,
+  claim_pending_admin: ShieldAlert,
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -29,15 +37,92 @@ const TYPE_COLOR: Record<string, string> = {
   event_upcoming: 'bg-blue-500/10 text-blue-400',
   anniversary: 'bg-pink-500/10 text-pink-400',
   memory_added: 'bg-violet-500/10 text-violet-400',
+  claim_submitted: 'bg-amber-500/10 text-amber-400',
+  node_claimed: 'bg-green-500/10 text-green-400',
+  claim_accepted: 'bg-green-500/10 text-green-400',
+  claim_revoked: 'bg-red-500/10 text-red-400',
+  node_match_found: 'bg-indigo-500/10 text-indigo-400',
+  claim_pending_admin: 'bg-amber-500/10 text-amber-400',
+}
+
+/** Single notification row — uses useRelativeTime so timestamp stays live. */
+function NotificationItem({ notif, onClose, onOpenSettings }: { notif: AppNotification; onClose: () => void; onOpenSettings?: () => void }) {
+  const relTime = useRelativeTime(notif.timestamp)
+  const router = useRouter()
+  const pathname = usePathname()
+  const Icon = TYPE_ICON[notif.type] ?? Bell
+  const colorClass = TYPE_COLOR[notif.type] ?? 'bg-muted text-muted-foreground'
+
+  const handleClaimReview = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onClose()
+    if (onOpenSettings) {
+      onOpenSettings()
+    } else {
+      // Fire global event; dashboard listens for it.
+      // If not on dashboard, navigate there first so the listener is mounted.
+      window.dispatchEvent(new CustomEvent('fg:open-settings', { detail: { tab: 'team' } }))
+      if (!pathname.startsWith('/dashboard')) router.push('/dashboard')
+    }
+  }
+
+  const inner = (
+    <div
+      className={cn(
+        'flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors cursor-pointer border-b border-border/30 last:border-0',
+        !notif.read && 'bg-primary/5'
+      )}
+    >
+      <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold', colorClass)}>
+        {notif.memberInitials ? notif.memberInitials : <Icon className="h-4 w-4" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium leading-snug">{notif.title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{notif.body}</p>
+        {notif.type === 'claim_submitted' && (
+          <button
+            onClick={handleClaimReview}
+            className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-[11px] font-medium px-2.5 py-0.5 transition-colors border border-amber-500/30"
+          >
+            Review in Settings →
+          </button>
+        )}
+        {notif.type === 'birthday_today' && notif.whatsappLink && (
+          <a
+            href={notif.whatsappLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-green-600 hover:bg-green-700 text-white text-[11px] font-medium px-2.5 py-0.5 transition-colors"
+          >
+            🎂 Wish on WhatsApp
+          </a>
+        )}
+        <p className="mt-0.5 text-[10px] text-muted-foreground/50">{relTime}</p>
+      </div>
+      {!notif.read && (
+        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+      )}
+    </div>
+  )
+
+  // claim_submitted has its own CTA — don’t wrap in a nav Link
+  if (notif.type === 'claim_submitted') return inner
+
+  return notif.href ? (
+    <Link href={notif.href} onClick={onClose}>{inner}</Link>
+  ) : inner
 }
 
 interface NotificationBellProps {
   notifications: AppNotification[]
   unreadCount: number
   onOpen?: () => void
+  onOpenSettings?: () => void
 }
 
-export function NotificationBell({ notifications, unreadCount, onOpen }: NotificationBellProps) {
+export function NotificationBell({ notifications, unreadCount, onOpen, onOpenSettings }: NotificationBellProps) {
   const [open, setOpen] = useState(false)
   const [pushState, setPushState] = useState<'default' | 'granted' | 'denied'>('default')
 
@@ -99,47 +184,9 @@ export function NotificationBell({ notifications, unreadCount, onOpen }: Notific
               <p className="text-sm">All caught up!</p>
             </div>
           ) : (
-            notifications.map(notif => {
-              const Icon = TYPE_ICON[notif.type] ?? Bell
-              const colorClass = TYPE_COLOR[notif.type] ?? 'bg-muted text-muted-foreground'
-              const content = (
-                <div
-                  key={notif.id}
-                  className={cn(
-                    'flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors cursor-pointer border-b border-border/30 last:border-0',
-                    !notif.read && 'bg-primary/5'
-                  )}
-                >
-                  <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold', colorClass)}>
-                    {notif.memberInitials ? notif.memberInitials : <Icon className="h-4 w-4" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium leading-snug">{notif.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{notif.body}</p>
-                    {notif.type === 'birthday_today' && notif.whatsappLink && (
-                      <a
-                        href={notif.whatsappLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={e => e.stopPropagation()}
-                        className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-green-600 hover:bg-green-700 text-white text-[11px] font-medium px-2.5 py-0.5 transition-colors"
-                      >
-                        🎂 Wish on WhatsApp
-                      </a>
-                    )}
-                  </div>
-                  {!notif.read && (
-                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                  )}
-                </div>
-              )
-
-              return notif.href ? (
-                <Link key={notif.id} href={notif.href} onClick={() => setOpen(false)}>
-                  {content}
-                </Link>
-              ) : content
-            })
+            notifications.map(notif => (
+              <NotificationItem key={notif.id} notif={notif} onClose={() => setOpen(false)} onOpenSettings={onOpenSettings} />
+            ))
           )}
         </div>
 

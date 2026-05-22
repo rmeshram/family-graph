@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
 import { useMembers } from '@/hooks/use-members'
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { DemoBanner } from '@/components/demo-banner'
-import { Printer, Download, TreePine, MapPin, Users, BookOpen, Sparkles, ArrowLeft } from 'lucide-react'
+import { Printer, Download, TreePine, MapPin, Users, BookOpen, Sparkles, ArrowLeft, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function KulgathaPage() {
@@ -59,23 +59,85 @@ export default function KulgathaPage() {
     4: 'Children',
   }
 
-  const handlePrint = () => window.print()
+  const [isExporting, setIsExporting] = useState(false)
+
+  const handleExportPDF = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+
+    const contentEl = document.querySelector<HTMLElement>('.kulgatha-scroll > div')
+    if (!contentEl) { setIsExporting(false); return }
+
+    try {
+      // Dynamically import to avoid SSR bundle bloat
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+
+      // Clone the document content into an off-screen, light-mode wrapper.
+      // This sidesteps the app layout's overflow-hidden / h-screen constraints
+      // so html2canvas sees the FULL content height, not just the visible slice.
+      const wrapper = document.createElement('div')
+      wrapper.className = 'light-theme'
+      wrapper.style.cssText = [
+        'position:absolute',
+        'top:0',
+        'left:-9999px',
+        'width:900px',
+        'padding:32px',
+        'background:#ffffff',
+        'color:#000000',
+        'box-sizing:border-box',
+      ].join(';')
+      wrapper.appendChild(contentEl.cloneNode(true))
+      document.body.appendChild(wrapper)
+
+      const canvas = await html2canvas(wrapper, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: wrapper.offsetWidth,
+        height: wrapper.scrollHeight,
+      })
+
+      document.body.removeChild(wrapper)
+
+      // Build multi-page A4 PDF
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pdfW = pdf.internal.pageSize.getWidth()   // 210 mm
+      const pdfH = pdf.internal.pageSize.getHeight()  // 297 mm
+      const imgData = canvas.toDataURL('image/jpeg', 0.92)
+      const totalHeightMm = (canvas.height / canvas.width) * pdfW
+      const pageCount = Math.ceil(totalHeightMm / pdfH)
+
+      for (let i = 0; i < pageCount; i++) {
+        if (i > 0) pdf.addPage()
+        // Shift the image up so the correct vertical slice aligns with each page
+        pdf.addImage(imgData, 'JPEG', 0, -i * pdfH, pdfW, totalHeightMm)
+      }
+
+      const safeFamily = familyName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+      pdf.save(`${safeFamily}-kulgatha.pdf`)
+    } catch (err) {
+      console.error('[kulgatha] PDF export failed:', err)
+      // Graceful fallback to native browser print
+      window.print()
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   return (
     <>
       <DemoBanner />
-      {/* Print stylesheet — inlined so no extra file needed */}
+      {/* Print stylesheet — still useful if the user presses Cmd+P directly */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          .print-page {
-            page-break-after: always;
-            break-after: page;
-          }
-          .print-page:last-child {
-            page-break-after: avoid;
-            break-after: avoid;
-          }
+          .print-page { page-break-after: always; break-after: page; }
+          .print-page:last-child { page-break-after: avoid; break-after: avoid; }
           @page { margin: 1.2cm; }
           body { background: white !important; color: black !important; }
           .print-card {
@@ -84,10 +146,10 @@ export default function KulgathaPage() {
             box-shadow: none !important;
             break-inside: avoid;
           }
-          * {
-            print-color-adjust: exact;
-            -webkit-print-color-adjust: exact;
-          }
+          * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          /* Override app layout constraints */
+          html, body, #__next { overflow: visible !important; height: auto !important; max-height: none !important; }
+          .kulgatha-scroll { overflow: visible !important; height: auto !important; max-height: none !important; }
         }
       `}</style>
 
@@ -107,15 +169,18 @@ export default function KulgathaPage() {
             <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 bg-emerald-500/5 text-xs">
               {members.length} members · {byGen.length} generations
             </Badge>
-            <Button onClick={handlePrint} className="h-9 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
-              <Printer className="h-3.5 w-3.5" />
-              Print / Save PDF
+            <Button onClick={handleExportPDF} disabled={isExporting} className="h-9 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+              {isExporting ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" />Exporting…</>
+              ) : (
+                <><Download className="h-3.5 w-3.5" />Export PDF</>
+              )}
             </Button>
           </div>
         </div>
 
         {/* Document — this is what gets printed */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="kulgatha-scroll flex-1 overflow-y-auto p-6">
           <div className="mx-auto max-w-3xl space-y-6">
 
             {/* ── Cover Page ─────────────────────────────────────── */}
