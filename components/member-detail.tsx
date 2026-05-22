@@ -33,6 +33,10 @@ import {
   Shield,
   UserPlus,
   UserRoundPlus,
+  Phone,
+  Mail,
+  UserX,
+  EyeOff,
 } from 'lucide-react'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { cn, computeProfileCompleteness } from '@/lib/utils'
@@ -58,6 +62,13 @@ interface MemberDetailProps {
    */
   selfMemberId?: string | null
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
+  /** Called to toggle anonymous display mode on this member */
+  onSetAnonymous?: (memberId: string, anon: boolean) => void
+  /**
+   * Privacy settings of the user who has claimed this member node.
+   * When hideContactInfo=true and the viewer is not admin, phone/email are masked.
+   */
+  memberPrivacySettings?: { hideContactInfo?: boolean }
   /** Called when user clicks a quick-add relative button; parent opens QuickAddMemberDialog. */
   onAddRelative?: (anchorId: string, relType: QuickRelType) => void
 }
@@ -93,6 +104,8 @@ export function MemberDetail({
   currentUserId,
   selfMemberId,
   onSetVisibility,
+  onSetAnonymous,
+  memberPrivacySettings,
 }: MemberDetailProps) {
   const initials = member.name
     .split(' ')
@@ -134,6 +147,9 @@ export function MemberDetail({
     ? computeRelationLabel(selfMember.id, member.id, allMembers)
     : null
 
+  // Contact info is masked for non-admins when the member's claimer has enabled hideContactInfo
+  const contactInfoMasked = !isAdmin && (memberPrivacySettings?.hideContactInfo ?? false)
+
   return (
     <Card className="flex flex-col h-full min-h-0 overflow-hidden border-0 rounded-none backdrop-blur-xl border-l border-border/50" style={{ background: 'var(--surface-panel)' }}>
       <CardHeader className="pb-4 border-b border-border/40">
@@ -160,6 +176,12 @@ export function MemberDetail({
                     {member.id === selfMemberId ? 'You' : member.relationship}
                   </Badge>
                 ) : null}
+                {member.showAsAnonymous && (
+                  <Badge variant="outline" className="border-orange-500/40 text-orange-400 bg-orange-500/10 text-[10px]">
+                    <UserX className="h-2.5 w-2.5 mr-1" />
+                    Anonymous
+                  </Badge>
+                )}
                 {age && (
                   <Badge variant="outline" className="text-muted-foreground border-border/50">
                     {member.deathYear ? `Lived ${age} years` : `Age ${age}`}
@@ -239,6 +261,37 @@ export function MemberDetail({
                         @{member.instagramHandle}
                       </a>
                     </div>
+                  </div>
+                )}
+                {(member.phone || member.email) && (
+                  <div className="col-span-2 rounded-xl bg-muted/30 border border-border/40 p-3 space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium">Contact</p>
+                    {member.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        {contactInfoMasked ? (
+                          <span className="text-xs text-muted-foreground tracking-widest">••••••••</span>
+                        ) : (
+                          <a href={`tel:${member.phone}`} className="text-xs font-medium text-foreground hover:text-primary transition-colors">{member.phone}</a>
+                        )}
+                      </div>
+                    )}
+                    {member.email && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        {contactInfoMasked ? (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <EyeOff className="h-3 w-3" />
+                            <span className="tracking-widest">••••••••</span>
+                          </span>
+                        ) : (
+                          <a href={`mailto:${member.email}`} className="text-xs font-medium text-foreground hover:text-primary transition-colors">{member.email}</a>
+                        )}
+                      </div>
+                    )}
+                    {contactInfoMasked && (
+                      <p className="text-[10px] text-muted-foreground/70">This member has hidden their contact info</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -346,6 +399,34 @@ export function MemberDetail({
                     {(member.visibility ?? 'family') === 'family' && 'Visible to all family members'}
                     {(member.visibility ?? 'family') === 'private' && 'Only visible to admins'}
                   </p>
+                  {onSetAnonymous && (
+                    <>
+                      <div className="h-px bg-border/40 my-1" />
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <p className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                            <UserX className="h-3 w-3 text-muted-foreground" />
+                            Show as anonymous
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">Display as "? Member" — hides name from others</p>
+                        </div>
+                        <button
+                          onClick={() => onSetAnonymous(member.id, !(member.showAsAnonymous ?? false))}
+                          className={cn(
+                            'h-5 w-9 rounded-full border transition-colors',
+                            member.showAsAnonymous
+                              ? 'bg-orange-500 border-orange-600'
+                              : 'bg-muted border-border/50'
+                          )}
+                        >
+                          <span className={cn(
+                            'block h-4 w-4 rounded-full bg-white shadow transition-transform',
+                            member.showAsAnonymous ? 'translate-x-[18px]' : 'translate-x-0.5'
+                          )} />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

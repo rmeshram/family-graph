@@ -23,6 +23,7 @@ interface FamilyPreview {
   generationCount: number
   recentNames: string[]
   inviterName: string | null
+  privacyMode?: 'open' | 'protected' | 'closed'
 }
 
 const RELATIONSHIP_OPTIONS: { key: RelType; label: string; sublabel: string; icon: React.ElementType; color: string }[] = [
@@ -111,7 +112,14 @@ export default function JoinPage() {
         inviterName = (inviterProf as any)?.display_name ?? null
       }
 
-      // Family preview stats
+      // Family preview stats — respect family privacy_mode
+      const { data: familyData } = await supabase
+        .from('families')
+        .select('privacy_mode')
+        .eq('id', inv.family_id)
+        .single()
+      const familyPrivacyMode = (familyData as any)?.privacy_mode as 'open' | 'protected' | 'closed' | undefined ?? 'protected'
+
       const { data: members } = await supabase
         .from('family_members')
         .select('name, generation')
@@ -120,9 +128,12 @@ export default function JoinPage() {
 
       const memberCount = members?.length ?? 0
       const generations = new Set(members?.map(m => m.generation) ?? [])
-      const recentNames = (members ?? []).slice(0, 4).map(m => m.name.split(' ')[0])
+      // Enforce privacy mode: 'closed' shows no names, 'protected' shows count only
+      const recentNames = familyPrivacyMode === 'open'
+        ? (members ?? []).slice(0, 4).map(m => m.name.split(' ')[0])
+        : []
 
-      setPreview({ name: familyName, memberCount, generationCount: generations.size, recentNames, inviterName })
+      setPreview({ name: familyName, memberCount, generationCount: generations.size, recentNames, inviterName, privacyMode: familyPrivacyMode })
       setStatus('preview')
     }
     init()
@@ -354,6 +365,21 @@ export default function JoinPage() {
                     <><strong>{preview.inviterName}</strong> has invited you to join the family tree</>
                   ) : "You've been invited to join the family tree"}
                 </p>
+
+                {/* Privacy mode indicator */}
+                {preview.privacyMode === 'closed' && (
+                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-[11px] text-red-400 font-medium">
+                    <Shield className="h-3 w-3" />
+                    Private family — only members of this family can see its tree
+                  </div>
+                )}
+                {preview.privacyMode === 'protected' && (
+                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-400 font-medium">
+                    <Shield className="h-3 w-3" />
+                    Protected family — join to see the full tree
+                  </div>
+                )}
+
                 <div className="flex items-center justify-center gap-6 mt-5">
                   {[
                     { v: preview.memberCount || '—', l: 'members' },
@@ -382,6 +408,11 @@ export default function JoinPage() {
                       {preview.recentNames.slice(0, 2).join(', ')} & more are waiting
                     </span>
                   </div>
+                )}
+                {preview.recentNames.length === 0 && preview.memberCount > 0 && (
+                  <p className="mt-4 text-xs text-muted-foreground">
+                    {preview.memberCount} member{preview.memberCount !== 1 ? 's' : ''} — join to see who's in the tree
+                  </p>
                 )}
               </div>
               <div className="p-6 space-y-3">

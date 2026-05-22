@@ -4,8 +4,35 @@ import { useMemo, useState, useCallback, useEffect } from 'react'
 import { FamilyMember } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
+import {
+  getNotifPriority,
+  privacyAwareName,
+  getInitials,
+  sortNotifications,
+  deduplicateNotifs,
+  shouldGroupMemberAdds,
+  buildGroupedMemberTitle,
+  type NotifPriority,
+} from '@/lib/notification-utils'
 
-export type NotifType = 'member_joined' | 'birthday_today' | 'birthday_upcoming' | 'event_upcoming' | 'memory_added' | 'node_match_found' | 'claim_accepted' | 'claim_revoked' | 'node_claimed' | 'claim_submitted' | 'claim_pending_admin'
+export type NotifType =
+  | 'member_joined'
+  | 'birthday_today'
+  | 'birthday_upcoming'
+  | 'event_upcoming'
+  | 'memory_added'
+  | 'node_match_found'
+  | 'claim_accepted'
+  | 'claim_revoked'
+  | 'node_claimed'
+  | 'claim_submitted'
+  | 'claim_pending_admin'
+  // Extended types
+  | 'story_added'
+  | 'relationship_updated'
+  | 'visibility_changed'
+  | 'anniversary'
+  | 'memorial'
 
 export interface AppNotification {
   id: string
@@ -19,6 +46,10 @@ export interface AppNotification {
   href?: string
   /** For birthday_today: pre-encoded WhatsApp link */
   whatsappLink?: string
+  /** Priority level — used for sorting and visual emphasis */
+  priority?: NotifPriority
+  /** For grouped notifications: how many items are in the group */
+  groupCount?: number
 }
 
 const TODAY = new Date()
@@ -89,7 +120,8 @@ export function useNotifications(
           body: `${c.claimantName ?? 'Someone'} wants to claim this profile — review in Settings → Team`,
           timestamp: new Date(c.createdAt ?? Date.now()),
           read: false,
-          href: '/dashboard', // opens settings programmatically; for now link to dashboard
+          href: '/dashboard',
+          priority: 'medium' as NotifPriority,
         }))
         setPendingClaimNotifs(notifs)
       } catch { /* ignore */ }
@@ -118,51 +150,75 @@ export function useNotifications(
         (payload) => {
           const row = payload.new as { id: string; node_id: string; actor_id: string | null; action: string; metadata: Record<string, unknown>; created_at: string }
           const node = members.find(m => m.id === row.node_id)
-          const nodeName = node?.name ?? (row.metadata?.node_name as string) ?? 'A family member'
-          const initials = nodeName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          // Use privacy-aware name so private members aren't exposed in notification text
+          const nodeName = node
+            ? privacyAwareName(node.name, node.visibility)
+            : (row.metadata?.node_name as string) ?? 'A family member'
+          const rawName = node?.name ?? (row.metadata?.node_name as string) ?? 'A family member'
+          const initials = getInitials(rawName)
           const ts = new Date(row.created_at)
 
           let title: string | null = null
           let body = ''
           let type: NotifType = 'node_claimed'
+          let priority: NotifPriority = 'medium'
 
           switch (row.action) {
             case 'claim_completed':
               title = `${nodeName} joined the family`
               body = 'Their profile is now claimed and verified.'
               type = 'node_claimed'
+              priority = 'high'
               break
             case 'claim_initiated':
               // Someone submitted a claim that needs admin review
               title = `New claim request for ${nodeName}`
               body = 'Review and approve or reject in Settings → Team.'
               type = 'claim_submitted'
+              priority = 'medium'
               break
             case 'claim_verified':
-              title = `${nodeName}\'s claim was approved`
+              title = `${nodeName}'s claim was approved`
               body = 'They now have full access to their profile.'
               type = 'claim_accepted'
+              priority = 'high'
               break
             case 'claim_rejected':
               title = `A claim on ${nodeName} was rejected`
               body = 'The submitted identity did not match.'
               type = 'claim_revoked'
+              priority = 'high'
               break
             case 'claim_revoked':
               title = `Access to ${nodeName} was revoked`
               body = 'An admin removed the claim.'
               type = 'claim_revoked'
+              priority = 'high'
               break
             case 'invite_sent':
               title = `Invite sent for ${nodeName}`
               body = 'They can now claim their profile.'
               type = 'node_match_found'
+              priority = 'low'
+              break
+            case 'invite_expired':
+              title = `Invite for ${nodeName} expired`
+              body = 'The link is no longer valid. Send a new invite if needed.'
+              type = 'node_match_found'
+              priority = 'low'
+              break
+            case 'invite_refreshed':
+              title = `Invite refreshed for ${nodeName}`
+              body = 'A new invite link was generated.'
+              type = 'node_match_found'
+              priority = 'low'
               break
             case 'node_merged':
             case 'nodes_merged':
-              title = `Duplicate profile merged`
-              body = `${nodeName}\'s duplicate entry was cleaned up.`
+              title = 'Duplicate profile merged'
+              body = `${nodeName}'s duplicate entry was cleaned up.`
               type = 'node_claimed'
+              priority = 'medium'
               break
             default:
               return // ignore non-notable actions
@@ -181,6 +237,7 @@ export function useNotifications(
               timestamp: ts,
               read: false,
               href: '/dashboard',
+              priority,
             }
             // Cap to last 20 realtime claim events.
             return [next, ...prev].slice(0, 20)
@@ -226,6 +283,7 @@ export function useNotifications(
               timestamp: new Date(),
               read: false,
               href: '/dashboard',
+              priority: 'high' as NotifPriority,
             }
             return [notif, ...existing].slice(0, 10)
           })
@@ -238,26 +296,155 @@ export function useNotifications(
     return () => { supabase.removeChannel(channel) }
   }, [familyId])
 
+  // ── Realtime: stories INSERT → story_added notification ─────────────────────
+  // Notifies family members when a new story or memory is added.
+  const [storyNotifs, setStoryNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`stories:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'stories', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const row = payload.new as any
+          const member = members.find(m => m.id === row.member_id)
+          const displayName = member
+            ? privacyAwareName(member.name, member.visibility)
+            : 'A family member'
+          const initials = member ? getInitials(member.name) : '📚'
+          const storyTitle = row.title as string | undefined
+
+          setStoryNotifs(prev => {
+            const id = `story-${row.id}`
+            if (prev.some(n => n.id === id)) return prev
+            const notif: AppNotification = {
+              id,
+              type: 'story_added',
+              title: `New story added for ${displayName}`,
+              body: storyTitle
+                ? `“${storyTitle.slice(0, 70)}${storyTitle.length > 70 ? '…' : ''}”`
+                : 'A new family memory was recorded',
+              memberName: displayName,
+              memberInitials: initials,
+              timestamp: new Date(row.created_at ?? Date.now()),
+              read: false,
+              href: '/memory',
+              priority: 'medium',
+            }
+            return [notif, ...prev].slice(0, 10)
+          })
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.warn('[stories] realtime error:', err)
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId, members])
+
+  // ── Realtime: family_members UPDATE → visibility_changed notification ──────
+  // Fires only when the visibility field changes, never for trivial field edits.
+  // Privacy-safe: never exposes private member names.
+  const [visibilityNotifs, setVisibilityNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`family_members_vis:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const prevRow = payload.old as any
+          const nextRow = payload.new as any
+          // Only fire when visibility actually changes
+          if (!prevRow.visibility || prevRow.visibility === nextRow.visibility) return
+          // Changing TO 'family' (the default) is not noteworthy
+          if (nextRow.visibility === 'family' && prevRow.visibility !== 'private') return
+
+          const isPrivate = nextRow.visibility === 'private'
+          const displayName = isPrivate ? 'A family member' : (nextRow.name ?? 'A family member')
+          const title = isPrivate
+            ? 'A profile was made private'
+            : `${displayName}'s profile visibility updated`
+          const body = isPrivate
+            ? 'Their information is now visible to family admins only'
+            : `Visibility changed from ${prevRow.visibility} to ${nextRow.visibility}`
+
+          setVisibilityNotifs(prev => {
+            if (prev.length >= 5) return prev // cap — these are rare
+            const notif: AppNotification = {
+              id: `vis-${nextRow.id}-${Date.now()}`,
+              type: 'visibility_changed',
+              title,
+              body,
+              memberInitials: '🔒',
+              timestamp: new Date(),
+              read: false,
+              href: '/dashboard',
+              priority: 'medium',
+            }
+            return [notif, ...prev].slice(0, 5)
+          })
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.warn('[family_members] realtime error:', err)
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId])
+
   const notifications = useMemo<AppNotification[]>(() => {
     const notifs: AppNotification[] = []
 
     // 1. New members joined in last 7 days
+    // Group 3+ rapid adds into one notification to prevent bulk-import spam.
     const newMembers = members
       .filter(m => daysAgo(m.addedAt) <= 7 && m.relationship !== 'self')
       .sort((a, b) => new Date(b.addedAt ?? 0).getTime() - new Date(a.addedAt ?? 0).getTime())
 
-    for (const m of newMembers.slice(0, 5)) {
+    if (shouldGroupMemberAdds(newMembers.length)) {
+      // Anti-spam: collapse into a single grouped update notification
+      const { title, body } = buildGroupedMemberTitle(
+        newMembers.length,
+        newMembers.slice(0, 3).map(m => privacyAwareName(m.name, m.visibility))
+      )
       notifs.push({
-        id: `joined-${m.id}`,
-        type: 'member_joined',
-        title: `${m.name} joined the family tree`,
-        body: 'Added to the family tree',
-        memberName: m.name,
-        memberInitials: m.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-        timestamp: new Date(m.addedAt ?? Date.now()),
+        id: `family-update-batch-${newMembers[0]?.id ?? 'batch'}`,
+        type: 'relationship_updated',
+        title,
+        body,
+        memberInitials: '🌳',
+        timestamp: new Date(newMembers[0]?.addedAt ?? Date.now()),
         read: false,
         href: '/dashboard',
+        priority: 'medium',
+        groupCount: newMembers.length,
       })
+    } else {
+      for (const m of newMembers.slice(0, 2)) {
+        const displayName = privacyAwareName(m.name, m.visibility)
+        const relLabel = m.relationship ? ` (${m.relationship})` : ''
+        notifs.push({
+          id: `joined-${m.id}`,
+          type: 'member_joined',
+          title: `${displayName} joined the family tree`,
+          body: `New member added${relLabel}`,
+          memberName: displayName,
+          memberInitials: m.visibility === 'private' ? '🔒' : getInitials(m.name),
+          timestamp: new Date(m.addedAt ?? Date.now()),
+          read: false,
+          href: '/dashboard',
+          priority: 'medium',
+        })
+      }
     }
 
     // 2. Birthday today (requires birth_month + birth_day from migration 005)
@@ -265,6 +452,7 @@ export function useNotifications(
       const bm = (m as any).birthMonth as number | undefined
       const bd = (m as any).birthDay as number | undefined
       return bm === TODAY_MONTH && bd === TODAY_DAY && m.relationship !== 'self'
+        && m.visibility !== 'private' // don't surface private members' birthdays
     })
     for (const m of birthdayToday) {
       const age = m.birthYear ? CURRENT_YEAR - m.birthYear : null
@@ -277,11 +465,12 @@ export function useNotifications(
         title: `🎂 ${m.name}'s birthday is today!`,
         body: age ? `Turning ${age} today` : 'Send them your warm wishes',
         memberName: m.name,
-        memberInitials: m.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+        memberInitials: getInitials(m.name),
         timestamp: new Date(),
         read: false,
         href: '/dashboard',
         whatsappLink: `https://wa.me/?text=${wishText}`,
+        priority: 'medium',
       })
     }
 
@@ -289,7 +478,7 @@ export function useNotifications(
     const birthdayUpcoming = members.filter(m => {
       const bm = (m as any).birthMonth as number | undefined
       const bd = (m as any).birthDay as number | undefined
-      if (!bm || !bd || m.relationship === 'self') return false
+      if (!bm || !bd || m.relationship === 'self' || m.visibility === 'private') return false
       const thisYearDate = new Date(CURRENT_YEAR, bm - 1, bd)
       const diff = Math.ceil((thisYearDate.getTime() - TODAY.getTime()) / 86_400_000)
       return diff > 0 && diff <= 7
@@ -304,14 +493,43 @@ export function useNotifications(
         title: `${m.name}'s birthday in ${diff} day${diff === 1 ? '' : 's'}`,
         body: 'Plan a surprise or send a personal message',
         memberName: m.name,
-        memberInitials: m.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+        memberInitials: getInitials(m.name),
         timestamp: new Date(),
         read: false,
         href: '/events',
+        priority: 'low',
       })
     }
 
-    // 4. Upcoming events in next 7 days
+    // 4. Memorial: death anniversaries (year-of-death + birth month/day match today)
+    // We only have deathYear, not deathMonth/deathDay, so we surface these on
+    // the birth anniversary of deceased members as a remembrance nudge.
+    const memorialToday = members.filter(m => {
+      const bm = (m as any).birthMonth as number | undefined
+      const bd = (m as any).birthDay as number | undefined
+      return bm === TODAY_MONTH && bd === TODAY_DAY
+        && m.isAlive === false && m.deathYear
+        && m.visibility !== 'private'
+    })
+    for (const m of memorialToday.slice(0, 2)) {
+      const yearsAgo = m.deathYear ? CURRENT_YEAR - m.deathYear : null
+      notifs.push({
+        id: `memorial-${m.id}`,
+        type: 'memorial',
+        title: `Remembering ${m.name}`,
+        body: yearsAgo
+          ? `Gone ${yearsAgo} year${yearsAgo === 1 ? '' : 's'} ago — may their memory live on`
+          : 'Today is their birth anniversary — share a memory',
+        memberName: m.name,
+        memberInitials: getInitials(m.name),
+        timestamp: new Date(),
+        read: false,
+        href: '/memory',
+        priority: 'medium',
+      })
+    }
+
+    // 5. Upcoming events in next 7 days
     const upcoming = events
       .filter(e => { const d = daysUntil(e.eventDate); return d >= 0 && d <= 7 })
       .sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime())
@@ -325,11 +543,12 @@ export function useNotifications(
         timestamp: new Date(ev.eventDate),
         read: false,
         href: '/events',
+        priority: 'low',
       })
     }
 
-    // 5. Members who are "elders" (age > 70) — remind to record their voice stories
-    const elders = members.filter(m => m.isAlive !== false && m.birthYear && (CURRENT_YEAR - m.birthYear) >= 70)
+    // 6. Elder voice story reminder
+    const elders = members.filter(m => m.isAlive !== false && m.birthYear && (CURRENT_YEAR - m.birthYear) >= 70 && m.visibility !== 'private')
     if (elders.length > 0) {
       notifs.push({
         id: 'elder-voice-reminder',
@@ -337,47 +556,48 @@ export function useNotifications(
         title: `Record stories from ${elders[0].name}`,
         body: `${elders.length} elder${elders.length > 1 ? 's' : ''} in your tree — preserve their voice memories`,
         memberName: elders[0].name,
-        memberInitials: elders[0].name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+        memberInitials: getInitials(elders[0].name),
         timestamp: new Date(),
         read: false,
         href: '/memory',
+        priority: 'low',
       })
     }
 
-    // 6. Memory vault reminder if no photos
+    // 7. Memory vault reminder if no photos yet
     if (memoriesCount === 0 && members.length > 2) {
       notifs.push({
         id: 'add-first-memory',
         type: 'memory_added',
         title: 'Add your first family photo',
-        body: 'Your memory vault is empty — upload a family photo to bring it alive',
+        body: 'Your memory vault is empty — upload a photo to bring it alive',
         timestamp: new Date(),
         read: false,
         href: '/memory',
+        priority: 'low',
       })
     }
 
-    // Sort: newest first
+    // Sort: newest first (priority-based sort done in the merged step)
     return notifs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
   }, [members, memoriesCount, events])
 
-  // Mark notifications as read based on readIds + merge realtime claim events.
+  // Merge all notification streams, deduplicate, sort by priority then timestamp.
   const notificationsWithRead = useMemo(
     () => {
-      // Merge all streams: pending-claim polls (admin), realtime audit events, realtime join events, computed.
-      const merged = [...pendingClaimNotifs, ...claimNotifs, ...joinNotifs, ...notifications]
-      // Dedupe by id (admin pending-claim first wins so they stay until dismissed).
-      const seen = new Set<string>()
-      const deduped: AppNotification[] = []
-      for (const n of merged) {
-        if (seen.has(n.id)) continue
-        seen.add(n.id)
-        deduped.push(n)
-      }
-      deduped.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      return deduped.map(n => ({ ...n, read: readIds.has(n.id) }))
+      const merged = [
+        ...pendingClaimNotifs,   // admin: polled claim queue (high priority first)
+        ...claimNotifs,          // realtime: claim lifecycle events
+        ...joinNotifs,           // realtime: is_claimed flip
+        ...storyNotifs,          // realtime: new stories
+        ...visibilityNotifs,     // realtime: visibility changes
+        ...notifications,        // computed: birthdays, events, members, reminders
+      ]
+      const deduped = deduplicateNotifs(merged)
+      const sorted = sortNotifications(deduped)
+      return sorted.map(n => ({ ...n, read: readIds.has(n.id) }))
     },
-    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, readIds]
+    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, readIds]
   )
 
   const unreadCount = useMemo(
@@ -387,11 +607,19 @@ export function useNotifications(
 
   const markAllRead = useCallback(() => {
     setReadIds(prev => {
-      const allIds = new Set([...prev, ...notifications.map(n => n.id)])
+      const allIds = new Set([
+        ...prev,
+        ...notifications.map(n => n.id),
+        ...storyNotifs.map(n => n.id),
+        ...visibilityNotifs.map(n => n.id),
+        ...claimNotifs.map(n => n.id),
+        ...joinNotifs.map(n => n.id),
+        ...pendingClaimNotifs.map(n => n.id),
+      ])
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...allIds])) } catch { /* ignore */ }
       return allIds
     })
-  }, [notifications])
+  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, pendingClaimNotifs])
 
   return { notifications: notificationsWithRead, unreadCount, markAllRead }
 }

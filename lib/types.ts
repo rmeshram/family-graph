@@ -1,3 +1,9 @@
+export interface PrivacySettings {
+  hideContactInfo: boolean
+  hideFromSearch: boolean
+  defaultNodeVisibility: 'public' | 'family' | 'private'
+}
+
 export type RelationshipType =
   | 'self'
   | 'father' | 'mother' | 'parent'
@@ -107,6 +113,8 @@ export interface FamilyMember {
   isDeceased?: boolean
   dateOfBirth?: string
   visibility?: 'public' | 'family' | 'private'
+  /** When true, the node is displayed as a grey "? Member" placeholder to non-admins */
+  showAsAnonymous?: boolean
   // Extended & affiliated family network
   networkGroup?: 'core' | 'extended' | 'affiliated'
   affiliatedFamilyId?: string     // shared key for all members of same external family cluster

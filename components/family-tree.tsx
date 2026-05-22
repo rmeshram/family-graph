@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState, useEffect, memo } from 'react'
 import { FamilyMember } from '@/lib/types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
-import { ZoomIn, ZoomOut, Maximize2, Grid3X3, ChevronDown, ChevronRight, Lock, ShieldCheck, ChevronLeft } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize2, Grid3X3, ChevronDown, ChevronRight, Lock, ShieldCheck, ChevronLeft, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -24,6 +24,8 @@ interface FamilyTreeProps {
   onSelectMember: (id: string) => void
   onDoubleClickMember?: (id: string) => void
   onAddRelative?: (anchorId: string, relType: QuickRelType) => void
+  /** When false, anonymous nodes are shown as "? Member" placeholders */
+  isAdmin?: boolean
 }
 
 interface NodePosition {
@@ -32,7 +34,7 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative }: FamilyTreeProps) {
+export function FamilyTree({ members, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, isAdmin = false }: FamilyTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -855,6 +857,11 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
               .join('')
               .slice(0, 2)
 
+            // Anonymous: non-admins see "? Member" placeholder when showAsAnonymous=true
+            const isAnonymous = !isAdmin && (member.showAsAnonymous ?? false)
+            const displayName = isAnonymous ? '? Member' : member.name.split(' ')[0]
+            const displayInitials = isAnonymous ? '?' : initials
+
             const isDeceased = !!member.deathYear
             const isUnclaimed = !member.isClaimed && member.relationship !== 'self'
             const lifespan = member.deathYear
@@ -907,16 +914,17 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                     <Avatar className={cn('border-2 h-8 w-8',
                       isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
                     )}>
-                      {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
+                      {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                       <AvatarFallback className={cn('text-[9px] font-semibold',
-                        isUnclaimed ? 'bg-slate-700/40 text-slate-400'
-                          : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
-                            : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
-                              : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
-                      )}>{initials}</AvatarFallback>
+                        isAnonymous ? 'bg-muted/60 text-muted-foreground'
+                          : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
+                            : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
+                              : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
+                                : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
+                      )}>{displayInitials}</AvatarFallback>
                     </Avatar>
                     <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: isUnclaimed ? 'rgba(148,163,184,0.7)' : 'var(--tree-node-text)' }}>
-                      {member.name.split(' ')[0]}
+                      {displayName}
                     </p>
                   </button>
                 </div>
@@ -1003,23 +1011,24 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                                   : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
                           )}
                         >
-                          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
+                          {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                           <AvatarFallback
                             className={cn(
                               'font-bold text-lg transition-colors',
-                              isSelected
-                                ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
-                                : isHovered
-                                  ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
-                                    : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
-                                      : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
-                                  : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
-                                    : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
-                                      : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
+                              isAnonymous ? 'bg-muted/60 text-muted-foreground'
+                                : isSelected
+                                  ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
+                                  : isHovered
+                                    ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
+                                      : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
+                                        : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
+                                    : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
+                                      : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
+                                        : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
                             )}
-                            style={{ color: 'var(--tree-node-text)' }}
+                            style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
                           >
-                            {initials}
+                            {displayInitials}
                           </AvatarFallback>
                         </Avatar>
                         {isDeceased && (
@@ -1042,16 +1051,21 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                             <Lock className="h-2.5 w-2.5 text-white" />
                           </div>
                         )}
+                        {isAnonymous && (
+                          <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-slate-600/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                            <EyeOff className="h-2.5 w-2.5 text-slate-300" />
+                          </div>
+                        )}
                       </div>
                       <div className="text-center w-full">
                         <p
                           className={cn(
                             'text-[11px] font-semibold truncate w-full',
-                            isSelected ? '' : isHovered ? '' : ''
+                            isAnonymous ? 'text-muted-foreground italic' : ''
                           )}
-                          style={{ color: 'var(--tree-node-text)' }}
+                          style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
                         >
-                          {member.name.split(' ')[0]}
+                          {displayName}
                         </p>
                         {lifespan && (
                           <p className="text-[9px] mt-0.5" style={{ color: 'var(--tree-node-subtext)' }}>
@@ -1063,7 +1077,10 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs border-border">
                     <div className="space-y-1">
-                      <p className="font-semibold text-foreground">{member.name}</p>
+                      <p className="font-semibold text-foreground">{isAnonymous ? '? Member' : member.name}</p>
+                      {isAnonymous && (
+                        <p className="text-xs text-slate-400">This member is displayed anonymously</p>
+                      )}
                       {isUnclaimed && (
                         <p className="text-xs text-orange-400">Not joined yet — tap to invite</p>
                       )}
