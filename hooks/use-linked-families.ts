@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import type { FamilyMember } from '@/lib/types'
 
 export interface LinkedFamily {
@@ -74,10 +74,7 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
   useEffect(() => {
     if (!familyId) return
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = createClient()
 
     const channel = supabase
       .channel(`linked-family-members:${familyId}:${crypto.randomUUID()}`)

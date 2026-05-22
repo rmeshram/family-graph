@@ -77,7 +77,7 @@ export async function POST(
 
   const newStatus = action === 'accept' ? 'accepted' : 'rejected'
 
-  const { error } = await admin
+  const { data: updated, error } = await admin
     .from('family_links')
     .update({
       status: newStatus,
@@ -86,10 +86,17 @@ export async function POST(
       updated_at: new Date().toISOString(),
     })
     .eq('id', linkId)
+    .eq('status', 'pending')
+    .select('id')
 
   if (error) {
     console.error('family_links update error:', error)
     return NextResponse.json({ error: 'DB_ERROR' }, { status: 500 })
+  }
+
+  // If 0 rows updated the link was already processed by a concurrent request
+  if (!updated?.length) {
+    return NextResponse.json({ error: 'ALREADY_PROCESSED' }, { status: 409 })
   }
 
   return NextResponse.json({ linkId, status: newStatus })

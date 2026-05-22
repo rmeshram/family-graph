@@ -159,6 +159,7 @@ export function useNotifications(
               type = 'node_match_found'
               break
             case 'node_merged':
+            case 'nodes_merged':
               title = `Duplicate profile merged`
               body = `${nodeName}\'s duplicate entry was cleaned up.`
               type = 'node_claimed'
@@ -186,10 +187,56 @@ export function useNotifications(
           })
         }
       )
-      .subscribe()
+      .subscribe((status, err) => {
+        if (err) console.warn('[claim_audit] realtime error:', err)
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [familyId, members])
+
+  // ── family_members UPDATE → fires when someone claims a node via joinWithCode ─
+  // Catches the case where is_claimed flips true (join via invite), emitting a
+  // member_joined notification in real time even before the audit log is written.
+  const [joinNotifs, setJoinNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`family_members_claim:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const next = payload.new as any
+          const prev = payload.old as any
+          // Only react when is_claimed transitions false → true
+          if (!next.is_claimed || prev.is_claimed) return
+          const nodeName = next.name ?? 'A family member'
+          const initials = nodeName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          setJoinNotifs(existing => {
+            const notif: AppNotification = {
+              id: `joined-rt-${next.id}`,
+              type: 'member_joined',
+              title: `${nodeName} joined the family`,
+              body: 'They have claimed their profile.',
+              memberName: nodeName,
+              memberInitials: initials,
+              timestamp: new Date(),
+              read: false,
+              href: '/dashboard',
+            }
+            return [notif, ...existing].slice(0, 10)
+          })
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.warn('[family_members_claim] realtime error:', err)
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId])
 
   const notifications = useMemo<AppNotification[]>(() => {
     const notifs: AppNotification[] = []
@@ -317,8 +364,8 @@ export function useNotifications(
   // Mark notifications as read based on readIds + merge realtime claim events.
   const notificationsWithRead = useMemo(
     () => {
-      // Merge all streams: pending-claim polls (admin), realtime audit events, computed.
-      const merged = [...pendingClaimNotifs, ...claimNotifs, ...notifications]
+      // Merge all streams: pending-claim polls (admin), realtime audit events, realtime join events, computed.
+      const merged = [...pendingClaimNotifs, ...claimNotifs, ...joinNotifs, ...notifications]
       // Dedupe by id (admin pending-claim first wins so they stay until dismissed).
       const seen = new Set<string>()
       const deduped: AppNotification[] = []
@@ -330,7 +377,7 @@ export function useNotifications(
       deduped.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
       return deduped.map(n => ({ ...n, read: readIds.has(n.id) }))
     },
-    [notifications, claimNotifs, pendingClaimNotifs, readIds]
+    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, readIds]
   )
 
   const unreadCount = useMemo(

@@ -606,10 +606,12 @@ export default function FamilyGraphApp() {
       .slice(0, 30)
   }, [isDemoMode, members, storiesByMember])
 
-  // The "self" member — use profile.member_id (authoritative), then relationship, then claimed node
+  // The "self" member — use profile.member_id (authoritative), then claimedByUserId
+  // (catches the case where profile.member_id is stale immediately after join),
+  // then fall back to relationship === 'self' (demo mode / unauthenticated).
   const selfMember = members.find(m => m.id === (profile as any)?.member_id)
-    ?? members.find(m => m.relationship === 'self')
     ?? members.find(m => m.claimedByUserId === user?.id)
+    ?? members.find(m => m.relationship === 'self')
     ?? null
   const filteredMembers = useMemo(() => {
     let base = maxDegree < 10 && selfMember

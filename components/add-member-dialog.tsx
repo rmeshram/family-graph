@@ -373,6 +373,16 @@ export function AddMemberDialog({
 
         <ScrollArea className={isMobile ? "flex-1 min-h-0" : "max-h-[calc(90vh-180px)]"}>
           <form id="add-member-form" onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Notice when editing a node claimed by another user */}
+            {photoIsLocked && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs">
+                <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                <p className="text-amber-200/90">
+                  <span className="font-medium">{editingMember?.name?.split(' ')[0] ?? 'This person'}</span> manages their own profile.
+                  You can still update family connections and relationships.
+                </p>
+              </div>
+            )}
             {/* Photo Upload */}
             <div className="flex items-center gap-4">
               <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} disabled={photoIsLocked} />
@@ -441,10 +451,16 @@ export function AddMemberDialog({
                           <SelectValue placeholder="Select relationship" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Self</SelectLabel>
-                            <SelectItem value="self">Myself (You)</SelectItem>
-                          </SelectGroup>
+                          {/* Only show 'Myself' when no self-node exists yet — prevents duplicate self-nodes */}
+                          {!existingMembers.some(m =>
+                            (m.relationship === 'self' || m.id === selfMemberId) &&
+                            m.id !== editingMember?.id
+                          ) && (
+                              <SelectGroup>
+                                <SelectLabel>Self</SelectLabel>
+                                <SelectItem value="self">Myself (You)</SelectItem>
+                              </SelectGroup>
+                            )}
                           <SelectGroup>
                             <SelectLabel>Grandparents</SelectLabel>
                             <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>
