@@ -215,6 +215,12 @@ export function useMembers(familyId: string | null) {
 
   const addMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>, userId: string) => {
     if (!familyId) return null
+
+    // Guard: max 2 biological parents (mirrors DB trigger in migration 021)
+    if ((memberData.parentIds?.length ?? 0) > 2) {
+      throw new Error('A person cannot have more than 2 biological parents. Use step-parent relationships for additional parents.')
+    }
+
     const insert = memberToInsert(memberData, familyId, userId)
     const { data, error } = await supabase.from('family_members').insert(insert).select().single()
     if (error) throw new Error(error.message)
@@ -295,7 +301,12 @@ export function useMembers(familyId: string | null) {
     if ('bio' in updates) patch.bio = updates.bio ?? null
     if ('relationship' in updates) patch.relationship = updates.relationship ?? null
     if ('occupation' in updates) patch.occupation = updates.occupation ?? null
-    if ('parentIds' in updates) patch.parent_ids = updates.parentIds
+    if ('parentIds' in updates) {
+      if ((updates.parentIds?.length ?? 0) > 2) {
+        throw new Error('A person cannot have more than 2 biological parents.')
+      }
+      patch.parent_ids = updates.parentIds
+    }
     if ('spouseIds' in updates) patch.spouse_ids = updates.spouseIds
     if ('generation' in updates) patch.generation = updates.generation
     if ('isAlive' in updates) patch.is_alive = updates.isAlive
