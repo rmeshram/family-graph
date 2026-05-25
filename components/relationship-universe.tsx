@@ -1446,6 +1446,34 @@ export function RelationshipUniverse({
                       : displayInitials
                     }
                   </span>
+                  {/* ── Claimed / unclaimed indicator ───────────────────── */}
+                  {p.verified ? (
+                    /* Claimed: small green shield badge at bottom-right */
+                    <span
+                      className="absolute rounded-full grid place-items-center pointer-events-none"
+                      style={{
+                        width: Math.max(10, Math.round(r * 0.42)),
+                        height: Math.max(10, Math.round(r * 0.42)),
+                        bottom: -Math.round(r * 0.10),
+                        right: -Math.round(r * 0.10),
+                        background: '#16a34a',
+                        border: '1.5px solid var(--background, #09090b)',
+                        boxShadow: '0 0 6px #16a34a88',
+                        fontSize: Math.max(6, Math.round(r * 0.24)),
+                      }}
+                      title="Claimed — profile linked"
+                    >✓</span>
+                  ) : p.category !== 'self' && r >= 14 ? (
+                    /* Unclaimed: subtle dashed ring around the avatar */
+                    <span
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        inset: -2,
+                        border: '1.5px dashed oklch(0.65 0.04 250 / 0.45)',
+                      }}
+                      title="Not yet claimed"
+                    />
+                  ) : null}
                   {/* Semantic zoom labels — theme-aware via tokens */}
                   {showName && (
                     <span
