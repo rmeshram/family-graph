@@ -967,6 +967,23 @@ export default function FamilyGraphApp() {
     input.click()
   }, [familyId, user, dbAddMember, toast])
 
+  // Smart missing-relative nudges: shown as a floating chip strip in graph view
+  // when the selected node is missing key relatives. Recalculates on selection change.
+  const graphMissingNudges = useMemo(() => {
+    if (viewMode !== 'graph' || !selectedMemberId || isDemoMode || isViewer) return []
+    const m = members.find(mm => mm.id === selectedMemberId)
+    if (!m || m.showAsAnonymous || m.deathYear) return []
+    const parents = m.parentIds.flatMap(pid => members.filter(mm => mm.id === pid))
+    const hasFather = parents.some(p => p.gender === 'male')
+    const hasMother = parents.some(p => p.gender === 'female')
+    const hasSpouse = m.spouseIds.length > 0
+    return [
+      !hasFather && { label: '+Father', type: 'father' as QuickRelType },
+      !hasMother && { label: '+Mother', type: 'mother' as QuickRelType },
+      !hasSpouse && { label: '+Spouse', type: 'spouse' as QuickRelType },
+    ].filter((x): x is { label: string; type: QuickRelType } => !!x)
+  }, [viewMode, selectedMemberId, isDemoMode, isViewer, members])
+
   const VIEW_MODES: { key: TreeViewMode; label: string; icon: React.ElementType }[] = [
     { key: 'graph', label: 'Graph', icon: Network },
     { key: 'orgchart', label: 'Org Chart', icon: GitBranch },
@@ -1250,7 +1267,7 @@ export default function FamilyGraphApp() {
             )}
 
             {/* ── Relationship Intelligence suggestions banner ──────── */}
-            {viewMode === 'universe' && pendingSuggestions.length > 0 && (
+            {(viewMode === 'universe' || viewMode === 'graph') && pendingSuggestions.length > 0 && (
               <RelationshipSuggestionsBanner
                 suggestions={pendingSuggestions}
                 onAccept={async (actions: RelationshipAction[]) => {
@@ -1270,7 +1287,7 @@ export default function FamilyGraphApp() {
             )}
 
             {/* Phase 2.5 — Relationship exploration trail (breadcrumb GPS) */}
-            {viewMode === 'universe' && explorationTrail.length > 0 && (
+            {(viewMode === 'universe' || viewMode === 'graph') && explorationTrail.length > 0 && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 max-w-[90vw] pointer-events-auto">
                 <div
                   className="flex items-center gap-1.5 rounded-full border backdrop-blur-md px-3 py-1.5 shadow-lg overflow-x-auto"
@@ -1309,6 +1326,36 @@ export default function FamilyGraphApp() {
                       </div>
                     )
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Smart missing-relative nudge chip strip — graph view only */}
+            {viewMode === 'graph' && graphMissingNudges.length > 0 && selectedMemberId && (
+              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+                <div
+                  className="flex items-center gap-2 rounded-full border backdrop-blur-md px-3 py-1.5 shadow-lg"
+                  style={{
+                    background: 'var(--universe-trail-bg)',
+                    borderColor: 'var(--universe-trail-border)',
+                  }}
+                >
+                  <span
+                    className="text-[11px] whitespace-nowrap opacity-60"
+                    style={{ color: 'var(--universe-trail-text)' }}
+                  >
+                    {members.find(mm => mm.id === selectedMemberId)?.name.split(' ')[0]}:
+                  </span>
+                  {graphMissingNudges.map(n => (
+                    <button
+                      key={n.type}
+                      onClick={() => handleAddRelative(selectedMemberId!, n.type)}
+                      className="text-[11px] font-medium rounded-full px-2 py-0.5 border transition-all hover:bg-primary/20 active:scale-95"
+                      style={{ color: 'var(--universe-trail-active)', borderColor: 'var(--universe-trail-border)' }}
+                    >
+                      {n.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
