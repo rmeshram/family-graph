@@ -416,7 +416,7 @@ export default function MarketingPage() {
       </section>
 
       {/* ── Stats ──────────────────────────────────────────────────── */}
-      <section className="border-y border-[#E5E3DE] bg-[#F4F3EF] py-12">
+      {/* <section className="border-y border-[#E5E3DE] bg-[#F4F3EF] py-12">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
             {STATS.map(s => (
@@ -427,7 +427,7 @@ export default function MarketingPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* ── Use Cases ──────────────────────────────────────────────── */}
       <section id="use-cases" className="py-20 px-4 sm:px-6">
@@ -685,7 +685,7 @@ export default function MarketingPage() {
       </section>
 
       {/* ── Testimonials ───────────────────────────────────────────── */}
-      <section className="py-20 px-4 sm:px-6">
+      {/* <section className="py-20 px-4 sm:px-6">
         <div className="mx-auto max-w-5xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold sm:text-4xl">Families love it</h2>
@@ -713,10 +713,10 @@ export default function MarketingPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* ── Pricing ────────────────────────────────────────────────── */}
-      <section id="pricing" className="bg-[#F4F3EF] py-20 px-4 sm:px-6">
+      {/* <section id="pricing" className="bg-[#F4F3EF] py-20 px-4 sm:px-6">
         <div className="mx-auto max-w-5xl">
           <div className="text-center mb-12">
             <Badge className="mb-4">Simple Pricing</Badge>
@@ -767,7 +767,7 @@ export default function MarketingPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* ── CTA ────────────────────────────────────────────────────── */}
       <section className="py-20 px-4 sm:px-6">

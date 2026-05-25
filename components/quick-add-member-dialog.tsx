@@ -189,8 +189,8 @@ export function QuickAddMemberDialog({
                   type="button"
                   onClick={() => setGender(prev => prev === g ? '' : g)}
                   className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-all ${gender === g
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70'
                     }`}
                 >
                   {lbl}
@@ -215,19 +215,16 @@ export function QuickAddMemberDialog({
 
           {/* Duplicate warning */}
           {duplicateWarning && (
-            <div className={`rounded-lg border p-3 text-sm space-y-2.5 ${
-              duplicateWarning.tier === 'high'
-                ? 'border-destructive/50 bg-destructive/10'
-                : 'border-amber-500/40 bg-amber-500/10'
-            }`}>
+            <div className={`rounded-lg border p-3 text-sm space-y-2.5 ${duplicateWarning.tier === 'high'
+              ? 'border-destructive/50 bg-destructive/10'
+              : 'border-amber-500/40 bg-amber-500/10'
+              }`}>
               <div className="flex items-start gap-2">
-                <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${
-                  duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-500'
-                }`} />
+                <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-500'
+                  }`} />
                 <div className="flex-1 min-w-0">
-                  <p className={`font-medium text-xs ${
-                    duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'
-                  }`}>
+                  <p className={`font-medium text-xs ${duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'
+                    }`}>
                     {duplicateWarning.tier === 'high' ? 'This person likely already exists' : 'Possible duplicate found'}
                   </p>
                   <p className="text-muted-foreground text-xs mt-0.5 truncate">
