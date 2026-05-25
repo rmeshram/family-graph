@@ -152,6 +152,17 @@ function OnboardingContent() {
       }
       const user = session.user
 
+      // Guard: if user already completed onboarding (has a family_id), don't create a second family.
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("family_id")
+        .eq("id", user.id)
+        .single()
+      if (existingProfile?.family_id) {
+        window.location.href = "/dashboard"
+        return
+      }
+
       // 1. Create the family — try server route first (bypasses RLS), fall back to direct insert
       const nameParts = userData.name.trim().split(" ")
       const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]
@@ -228,6 +239,17 @@ function OnboardingContent() {
       if (profileErr) throw profileErr
 
       // 3. Create parent members (generation 2)
+      const currentYear = new Date().getFullYear()
+      for (const parent of [parent1, parent2]) {
+        if (parent.birthYear) {
+          const yr = parseInt(parent.birthYear)
+          if (isNaN(yr) || yr < 1900 || yr > currentYear - 15) {
+            setIsLoading(false)
+            setErrorMsg(`Enter a realistic birth year for your ${parent.gender === 'male' ? 'father' : 'mother'} (1900 – ${currentYear - 15}).`)
+            return
+          }
+        }
+      }
       const parentIds: string[] = []
       for (const parent of [parent1, parent2]) {
         if (!parent.name.trim()) continue

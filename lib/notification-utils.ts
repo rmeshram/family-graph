@@ -9,26 +9,26 @@ export type NotifPriority = 'high' | 'medium' | 'low'
 
 const PRIORITY_MAP: Record<string, NotifPriority> = {
   // HIGH — identity / access events that user must act on
-  claim_accepted:       'high',
-  claim_revoked:        'high',
-  node_claimed:         'high',
-  role_changed:         'high',
-  invite_accepted:      'high',
+  claim_accepted: 'high',
+  claim_revoked: 'high',
+  node_claimed: 'high',
+  role_changed: 'high',
+  invite_accepted: 'high',
   // MEDIUM — meaningful family activity
-  claim_submitted:      'medium',
-  claim_pending_admin:  'medium',
-  member_joined:        'medium',
-  story_added:          'medium',
+  claim_submitted: 'medium',
+  claim_pending_admin: 'medium',
+  member_joined: 'medium',
+  story_added: 'medium',
   relationship_updated: 'medium',
-  visibility_changed:   'medium',
-  birthday_today:       'medium',
-  anniversary:          'medium',
-  memorial:             'medium',
+  visibility_changed: 'medium',
+  birthday_today: 'medium',
+  anniversary: 'medium',
+  memorial: 'medium',
   // LOW — passive / scheduled
-  birthday_upcoming:    'low',
-  event_upcoming:       'low',
-  memory_added:         'low',
-  node_match_found:     'low',
+  birthday_upcoming: 'low',
+  event_upcoming: 'low',
+  memory_added: 'low',
+  node_match_found: 'low',
 }
 
 export function getNotifPriority(type: string): NotifPriority {
@@ -55,7 +55,7 @@ export function sortNotifications<T extends { priority?: NotifPriority; timestam
  */
 export function privacyAwareName(name: string, visibility?: string): string {
   if (visibility === 'private') return 'A private family member'
-  if (visibility === 'hidden')  return 'A family member'
+  if (visibility === 'hidden') return 'A family member'
   return name
 }
 
@@ -95,10 +95,10 @@ export function shouldGroupMemberAdds(count: number): boolean {
 
 export function buildGroupedMemberTitle(count: number, names: string[]): { title: string; body: string } {
   const preview = names.slice(0, 2).join(', ')
-  const extra   = count > 2 ? ` and ${count - 2} more` : ''
+  const extra = count > 2 ? ` and ${count - 2} more` : ''
   return {
     title: `${count} new family members added`,
-    body:  `${preview}${extra} joined the tree`,
+    body: `${preview}${extra} joined the tree`,
   }
 }
 
@@ -109,13 +109,13 @@ export type DateSection = 'today' | 'week' | 'earlier'
 export function getDateSection(ts: Date): DateSection {
   const diffMs = Date.now() - ts.getTime()
   const diffDays = diffMs / 86_400_000
-  if (diffDays < 1)  return 'today'
-  if (diffDays < 7)  return 'week'
+  if (diffDays < 1) return 'today'
+  if (diffDays < 7) return 'week'
   return 'earlier'
 }
 
 export const DATE_SECTION_LABEL: Record<DateSection, string> = {
-  today:   'Today',
-  week:    'This week',
+  today: 'Today',
+  week: 'This week',
   earlier: 'Earlier',
 }

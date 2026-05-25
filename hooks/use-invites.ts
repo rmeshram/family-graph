@@ -2,7 +2,6 @@
 
 import { useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { isRecommendedClaimMatch, scoreCandidate } from '@/lib/match-detection'
 
 function getOrigin(): string {
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
@@ -115,6 +114,62 @@ export function useInvites(familyId: string | null) {
   return { createInviteLink, createNodeClaimInvite, getActiveLinks, revokeInvite }
 }
 
+// ─── Invite by phone number ───────────────────────────────────────────────────
+
+export function useInviteByPhone(familyId: string | null) {
+  const supabase = createClient()
+
+  /**
+   * Invite a specific person by their phone number.
+   * Creates an invite_links row with invited_phone set so the join flow can
+   * auto-match them to a family_member node on arrival.
+   *
+   * @param phone  Raw phone string (will be normalized to E.164 internally)
+   * @param nodeId  Optional: pre-link to a specific unclaimed family_member node
+   * @param expiryHours  Defaults to 72 hours
+   */
+  const inviteByPhone = useCallback(async (
+    phone: string,
+    nodeId?: string,
+    expiryHours = 72,
+    userId?: string,
+  ) => {
+    if (!familyId) throw new Error('No family')
+
+    // Lazy import to keep this module server-safe
+    const { normalizePhone, whatsappUrl } = await import('@/lib/phone-utils')
+    const e164 = normalizePhone(phone)
+    if (!e164) throw new Error('Invalid phone number')
+
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase()
+    const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
+
+    const insertData: Record<string, unknown> = {
+      family_id: familyId,
+      code,
+      role: 'contributor',
+      expires_at: expiresAt,
+      max_uses: 1,
+      invited_phone: e164,
+    }
+    if (nodeId) { insertData.node_id = nodeId; insertData.invite_type = 'node_claim' }
+    if (userId) insertData.created_by = userId
+
+    const { data, error } = await (supabase.from('invite_links') as any)
+      .insert(insertData).select().single()
+
+    if (error) throw new Error(error.message)
+
+    const link = `${getOrigin()}/join/${code}`
+    const waText = `🌳 You've been invited to join your family tree on Family Graph!\n\nTap to join: ${link}`
+    const waLink = whatsappUrl(e164, waText)
+
+    return { code, link, waLink, invitedPhone: e164 }
+  }, [familyId, supabase])
+
+  return { inviteByPhone }
+}
+
 // ─── Join via invite code ─────────────────────────────────────────────────────
 
 type RelToInviter = 'spouse' | 'child' | 'parent' | 'sibling' | 'relative' | 'skip'
@@ -131,6 +186,12 @@ export function useJoinFamily() {
   const supabase = createClient()
 
   const joinWithCode = useCallback(async (code: string, userId: string, opts?: JoinOpts) => {
+    // ── Session refresh (P0 fix) ────────────────────────────────────────────
+    // If the user's JWT has expired (e.g. >1 hour idle), all DB writes silently
+    // fail at the RLS layer — no error is thrown. Refresh before any DB call.
+    const { error: sessionErr } = await supabase.auth.refreshSession()
+    if (sessionErr) throw new Error('Session expired — please sign in again')
+
     // 1. Look up invite
     const { data: invite, error: inviteErr } = await supabase
       .from('invite_links')
@@ -213,74 +274,16 @@ export function useJoinFamily() {
     }).eq('id', userId)
     if (profileErr) throw new Error(profileErr.message)
 
-    // 2b. Before creating a new member, auto-claim a recommended unclaimed node
-    // if there is an exact email/phone match or a high-confidence identity match.
-    if (!opts?.claimMemberId) {
-      const { data: unclaimed } = await supabase
-        .from('family_members')
-        .select('id, name, relationship, birth_year, phone, email')
-        .eq('family_id', invite.family_id)
-        .eq('is_claimed', false)
-        .limit(50)
-
-      const userProfile = {
-        name: opts?.displayName?.trim() || profile?.display_name || userEmail?.split('@')[0] || '',
-        birthYear: null as number | null,
-        phone: profile?.phone ?? null,
-        email: userEmail,
-      }
-
-      const bestMatch = (unclaimed ?? [])
-        .map((node: any) => scoreCandidate(
-          {
-            nodeId: node.id,
-            nodeName: node.name,
-            familyId: invite.family_id,
-            familyName: 'Family',
-            addedByName: null,
-            relationship: node.relationship ?? null,
-            birthYear: node.birth_year ?? null,
-            phone: node.phone ?? null,
-            email: node.email ?? null,
-          },
-          userProfile,
-        ))
-        .filter(Boolean)
-        .sort((a: any, b: any) => b.confidenceScore - a.confidenceScore)[0]
-
-      if (bestMatch && isRecommendedClaimMatch(bestMatch)) {
-        const { error: claimErr } = await supabase.from('family_members')
-          .update({ claimed_by_user_id: userId, is_claimed: true } as any)
-          .eq('id', bestMatch.nodeId)
-          .eq('is_claimed', false)
-        if (claimErr) throw new Error(claimErr.message)
-
-        await supabase.from('profiles').update({
-          member_id: bestMatch.nodeId,
-          display_name: opts?.displayName || profile?.display_name || undefined,
-        }).eq('id', userId)
-
-        // Emit audit event so realtime notifications fire for admins
-        await (supabase.from('claim_audit_log') as any).insert({
-          node_id: bestMatch.nodeId,
-          family_id: invite.family_id,
-          actor_id: userId,
-          action: 'claim_completed',
-          metadata: { via_invite: true, invite_code: code, auto_matched: true },
-        })
-
-        const incrQ = supabase.from('invite_links') as any
-        let chain = incrQ
-          .update({ used_count: invite.used_count + 1, consumed_at: new Date().toISOString() })
-          .eq('id', invite.id)
-          .eq('used_count', invite.used_count)
-        if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
-        chain = chain.select('id')
-        const { data: autoData, error: incErr } = await chain
-        if (incErr || !(autoData as any[])?.length) throw new Error('This invite was just used by someone else. Please request a new one.')
-        return invite.family_id
-      }
-    }
+    // 2b. Identity resolution is handled in the JOIN PAGE UI before this function
+    // is called. The UI shows unclaimed node matches and lets the user explicitly
+    // pick "Yes this is me" → passes claimMemberId in opts, OR "Create new profile".
+    //
+    // We intentionally do NOT auto-claim here based on email/name matching.
+    // Silent auto-claim is a security risk: a phished email could silently take
+    // over another person's profile without their knowledge or confirmation.
+    //
+    // If opts.claimMemberId is set, the user explicitly confirmed the match.
+    // If not set, we proceed to create a new member (step 4).
 
     // 3. If user picked an existing node to claim, link it and skip new-member creation
     if (opts?.claimMemberId) {

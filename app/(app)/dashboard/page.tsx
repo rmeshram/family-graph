@@ -49,7 +49,7 @@ import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
-  Link2, TreePine, Eye,
+  Link2, TreePine, Eye, Crown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -200,6 +200,7 @@ function OrgChartView({ members, onSelect, selectedId, onAddRelative }: {
                     )}
                   >
                     <Avatar className="h-10 w-10">
+                      {m.photoUrl && <AvatarImage src={m.photoUrl} alt={m.name} className="object-cover" />}
                       <AvatarFallback className={cn(
                         'text-xs font-bold',
                         selectedId === m.id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
@@ -268,33 +269,41 @@ function ListView({ members, onSelect, selectedId }: {
       </div>
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-4">
-          {byGen.map(([gen, genMembers]) => (
-            <div key={gen}>
-              <p className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                Gen {gen} — {genLabels[gen] ?? 'Family'}
-              </p>
-              <div className="space-y-0.5">
-                {genMembers.map(m => (
-                  <button key={m.id} onClick={() => onSelect(m.id)}
-                    className={cn('w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', selectedId === m.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50')}
-                  >
-                    <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarFallback className={cn('text-xs font-bold', selectedId === m.id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground')}>
-                        {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{m.name}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">
-                        {m.relationship?.replace(/-/g, ' ')} · {m.currentPlace?.split(',')[0] ?? m.birthPlace?.split(',')[0] ?? '—'}
-                      </p>
-                    </div>
-                    {m.isAlive === false ? <span className="text-[9px] text-muted-foreground/50 shrink-0">†</span> : <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />}
-                  </button>
-                ))}
-              </div>
+          {byGen.length === 0 && listSearch ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
+              <Search className="h-8 w-8 text-muted-foreground/30" />
+              <p className="text-sm font-medium text-muted-foreground">No members match "{listSearch}"</p>
+              <p className="text-[11px] text-muted-foreground/60">Try a different name</p>
             </div>
-          ))}
+          ) : (
+            byGen.map(([gen, genMembers]) => (
+              <div key={gen}>
+                <p className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  Gen {gen} — {genLabels[gen] ?? 'Family'}
+                </p>
+                <div className="space-y-0.5">
+                  {genMembers.map(m => (
+                    <button key={m.id} onClick={() => onSelect(m.id)}
+                      className={cn('w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', selectedId === m.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50')}
+                    >
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarFallback className={cn('text-xs font-bold', selectedId === m.id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground')}>
+                          {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{m.name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {m.relationship?.replace(/-/g, ' ')} · {m.currentPlace?.split(',')[0] ?? m.birthPlace?.split(',')[0] ?? '—'}
+                        </p>
+                      </div>
+                      {m.isAlive === false ? <span className="text-[9px] text-muted-foreground/50 shrink-0">†</span> : <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </ScrollArea>
     </div>
@@ -385,16 +394,23 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
   const [link, setLink] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [inviteRole, setInviteRole] = useState<'contributor' | 'viewer'>('contributor')
 
-  // Generate a real invite link on mount (for authenticated users with a family)
-  useEffect(() => {
+  const generateLink = useCallback((role: 'contributor' | 'viewer') => {
     if (!familyId || !userId) return
+    setLink(null)
     setGenerating(true)
-    createInviteLink('contributor', 72, userId)
+    createInviteLink(role, 72, userId)
       .then(result => setLink(result.link))
       .catch(() => {/* silently fall back to placeholder */ })
       .finally(() => setGenerating(false))
   }, [familyId, userId, createInviteLink])
+
+  // Generate a real invite link on mount (for authenticated users with a family)
+  useEffect(() => {
+    generateLink(inviteRole)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familyId, userId])
 
   const displayLink = link ?? (familyId ? '' : 'https://familygraph.app/join/DEMO')
   const copy = () => {
@@ -420,6 +436,26 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div className="rounded-xl border border-border/50 bg-muted/30 p-3 space-y-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Invite Link</p>
+          {/* Role picker — controls who the link invites as */}
+          <div className="flex items-center gap-1 rounded-lg bg-muted/50 p-0.5">
+            {(['contributor', 'viewer'] as const).map(r => (
+              <button
+                key={r}
+                onClick={() => { setInviteRole(r); generateLink(r) }}
+                className={cn(
+                  'flex-1 rounded-md py-1 text-[10px] font-semibold transition-colors',
+                  inviteRole === r
+                    ? 'bg-card text-foreground shadow-sm border border-border/50'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {r === 'contributor' ? '✏️ Contributor' : '👁 Viewer'}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            {inviteRole === 'contributor' ? 'Can add and edit family members' : 'Can view only — cannot edit'}
+          </p>
           <div className="flex items-center gap-2">
             {generating ? (
               <span className="flex-1 text-[10px] text-muted-foreground animate-pulse">Generating link…</span>
@@ -481,6 +517,14 @@ export default function FamilyGraphApp() {
     if (window.innerWidth < 768) setShowExtended(false)
   }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+
+  // After a phone-based claim, /dashboard?claimed=NODE_ID focuses the claimed node.
+  // We read from window.location (client-only) to avoid requiring Suspense.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const claimedId = new URLSearchParams(window.location.search).get('claimed')
+    if (claimedId) setSelectedMemberId(claimedId)
+  }, [])
   // Mobile-only: tracks which node was tapped to show the compact context menu.
   // The full MemberDetail drawer only opens after the user taps "View Full Profile".
   const [mobileMenuMemberId, setMobileMenuMemberId] = useState<string | null>(null)
@@ -963,6 +1007,15 @@ export default function FamilyGraphApp() {
           </div>
         )}
 
+        {/* DB load error banner */}
+        {dbError && !isDemoMode && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" />
+            <span>Could not load family data — check your connection and refresh.</span>
+            <button onClick={() => window.location.reload()} className="ml-auto shrink-0 underline underline-offset-2 hover:opacity-80">Retry</button>
+          </div>
+        )}
+
         {/* ── Top Bar ──────────────────────────────────────────────── */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
           <div className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
@@ -1019,13 +1072,15 @@ export default function FamilyGraphApp() {
                 <span className="hidden sm:inline">AI</span>
               </Button>
             )}
-            <Button variant={showInviteWidget ? 'default' : 'ghost'} size="sm"
-              onClick={() => { setShowInviteWidget(v => !v); setShowAIWidget(false) }}
-              className={cn('h-8 gap-1.5 text-xs', showInviteWidget ? 'bg-green-500 text-white hover:bg-green-600' : 'text-green-400 hover:bg-green-500/10')}
-            >
-              <UserPlus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Invite</span>
-            </Button>
+            {!isViewer && (
+              <Button variant={showInviteWidget ? 'default' : 'ghost'} size="sm"
+                onClick={() => { setShowInviteWidget(v => !v); setShowAIWidget(false) }}
+                className={cn('h-8 gap-1.5 text-xs', showInviteWidget ? 'bg-green-500 text-white hover:bg-green-600' : 'text-green-400 hover:bg-green-500/10')}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Invite</span>
+              </Button>
+            )}
 
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
@@ -1043,6 +1098,37 @@ export default function FamilyGraphApp() {
               </TooltipTrigger>
               <TooltipContent>Settings</TooltipContent>
             </Tooltip>
+
+            {/* Role badge — always visible so users know their permission level */}
+            {!isDemoMode && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className={cn(
+                      'flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors',
+                      isAdmin
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                        : (profile as any)?.role === 'contributor'
+                          ? 'border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20'
+                          : 'border-border/50 bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                    )}
+                  >
+                    {isAdmin ? <Crown className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+                    <span className="hidden sm:inline">
+                      {isAdmin ? 'Admin' : (profile as any)?.role ?? 'viewer'}
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isAdmin
+                    ? 'You are the Family Admin — full access'
+                    : (profile as any)?.role === 'contributor'
+                      ? 'Contributor — can add & edit members'
+                      : 'Viewer — read-only access'}
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </header>
 
@@ -1319,9 +1405,12 @@ export default function FamilyGraphApp() {
                 member={selectedMember}
                 allMembers={members}
                 onClose={closeMemberDetail}
-                onEdit={() => setEditingMember(selectedMember)}
-                onDelete={() => setIsDeleteDialogOpen(true)}
-                onAddStory={() => setIsStoryDialogOpen(true)}
+                onEdit={(
+                  !isViewer &&
+                  (isAdmin || !selectedMember.isClaimed || selectedMember.claimedByUserId === user?.id)
+                ) ? () => setEditingMember(selectedMember) : undefined}
+                onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
+                onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                 onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                 isAdmin={isAdmin}
@@ -1398,9 +1487,12 @@ export default function FamilyGraphApp() {
                       member={selectedMember}
                       allMembers={members}
                       onClose={closeMemberDetail}
-                      onEdit={() => setEditingMember(selectedMember)}
-                      onDelete={() => setIsDeleteDialogOpen(true)}
-                      onAddStory={() => setIsStoryDialogOpen(true)}
+                      onEdit={(
+                        !isViewer &&
+                        (isAdmin || !selectedMember.isClaimed || selectedMember.claimedByUserId === user?.id)
+                      ) ? () => setEditingMember(selectedMember) : undefined}
+                      onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
+                      onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                       onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
                       onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                       isAdmin={isAdmin}

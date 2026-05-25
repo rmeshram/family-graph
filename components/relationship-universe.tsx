@@ -37,6 +37,7 @@ interface UPerson {
   id: string
   name: string
   initials: string
+  photoUrl?: string
   category: UCategory
   x: number
   y: number
@@ -330,7 +331,13 @@ export function buildUniverse(
     people.push({
       id: m.id, name: m.name, initials, category: cat,
       x: pos.x, y: pos.y, size, hue: HUE[cat],
-      relation: typeof m.relationship === 'string' ? m.relationship : '',
+      // Compute relation label from the viewer's (selfId's) perspective via BFS.
+      // Never show the stored `relationship` field directly — it is relative to
+      // the admin who created the tree, not the current viewer.
+      relation: m.id === selfId
+        ? 'You'
+        : (computeRelationLabel(selfId, m.id, members) ?? ''),
+      photoUrl: m.photoUrl || undefined,
       city: m.currentPlace ?? m.birthPlace ?? m.hometown ?? '',
       gotra: m.gotra ?? m.caste ?? '',
       verified: !!m.claimedByUserId,
@@ -425,7 +432,13 @@ export function RelationshipUniverse({
   loading = false,
   isAdmin = false,
 }: Props) {
-  const effectiveSelfId = selfMemberId ?? members[0]?.id ?? ''
+  // Use the viewer's own member ID as the universe center.
+  // Fall back to the node with relationship==='self' (the family creator's node)
+  // only if the viewer hasn't claimed a node yet — never fall back to members[0]
+  // which could be any arbitrary member.
+  const effectiveSelfId = selfMemberId
+    ?? members.find(m => m.relationship === 'self')?.id
+    ?? ''
 
   // ── Graph data ───────────────────────────────────────────────────────────
   const { people, edges } = useMemo(() => buildUniverse(members, effectiveSelfId), [members, effectiveSelfId])
@@ -1350,7 +1363,7 @@ export function RelationshipUniverse({
                   )}
                   {/* Avatar disc */}
                   <span
-                    className="absolute inset-0 rounded-full grid place-items-center font-semibold text-white"
+                    className="absolute inset-0 rounded-full grid place-items-center font-semibold text-white overflow-hidden"
                     style={{
                       background: isNodeAnonymous
                         ? 'oklch(0.28 0.02 250)'
@@ -1361,7 +1374,10 @@ export function RelationshipUniverse({
                       opacity: isNodeAnonymous ? 0.6 : undefined,
                     }}
                   >
-                    {displayInitials}
+                    {!isNodeAnonymous && p.photoUrl
+                      ? <img src={p.photoUrl} alt={p.name} className="absolute inset-0 w-full h-full object-cover" />
+                      : displayInitials
+                    }
                   </span>
                   {/* Semantic zoom labels — theme-aware via tokens */}
                   {showName && (
@@ -1543,7 +1559,7 @@ export function RelationshipUniverse({
             <div className="flex items-center gap-3 pl-5 pr-2.5 pt-3 pb-2.5">
               {/* Avatar with category glow */}
               <div
-                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[13px] font-bold"
+                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[13px] font-bold relative overflow-hidden"
                 style={{
                   background: `linear-gradient(135deg, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}cc, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}55)`,
                   boxShadow: `0 0 0 2px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}44, 0 0 16px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}33`,
@@ -1551,7 +1567,10 @@ export function RelationshipUniverse({
                   letterSpacing: '-0.02em',
                 }}
               >
-                {selectedPerson.initials}
+                {selectedPerson.photoUrl
+                  ? <img src={selectedPerson.photoUrl} alt={selectedPerson.name} className="absolute inset-0 w-full h-full object-cover" />
+                  : selectedPerson.initials
+                }
               </div>
 
               {/* Name + relation badge */}
@@ -1567,7 +1586,9 @@ export function RelationshipUniverse({
                       color: CATEGORY_COLOR[selectedPerson.category] ?? 'var(--muted-foreground)',
                     }}
                   >
-                    {selectedPerson.relation || selectedPerson.category}
+                    {selectedPerson.relation
+                      ? selectedPerson.relation
+                      : selectedPerson.category.replace(/-/g, ' ')}
                   </span>
                   {selectedPerson.city && (
                     <span className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>

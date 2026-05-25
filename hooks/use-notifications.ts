@@ -33,6 +33,7 @@ export type NotifType =
   | 'visibility_changed'
   | 'anniversary'
   | 'memorial'
+  | 'role_changed'
 
 export interface AppNotification {
   id: string
@@ -401,6 +402,60 @@ export function useNotifications(
     return () => { supabase.removeChannel(channel) }
   }, [familyId])
 
+  // ── Realtime: profiles UPDATE → role_changed notification ─────────────────
+  // Notifies the affected user (and admins) when their role is changed.
+  // Subscribes to profiles table changes where family_id matches.
+  const [roleNotifs, setRoleNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`profiles_role:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const prevRow = payload.old as any
+          const nextRow = payload.new as any
+          // Only fire when role actually changes
+          if (!prevRow.role || prevRow.role === nextRow.role) return
+
+          const displayName = (nextRow.display_name as string | null) ?? 'A family member'
+          const roleLabel: Record<string, string> = {
+            admin: 'Admin',
+            contributor: 'Contributor',
+            viewer: 'Viewer',
+          }
+          const newRoleLabel = roleLabel[nextRow.role as string] ?? nextRow.role
+          const oldRoleLabel = roleLabel[prevRow.role as string] ?? prevRow.role
+
+          setRoleNotifs(prev => {
+            const id = `role-${nextRow.id}-${Date.now()}`
+            const notif: AppNotification = {
+              id,
+              type: 'role_changed',
+              title: `${displayName}'s role changed`,
+              body: `Role updated from ${oldRoleLabel} to ${newRoleLabel}`,
+              memberName: displayName,
+              memberInitials: getInitials(displayName),
+              timestamp: new Date(),
+              read: false,
+              href: '/dashboard',
+              priority: 'medium',
+            }
+            return [notif, ...prev].slice(0, 10)
+          })
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.warn('[profiles_role] realtime error:', err)
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId])
+
   const notifications = useMemo<AppNotification[]>(() => {
     const notifs: AppNotification[] = []
 
@@ -591,13 +646,14 @@ export function useNotifications(
         ...joinNotifs,           // realtime: is_claimed flip
         ...storyNotifs,          // realtime: new stories
         ...visibilityNotifs,     // realtime: visibility changes
+        ...roleNotifs,           // realtime: role changes
         ...notifications,        // computed: birthdays, events, members, reminders
       ]
       const deduped = deduplicateNotifs(merged)
       const sorted = sortNotifications(deduped)
       return sorted.map(n => ({ ...n, read: readIds.has(n.id) }))
     },
-    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, readIds]
+    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, readIds]
   )
 
   const unreadCount = useMemo(

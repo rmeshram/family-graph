@@ -51,7 +51,7 @@ interface MemberDetailProps {
   member: FamilyMember
   allMembers: FamilyMember[]
   onClose: () => void
-  onEdit: () => void
+  onEdit?: () => void
   onDelete?: () => void
   onAddStory?: () => void
   onInvite?: () => void
@@ -169,16 +169,25 @@ export function MemberDetail({
     finally { setMsSaving(false) }
   }
 
-  // DECISION 4: Self is resolved dynamically from the logged-in user's bound
-  // member_id (passed via prop). Fall back to legacy `relationship === 'self'`
-  // for demo data / unauthenticated views where no profile binding exists.
-  const selfMember = (selfMemberId && allMembers.find(m => m.id === selfMemberId))
-    || allMembers.find(m => m.relationship === 'self')
+  // Resolve the current viewer's own node from the prop only.
+  // DO NOT fall back to `relationship === 'self'` — that field identifies the
+  // admin who created the family (Rahul), NOT the currently logged-in viewer.
+  // Using it as a fallback causes every other member to see relationships from
+  // Rahul's perspective (e.g. brother sees Rahul's node labelled as "self").
+  const selfMember = selfMemberId
+    ? (allMembers.find(m => m.id === selfMemberId) ?? null)
+    : null
+  // "This is your node" — prefer claimedByUserId (authoritative) then selfMemberId
+  const isYourNode = !!((
+    currentUserId && member.claimedByUserId === currentUserId
+  ) || (
+      selfMemberId && member.id === selfMemberId
+    ))
   const completeness = computeProfileCompleteness(member)
-  const relationPath = selfMember && member.id !== selfMember.id
+  const relationPath = selfMember && !isYourNode
     ? findRelationshipPath(selfMember.id, member.id, allMembers)
     : null
-  const relationLabel = selfMember && member.id !== selfMember.id
+  const relationLabel = selfMember && !isYourNode
     ? computeRelationLabel(selfMember.id, member.id, allMembers)
     : null
 
@@ -206,9 +215,13 @@ export function MemberDetail({
             <div className="space-y-1">
               <h2 className="text-xl font-bold text-foreground">{member.name}</h2>
               <div className="flex items-center gap-2 flex-wrap">
-                {(member.relationship && member.relationship !== 'self') || member.id === selfMemberId ? (
+                {isYourNode ? (
                   <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
-                    {member.id === selfMemberId ? 'You' : member.relationship}
+                    You
+                  </Badge>
+                ) : (relationLabel || (member.relationship && member.relationship !== 'self')) ? (
+                  <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
+                    {relationLabel ?? member.relationship}
                   </Badge>
                 ) : null}
                 {member.showAsAnonymous && (
@@ -723,7 +736,7 @@ export function MemberDetail({
           </div>
         )}
         {/* Invite nudge for unclaimed members */}
-        {!member.isClaimed && member.relationship !== 'self' && onInvite && (
+        {!member.isClaimed && !isYourNode && onInvite && (
           <button
             onClick={onInvite}
             className="mb-2 w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
@@ -733,24 +746,33 @@ export function MemberDetail({
             <span>Invite {member.name.split(' ')[0]} to join the tree</span>
           </button>
         )}
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-          <Button variant="outline" size="sm" className="flex-1 bg-primary/10 border-primary/30 text-primary hover:bg-primary/20" onClick={onAddStory}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            AI Story
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        {(onEdit || onAddStory || onDelete) && (
+          <div className="flex gap-2">
+            {onEdit && (
+              <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            )}
+            {onAddStory && (
+              <Button variant="outline" size="sm" className="flex-1 bg-primary/10 border-primary/30 text-primary hover:bg-primary/20" onClick={onAddStory}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                AI Story
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                title="Delete member"
+                onClick={onDelete}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </Card>
   )

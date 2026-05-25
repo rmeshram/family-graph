@@ -33,6 +33,12 @@ export const FEATURE_FLAGS = {
   enableClaimReviewQueue: true,
   /** Realtime notifications driven by claim_audit_log + family_members inserts. */
   enableRealtimeNotifications: true,
+  /** Phone number + OTP sign-in / sign-up (WhatsApp / SMS).
+   *  Requires Supabase Phone provider + an SMS/WhatsApp gateway configured in the Dashboard.
+   *  Keep false until the gateway is ready — email auth continues to work independently. */
+  enablePhoneOtpAuth: false,
+  /** Email + password authentication. Disable only if switching 100% to phone OTP. */
+  enableEmailPasswordAuth: true,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS

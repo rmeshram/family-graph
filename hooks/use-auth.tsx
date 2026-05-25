@@ -14,6 +14,8 @@ interface AuthContextValue {
   familyId: string | null
   loading: boolean
   signOut: () => Promise<void>
+  /** Force a fresh profile fetch. Call after operations that change the profile (e.g. onboarding). */
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -23,6 +25,7 @@ const AuthContext = createContext<AuthContextValue>({
   familyId: null,
   loading: true,
   signOut: async () => { },
+  refreshProfile: async () => { },
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -39,6 +42,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select('*')
         .eq('id', userId)
         .single()
+
+      // Self-heal: if the user created this family but their role wasn't set to admin
+      // (e.g. the onboarding UPDATE ran before the profile row existed), fix it now.
+      if (data && data.family_id && data.role !== 'admin') {
+        const { data: family } = await supabase
+          .from('families')
+          .select('created_by')
+          .eq('id', data.family_id)
+          .single()
+        if (family?.created_by === userId) {
+          await supabase
+            .from('profiles')
+            .update({ role: 'admin' })
+            .eq('id', userId)
+          data.role = 'admin'
+        }
+      }
+
       setProfile(data)
     } catch {
       // Network or RLS error — keep previous profile, don't crash auth
@@ -73,6 +94,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; subscription.unsubscribe() }
   }, [supabase, fetchProfile])
 
+  // Realtime: re-fetch profile whenever the current user's row changes
+  // (e.g. role update, family assignment) so the UI reflects changes immediately.
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel(`profile:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+        () => { fetchProfile(user.id) }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [supabase, user, fetchProfile])
+
+  const refreshProfile = useCallback(async () => {
+    if (user) await fetchProfile(user.id)
+  }, [user, fetchProfile])
+
   const signOut = async () => {
     await supabase.auth.signOut()
   }
@@ -85,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       familyId: profile?.family_id ?? null,
       loading,
       signOut,
+      refreshProfile,
     }}>
       {children}
     </AuthContext.Provider>

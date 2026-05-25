@@ -27,17 +27,17 @@ import {
 // ─── Quick-rel options ────────────────────────────────────────────────────────
 
 const QUICK_REL_OPTIONS: { type: QuickRelType; label: string; emoji: string }[] = [
-  { type: 'father',  label: 'Father',  emoji: '👨' },
-  { type: 'mother',  label: 'Mother',  emoji: '👩' },
-  { type: 'spouse',  label: 'Spouse',  emoji: '💑' },
-  { type: 'child',   label: 'Child',   emoji: '👶' },
+  { type: 'father', label: 'Father', emoji: '👨' },
+  { type: 'mother', label: 'Mother', emoji: '👩' },
+  { type: 'spouse', label: 'Spouse', emoji: '💑' },
+  { type: 'child', label: 'Child', emoji: '👶' },
   { type: 'sibling', label: 'Sibling', emoji: '🤝' },
 ]
 
 function getAvailableRels(member: FamilyMember, allMembers: FamilyMember[]) {
   const parentIds = (member.parentIds as string[]) ?? []
   const spouseIds = (member.spouseIds as string[]) ?? []
-  const parents   = allMembers.filter(m => parentIds.includes(m.id))
+  const parents = allMembers.filter(m => parentIds.includes(m.id))
   const hasFather = parents.some(p => p.gender === 'male')
   const hasMother = parents.some(p => p.gender === 'female')
   const hasSpouse = spouseIds.length > 0
@@ -86,16 +86,16 @@ export function MobileNodeMenu({
 
   if (!member) return null
 
-  const initials        = member.name.split(' ').map(n => n[0]).join('').slice(0, 2)
-  const isSelf          = member.id === selfMemberId
-  const isDeceased      = !!member.deathYear
-  const lifespan        = member.deathYear
+  const initials = member.name.split(' ').map(n => n[0]).join('').slice(0, 2)
+  const isSelf = member.id === selfMemberId
+  const isDeceased = !!member.deathYear
+  const lifespan = member.deathYear
     ? `${member.birthYear ?? '?'}–${member.deathYear}`
     : member.birthYear ? `b. ${member.birthYear}` : null
-  const availableRels   = getAvailableRels(member, allMembers)
-  const canAddRelative  = !isViewer && !!onAddRelative && availableRels.length > 0
-  const canEdit         = !isViewer && !isSelf && !!onEdit
-  const canInvite       = !isViewer && !member.isClaimed && !!onInvite
+  const availableRels = getAvailableRels(member, allMembers)
+  const canAddRelative = !isViewer && !!onAddRelative && availableRels.length > 0
+  const canEdit = !isViewer && !isSelf && !!onEdit
+  const canInvite = !isViewer && !member.isClaimed && !!onInvite
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange} direction="bottom">
