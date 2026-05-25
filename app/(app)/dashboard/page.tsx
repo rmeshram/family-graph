@@ -1619,10 +1619,18 @@ export default function FamilyGraphApp() {
         defaultTab={settingsDefaultTab}
         selfMember={selfMember}
         onSetVisibility={async (memberId, v) => {
-          try { await setVisibility(memberId, v) } catch { /* ignore */ }
+          try {
+            await setVisibility(memberId, v)
+          } catch (err: any) {
+            toast({ title: 'Could not update visibility', description: err?.message, variant: 'destructive' })
+          }
         }}
         onSetAnonymous={async (memberId, anon) => {
-          try { await setAnonymous(memberId, anon) } catch { /* ignore */ }
+          try {
+            await setAnonymous(memberId, anon)
+          } catch (err: any) {
+            toast({ title: 'Could not update anonymous setting', description: err?.message, variant: 'destructive' })
+          }
         }}
       />
       <LinkFamilyDialog

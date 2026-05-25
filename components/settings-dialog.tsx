@@ -166,9 +166,25 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
   const savePrivacyMode = async (mode: 'open' | 'protected' | 'closed') => {
     if (!familyId || !isAdmin) return
     setSavingPrivacy(true)
-    setPrivacyMode(mode)
-    await supabase.from('families').update({ privacy_mode: mode } as any).eq('id', familyId)
-    setSavingPrivacy(false)
+    const prev = privacyMode
+    setPrivacyMode(mode) // optimistic
+    try {
+      const res = await fetch('/api/admin/family/privacy', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ privacyMode: mode }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? `Failed to save (${res.status})`)
+      }
+      toast.success(`Family visibility set to ${mode}`)
+    } catch (err: any) {
+      setPrivacyMode(prev) // roll back
+      toast.error(err?.message ?? 'Could not update family visibility')
+    } finally {
+      setSavingPrivacy(false)
+    }
   }
 
   // ── Invite code ─────────────────────────────────────────────────────────
@@ -359,8 +375,15 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
 
   const updateRole = async (userId: string, role: string) => {
     try {
-      const { error } = await supabase.from('profiles').update({ role }).eq('id', userId)
-      if (error) throw new Error(error.message)
+      const res = await fetch(`/api/admin/members/${userId}/role`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? `Failed to update role (${res.status})`)
+      }
       setFamilyProfiles(prev => prev.map(p => p.id === userId ? { ...p, role } : p))
       toast.success('Role updated')
     } catch (err: any) {
@@ -371,8 +394,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
   const removeFromFamily = async (userId: string) => {
     if (userId === user?.id) return // can't remove self
     try {
-      const { error } = await supabase.from('profiles').update({ family_id: null, role: 'viewer' }).eq('id', userId)
-      if (error) throw new Error(error.message)
+      const res = await fetch(`/api/admin/members/${userId}/remove`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? `Failed to remove member (${res.status})`)
+      }
       setFamilyProfiles(prev => prev.filter(p => p.id !== userId))
       toast.success('Member removed from family')
     } catch (err: any) {
@@ -925,7 +951,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                 <Switch
                   checked={privacySettings.hideContactInfo}
                   disabled={savingPrivacySettings}
-                  onCheckedChange={(v) => savePrivacySettings({ hideContactInfo: v }).then(() => toast.success(v ? 'Contact info hidden' : 'Contact info visible to family'))}
+                  onCheckedChange={(v) =>
+                    savePrivacySettings({ hideContactInfo: v })
+                      .then(() => toast.success(v ? 'Contact info hidden' : 'Contact info visible to family'))
+                      .catch((err: any) => toast.error(err?.message ?? 'Could not save privacy setting'))
+                  }
                 />
               </div>
               <Separator className="bg-border/40" />
@@ -937,7 +967,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                 <Switch
                   checked={privacySettings.hideFromSearch}
                   disabled={savingPrivacySettings}
-                  onCheckedChange={(v) => savePrivacySettings({ hideFromSearch: v }).then(() => toast.success(v ? 'Hidden from search' : 'Visible in search'))}
+                  onCheckedChange={(v) =>
+                    savePrivacySettings({ hideFromSearch: v })
+                      .then(() => toast.success(v ? 'Hidden from search' : 'Visible in search'))
+                      .catch((err: any) => toast.error(err?.message ?? 'Could not save privacy setting'))
+                  }
                 />
               </div>
             </CardContent>
