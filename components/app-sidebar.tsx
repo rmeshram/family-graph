@@ -57,7 +57,9 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const memoriesCount = isDemoMode ? sampleMemories.length : dbMemories.length
   const sidebarEvents = useMemo(() => isDemoMode ? [] : dbEvents, [isDemoMode, dbEvents])
   const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
-  const { notifications, unreadCount, markAllRead } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents, isDemoMode ? null : familyId, isAdmin)
+  // Pass own member node ID so the hook can suppress self-update notifications
+  const selfMemberId = isDemoMode ? null : ((profile as any)?.member_id ?? null)
+  const { notifications, unreadCount, markAllRead } = useNotifications(sidebarMembers, memoriesCount, sidebarEvents, isDemoMode ? null : familyId, isAdmin, selfMemberId)
 
   const handleSignOut = async () => {
     await signOut()

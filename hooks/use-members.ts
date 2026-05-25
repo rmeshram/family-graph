@@ -242,6 +242,44 @@ export function useMembers(familyId: string | null) {
   }, [familyId, supabase, members])
 
   const updateMember = useCallback(async (id: string, updates: Partial<FamilyMember>) => {
+    // ── Defense-in-depth: strip identity fields for non-owners of claimed nodes ──
+    // This is a client-side safeguard; the primary protection is the RLS migration
+    // (018_harden_rls.sql) that blocks contributors from updating claimed nodes.
+    // We duplicate the check here to surface a clear error rather than a silent
+    // RLS-layer rejection (0 rows updated, no error thrown).
+    const targetMember = members.find(m => m.id === id)
+    if (targetMember?.isClaimed && targetMember.claimedByUserId) {
+      // Determine caller identity from auth (we check against the profile stored in members)
+      const { data: { user: callerUser } } = await (supabase as any).auth.getUser()
+      const callerId: string | null = callerUser?.id ?? null
+      const { data: callerProfile } = await (supabase as any)
+        .from('profiles')
+        .select('role')
+        .eq('id', callerId)
+        .single()
+      const callerRole = callerProfile?.role ?? 'viewer'
+
+      const isOwner = callerId === targetMember.claimedByUserId
+      const isAdminRole = callerRole === 'admin'
+
+      if (!isOwner && !isAdminRole) {
+        // Strip identity-sensitive fields that should never be changed by non-owners
+        const IDENTITY_FIELDS = ['name', 'email', 'phone', 'visibility', 'showAsAnonymous'] as const
+        for (const f of IDENTITY_FIELDS) {
+          if (f in updates) {
+            delete (updates as Record<string, unknown>)[f]
+          }
+        }
+
+        // If the only things requested were identity fields, bail early rather
+        // than emitting a no-op patch with just updated_at.
+        const remainingKeys = Object.keys(updates).filter(k => !IDENTITY_FIELDS.includes(k as typeof IDENTITY_FIELDS[number]))
+        if (remainingKeys.length === 0) {
+          throw new Error('You do not have permission to edit this profile — it belongs to another member.')
+        }
+      }
+    }
+
     // Only include fields explicitly present in `updates` to avoid NULLing unrelated columns
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if ('name' in updates) patch.name = updates.name
@@ -392,7 +430,14 @@ export function useMembers(familyId: string | null) {
       .from('family_members')
       .update({ show_as_anonymous: showAsAnonymous } as any)
       .eq('id', memberId)
-    if (error) throw new Error(error.message)
+    if (error) {
+      // Column doesn't exist — migration 016/019 hasn't been applied yet.
+      // Throw a descriptive error so the UI can surface it instead of silently failing.
+      if (error.message?.includes('column') || error.code === '42703') {
+        throw new Error('The anonymous display feature requires a database migration. Please apply migration 019 in your Supabase dashboard.')
+      }
+      throw new Error(error.message)
+    }
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, showAsAnonymous } : m))
   }, [supabase])
 

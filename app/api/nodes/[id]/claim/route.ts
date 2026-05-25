@@ -119,7 +119,7 @@ export async function POST(
   // Fetch node
   const { data: node, error: nodeErr } = await admin
     .from('family_members')
-    .select('id, name, birth_year, claim_status, is_deceased, family_id')
+    .select('id, name, birth_year, claim_status, is_deceased, family_id, normalized_phone')
     .eq('id', nodeId)
     .single()
 
@@ -127,7 +127,10 @@ export async function POST(
 
   // B1: Family boundary check. A user may only claim a node if EITHER (a) they
   // already belong to the same family, OR (b) an active, unconsumed, non-expired
-  // node_claim invite exists for this specific node. Otherwise reject.
+  // node_claim invite exists for this specific node, OR (c) the node's
+  // normalized_phone exactly matches the caller's verified phone number
+  // (allows phone-onboarding users to claim their profile without an invite).
+  // Otherwise reject.
   const { data: callerProfile } = await admin
     .from('profiles')
     .select('family_id')
@@ -148,6 +151,12 @@ export async function POST(
       .eq('family_id', (node as any).family_id)
       .maybeSingle()
     authorized = !!claimInvite
+  }
+  // (c) Phone-number match bypass: node.normalized_phone === user.phone
+  // user.phone is the E.164 number verified by Supabase OTP — high confidence.
+  if (!authorized && user.phone) {
+    const nodePhone = (node as any).normalized_phone as string | null
+    if (nodePhone && nodePhone === user.phone) authorized = true
   }
   if (!authorized) {
     return NextResponse.json(

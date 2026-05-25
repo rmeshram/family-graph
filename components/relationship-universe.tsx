@@ -37,6 +37,7 @@ interface UPerson {
   id: string
   name: string
   initials: string
+  photoUrl?: string
   category: UCategory
   x: number
   y: number
@@ -330,7 +331,13 @@ export function buildUniverse(
     people.push({
       id: m.id, name: m.name, initials, category: cat,
       x: pos.x, y: pos.y, size, hue: HUE[cat],
-      relation: typeof m.relationship === 'string' ? m.relationship : '',
+      // Compute relation label from the viewer's (selfId's) perspective via BFS.
+      // Never show the stored `relationship` field directly — it is relative to
+      // the admin who created the tree, not the current viewer.
+      relation: m.id === selfId
+        ? 'You'
+        : (computeRelationLabel(selfId, m.id, members) ?? ''),
+      photoUrl: m.photoUrl || undefined,
       city: m.currentPlace ?? m.birthPlace ?? m.hometown ?? '',
       gotra: m.gotra ?? m.caste ?? '',
       verified: !!m.claimedByUserId,
@@ -425,7 +432,13 @@ export function RelationshipUniverse({
   loading = false,
   isAdmin = false,
 }: Props) {
-  const effectiveSelfId = selfMemberId ?? members[0]?.id ?? ''
+  // Use the viewer's own member ID as the universe center.
+  // Fall back to the node with relationship==='self' (the family creator's node)
+  // only if the viewer hasn't claimed a node yet — never fall back to members[0]
+  // which could be any arbitrary member.
+  const effectiveSelfId = selfMemberId
+    ?? members.find(m => m.relationship === 'self')?.id
+    ?? ''
 
   // ── Graph data ───────────────────────────────────────────────────────────
   const { people, edges } = useMemo(() => buildUniverse(members, effectiveSelfId), [members, effectiveSelfId])
@@ -589,8 +602,17 @@ export function RelationshipUniverse({
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
-    const factor = e.deltaY < 0 ? 1.08 : 0.92
-    setView(v => ({ ...v, k: Math.min(3.2, Math.max(0.2, v.k * factor)) }))
+    // ctrlKey = trackpad pinch on macOS — use finer steps; mouse wheel = coarser
+    const delta = e.ctrlKey ? e.deltaY * 0.8 : e.deltaY
+    const factor = delta < 0 ? 1.10 : 0.91
+    setView(v => {
+      const nk = Math.min(3.5, Math.max(0.18, v.k * factor))
+      const f = nk / v.k
+      // Keep the world-point under the cursor fixed in screen space
+      const dx = e.clientX - sizeRef.current.w / 2
+      const dy = e.clientY - sizeRef.current.h / 2
+      return { x: dx * (1 - f) + v.x * f, y: dy * (1 - f) + v.y * f, k: nk }
+    })
   }, [])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -766,13 +788,71 @@ export function RelationshipUniverse({
   const panToPerson = useCallback((id: string, nextZoom?: number, biasX = 0) => {
     const p = peopleById.get(id)
     if (!p) return
-    setView(v => {
-      const nk = nextZoom ?? v.k
-      const nx = biasX - p.x * nk
-      const ny = -p.y * nk
-      return { x: nx, y: ny, k: nk }
-    })
+    if (panAnimRef.current) { cancelAnimationFrame(panAnimRef.current); panAnimRef.current = null }
+    const sv = viewRef.current
+    const nk = nextZoom ?? sv.k
+    const targetX = biasX - p.x * nk
+    const targetY = -p.y * nk
+    const [sx, sy, sk] = [sv.x, sv.y, sv.k]
+    const dur = 520, t0 = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur)
+      const ease = 1 - Math.pow(1 - t, 3) // ease-out cubic
+      setView({ x: sx + (targetX - sx) * ease, y: sy + (targetY - sy) * ease, k: sk + (nk - sk) * ease })
+      if (t < 1) panAnimRef.current = requestAnimationFrame(step)
+      else panAnimRef.current = null
+    }
+    panAnimRef.current = requestAnimationFrame(step)
   }, [peopleById])
+
+  /** Animated zoom by factor, centered on viewport center */
+  const animateZoomBy = useCallback((factor: number) => {
+    if (panAnimRef.current) { cancelAnimationFrame(panAnimRef.current); panAnimRef.current = null }
+    const sv = viewRef.current
+    const nk = Math.min(3.5, Math.max(0.18, sv.k * factor))
+    const f = nk / sv.k
+    // Zoom around viewport center (dx=0)
+    const targetX = sv.x * f
+    const targetY = sv.y * f
+    const [sx, sy, sk] = [sv.x, sv.y, sv.k]
+    const dur = 300, t0 = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur)
+      const ease = 1 - Math.pow(1 - t, 3)
+      setView({ x: sx + (targetX - sx) * ease, y: sy + (targetY - sy) * ease, k: sk + (nk - sk) * ease })
+      if (t < 1) panAnimRef.current = requestAnimationFrame(step)
+      else panAnimRef.current = null
+    }
+    panAnimRef.current = requestAnimationFrame(step)
+  }, [])
+
+  /** Animated fit-all: smoothly frames entire graph */
+  const animateFitAll = useCallback(() => {
+    if (people.length === 0) return
+    const xs = people.map(p => p.x)
+    const ys = people.map(p => p.y)
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    const worldW = (maxX - minX) || 400
+    const worldH = (maxY - minY) || 400
+    const fitK = Math.min((size.w * 0.82) / worldW, (size.h * 0.82) / worldH, 1.5)
+    const worldCx = (minX + maxX) / 2
+    const worldCy = (minY + maxY) / 2
+    if (panAnimRef.current) { cancelAnimationFrame(panAnimRef.current); panAnimRef.current = null }
+    const sv = viewRef.current
+    const targetX = -worldCx * fitK
+    const targetY = -worldCy * fitK
+    const [sx, sy, sk] = [sv.x, sv.y, sv.k]
+    const dur = 520, t0 = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur)
+      const ease = 1 - Math.pow(1 - t, 3)
+      setView({ x: sx + (targetX - sx) * ease, y: sy + (targetY - sy) * ease, k: sk + (fitK - sk) * ease })
+      if (t < 1) panAnimRef.current = requestAnimationFrame(step)
+      else panAnimRef.current = null
+    }
+    panAnimRef.current = requestAnimationFrame(step)
+  }, [people, size])
 
   // Pan to "You" node on first load so the user is always centred in their universe
   const hasMountedPan = useRef(false)
@@ -1350,7 +1430,7 @@ export function RelationshipUniverse({
                   )}
                   {/* Avatar disc */}
                   <span
-                    className="absolute inset-0 rounded-full grid place-items-center font-semibold text-white"
+                    className="absolute inset-0 rounded-full grid place-items-center font-semibold text-white overflow-hidden"
                     style={{
                       background: isNodeAnonymous
                         ? 'oklch(0.28 0.02 250)'
@@ -1361,7 +1441,10 @@ export function RelationshipUniverse({
                       opacity: isNodeAnonymous ? 0.6 : undefined,
                     }}
                   >
-                    {displayInitials}
+                    {!isNodeAnonymous && p.photoUrl
+                      ? <img src={p.photoUrl} alt={p.name} className="absolute inset-0 w-full h-full object-cover" />
+                      : displayInitials
+                    }
                   </span>
                   {/* Semantic zoom labels — theme-aware via tokens */}
                   {showName && (
@@ -1543,7 +1626,7 @@ export function RelationshipUniverse({
             <div className="flex items-center gap-3 pl-5 pr-2.5 pt-3 pb-2.5">
               {/* Avatar with category glow */}
               <div
-                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[13px] font-bold"
+                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[13px] font-bold relative overflow-hidden"
                 style={{
                   background: `linear-gradient(135deg, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}cc, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}55)`,
                   boxShadow: `0 0 0 2px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}44, 0 0 16px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}33`,
@@ -1551,7 +1634,10 @@ export function RelationshipUniverse({
                   letterSpacing: '-0.02em',
                 }}
               >
-                {selectedPerson.initials}
+                {selectedPerson.photoUrl
+                  ? <img src={selectedPerson.photoUrl} alt={selectedPerson.name} className="absolute inset-0 w-full h-full object-cover" />
+                  : selectedPerson.initials
+                }
               </div>
 
               {/* Name + relation badge */}
@@ -1567,7 +1653,9 @@ export function RelationshipUniverse({
                       color: CATEGORY_COLOR[selectedPerson.category] ?? 'var(--muted-foreground)',
                     }}
                   >
-                    {selectedPerson.relation || selectedPerson.category}
+                    {selectedPerson.relation
+                      ? selectedPerson.relation
+                      : selectedPerson.category.replace(/-/g, ' ')}
                   </span>
                   {selectedPerson.city && (
                     <span className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>
@@ -1952,17 +2040,22 @@ export function RelationshipUniverse({
           style={{ opacity: showMobileControls ? 1 : 0, pointerEvents: showMobileControls ? 'auto' : 'none' }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); setView(v => ({ ...v, k: Math.min(3.2, v.k * 1.3) })); resetControlsTimer() }}
+            onClick={(e) => { e.stopPropagation(); animateZoomBy(1.30); resetControlsTimer() }}
             className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
             style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
           >+</button>
           <button
-            onClick={(e) => { e.stopPropagation(); setView(v => ({ ...v, k: Math.max(0.2, v.k * 0.77) })); resetControlsTimer() }}
+            onClick={(e) => { e.stopPropagation(); animateZoomBy(0.77); resetControlsTimer() }}
             className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
             style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
           >−</button>
           <button
-            onClick={(e) => { e.stopPropagation(); setView({ x: 0, y: 0, k: 0.52 }); resetControlsTimer() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (effectiveSelfId) panToPerson(effectiveSelfId, isMobileView ? 0.72 : 0.88)
+              else animateFitAll()
+              resetControlsTimer()
+            }}
             className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-base active:scale-95 transition-transform"
             style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--primary)' }}
             title="Recenter graph"
@@ -1975,14 +2068,14 @@ export function RelationshipUniverse({
         <div className="absolute top-4 left-4 z-40 flex flex-col gap-1.5">
           {/* Zoom In */}
           <button
-            onClick={(e) => { e.stopPropagation(); setView(v => ({ ...v, k: Math.min(3.2, +(v.k * 1.25).toFixed(3)) })) }}
+            onClick={(e) => { e.stopPropagation(); animateZoomBy(1.25) }}
             title="Zoom in"
             className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base font-bold hover:scale-105 active:scale-95 transition-transform"
             style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
           >+</button>
           {/* Zoom Out */}
           <button
-            onClick={(e) => { e.stopPropagation(); setView(v => ({ ...v, k: Math.max(0.18, +(v.k * 0.8).toFixed(3)) })) }}
+            onClick={(e) => { e.stopPropagation(); animateZoomBy(0.80) }}
             title="Zoom out"
             className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base font-bold hover:scale-105 active:scale-95 transition-transform"
             style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
@@ -1991,17 +2084,7 @@ export function RelationshipUniverse({
           <button
             onClick={(e) => {
               e.stopPropagation()
-              if (people.length === 0) return
-              const xs = people.map(p => p.x)
-              const ys = people.map(p => p.y)
-              const minX = Math.min(...xs), maxX = Math.max(...xs)
-              const minY = Math.min(...ys), maxY = Math.max(...ys)
-              const worldW = (maxX - minX) || 400
-              const worldH = (maxY - minY) || 400
-              const k = Math.min((size.w * 0.82) / worldW, (size.h * 0.82) / worldH, 1.5)
-              const worldCx = (minX + maxX) / 2
-              const worldCy = (minY + maxY) / 2
-              setView({ x: -worldCx * k, y: -worldCy * k, k })
+              animateFitAll()
             }}
             title="Fit all to screen"
             className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-xs hover:scale-105 active:scale-95 transition-transform"

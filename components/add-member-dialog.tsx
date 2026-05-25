@@ -26,7 +26,8 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight, AlertTriangle, UserCheck } from 'lucide-react'
+import { scoreCandidate, normalizeStoredName } from '@/lib/match-detection'
 import { getInverseRelationship } from '@/lib/relationship-engine'
 import { computeRelationLabel } from '@/lib/relation-engine'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -84,7 +85,11 @@ interface AddMemberDialogProps {
   currentUserId?: string
   /** Logged-in user's bound member id; hides 'Relationship to You' when editing self. */
   selfMemberId?: string | null
+  /** Called when user opts to navigate to an existing node instead of creating a duplicate. */
+  onFocusExisting?: (id: string) => void
 }
+
+type DuplicateWarning = { member: FamilyMember; score: number; tier: 'high' | 'medium' }
 
 export function AddMemberDialog({
   open,
@@ -96,6 +101,7 @@ export function AddMemberDialog({
   familyId,
   currentUserId,
   selfMemberId,
+  onFocusExisting,
 }: AddMemberDialogProps) {
   const supabase = createClient()
   const isMobile = useIsMobile()
@@ -111,7 +117,9 @@ export function AddMemberDialog({
     !!editingMember?.claimedByUserId &&
     editingMember.claimedByUserId !== currentUserId
 
-  // Pre-populate fields when editing an existing member
+  // Pre-populate when editing; hard-reset all fields when opening for a new add.
+  // Without the reset branch, stale relationship/gender from a previous add can
+  // persist when the dialog re-opens (React component keeps state between renders).
   useEffect(() => {
     if (editingMember && open) {
       setName(editingMember.name ?? '')
@@ -142,6 +150,17 @@ export function AddMemberDialog({
       setAffiliatedJunctionId(editingMember.affiliatedJunctionId ?? '')
       setGender((editingMember.gender as 'male' | 'female' | 'other' | '') ?? '')
       setPhotoPreview(editingMember.photoUrl ?? null)
+    } else if (!editingMember && open) {
+      // Hard reset — clears any stale values from the previous open session
+      setName(''); setBirthYear(''); setDeathYear('')
+      setBirthPlace(''); setCurrentPlace(''); setHometown('')
+      setOccupation(''); setGotra(''); setPhone(''); setEmail('')
+      setInstagramHandle(''); setRelationship(''); setBio('')
+      setFatherId(''); setMotherId(''); setSpouseId('')
+      setNetworkGroup('core'); setAffiliatedFamilyName('')
+      setAffiliatedJunctionId(''); setGender('')
+      setErrors({}); setDuplicateWarning(null); setBypassDuplicate(false)
+      setUploadError(null); setPhotoFile(null); setPhotoPreview(null)
     }
   }, [editingMember, open])
   const [birthYear, setBirthYear] = useState('')
@@ -164,6 +183,8 @@ export function AddMemberDialog({
   const [affiliatedJunctionId, setAffiliatedJunctionId] = useState('')
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
+  const [bypassDuplicate, setBypassDuplicate] = useState(false)
 
   // ── Smart co-parent auto-fill ───────────────────────────────────────────
   const handleFatherChange = (value: string) => {
@@ -233,9 +254,23 @@ export function AddMemberDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relationship])
 
+  // Is the relationship field visible? Hidden only when editing the self-node.
+  const isEditingSelf = !!editingMember && (
+    editingMember.id === selfMemberId ||
+    (!selfMemberId && editingMember.relationship === 'self')
+  )
+
   const validate = () => {
     const e: Record<string, string> = {}
     if (!name.trim()) e.name = 'Name is required'
+    // Prevent pure-whitespace or symbol-only names
+    if (name.trim() && !/\p{L}/u.test(name.trim())) e.name = 'Name must contain at least one letter'
+    // Relationship is required for new members and when editing non-self nodes
+    if (!isEditingSelf && !relationship)
+      e.relationship = 'Please select how this person is related to you — it determines their position in the tree'
+    // Gender is required for new members (drives tree layout and node colour)
+    if (!editingMember && !gender)
+      e.gender = 'Gender is required so the tree can position and colour this node correctly'
     if (birthYear && (isNaN(+birthYear) || +birthYear < 1800 || +birthYear > new Date().getFullYear()))
       e.birthYear = 'Enter a valid year (1800 – present)'
     if (deathYear && (isNaN(+deathYear) || +deathYear < 1800 || +deathYear > new Date().getFullYear()))
@@ -244,6 +279,18 @@ export function AddMemberDialog({
       e.deathYear = 'Must be after birth year'
     if (instagramHandle && !/^[a-zA-Z0-9._]{1,30}$/.test(instagramHandle.replace(/^@/, '')))
       e.instagramHandle = 'Invalid handle (letters, numbers, . _ only)'
+    // Phone/email format validation
+    if (phone && !/^[+]?[0-9\s\-()]{7,20}$/.test(phone.trim()))
+      e.phone = 'Enter a valid phone number'
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))
+      e.email = 'Enter a valid email address'
+    // Prevent self-referential relationships
+    const selfId = editingMember?.id
+    if (selfId) {
+      if (spouseId && spouseId === selfId) e.spouseId = 'Cannot be your own spouse'
+      if (fatherId && fatherId === selfId) e.fatherId = 'Cannot be your own parent'
+      if (motherId && motherId === selfId) e.motherId = 'Cannot be your own parent'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -269,6 +316,33 @@ export function AddMemberDialog({
     e.preventDefault()
     if (!validate()) return
     if (isSubmitting) return
+
+    // Duplicate detection — only when adding a new member (not editing)
+    if (!editingMember && !bypassDuplicate) {
+      const storedName = normalizeStoredName(name)
+      let bestMatch: DuplicateWarning | null = null
+      for (const m of existingMembers) {
+        const result = scoreCandidate(
+          {
+            nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
+            addedByName: null, relationship: m.relationship ?? null,
+            birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
+          },
+          { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null, phone: phone || null, email: email || null }
+        )
+        if (result && result.confidenceScore >= 40) {
+          const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
+          if (!bestMatch || result.confidenceScore > bestMatch.score) {
+            bestMatch = { member: m, score: result.confidenceScore, tier }
+          }
+        }
+      }
+      if (bestMatch) {
+        setDuplicateWarning(bestMatch)
+        return
+      }
+    }
+
     setIsSubmitting(true)
     setUploadError(null)
 
@@ -301,7 +375,7 @@ export function AddMemberDialog({
     }
 
     const memberData: Omit<FamilyMember, 'id'> = {
-      name,
+      name: normalizeStoredName(name),
       birthYear: birthYear ? parseInt(birthYear) : undefined,
       deathYear: deathYear ? parseInt(deathYear) : undefined,
       birthPlace: birthPlace || undefined,
@@ -369,11 +443,17 @@ export function AddMemberDialog({
     setPhotoPreview(null)
     setUploadError(null)
     setIsSubmitting(false)
+    setDuplicateWarning(null)
+    setBypassDuplicate(false)
   }
 
   return (
     <Dialog open={open} onOpenChange={(open) => {
-      if (!open) resetForm()
+      if (!open) {
+        // Revoke any pending object URL to prevent memory leak when dialog is cancelled
+        if (photoPreview) URL.revokeObjectURL(photoPreview)
+        resetForm()
+      }
       onOpenChange(open)
     }}>
       <DialogContent className={cn(
@@ -390,7 +470,9 @@ export function AddMemberDialog({
             {editingMember ? 'Edit Member' : 'Add Family Member'}
           </DialogTitle>
           <DialogDescription>
-            {editingMember ? 'Update the details for this family member.' : 'Add a new member to your family tree. Fill in as much information as you have.'}
+            {editingMember
+              ? 'Update the details for this family member.'
+              : 'Add a new member to your family tree. Fields marked * are required to place them in the tree.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -463,157 +545,171 @@ export function AddMemberDialog({
                 </div>
 
                 {/* Hide 'Relationship to You' when editing self — self cannot have a relationship to self. */}
-                {!(editingMember && (
-                  editingMember.id === selfMemberId ||
-                  (!selfMemberId && editingMember.relationship === 'self')
-                )) && (
-                    <div className="space-y-2">
-                      <Label htmlFor="relationship">Relationship to You</Label>
-                      <Select value={relationship} onValueChange={setRelationship}>
-                        <SelectTrigger className="bg-muted/30 border-border/50">
-                          <SelectValue placeholder="Select relationship" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {/* Only show 'Myself' when no self-node exists yet — prevents duplicate self-nodes */}
-                          {!existingMembers.some(m =>
-                            (m.relationship === 'self' || m.id === selfMemberId) &&
-                            m.id !== editingMember?.id
-                          ) && (
-                              <SelectGroup>
-                                <SelectLabel>Self</SelectLabel>
-                                <SelectItem value="self">Myself (You)</SelectItem>
-                              </SelectGroup>
-                            )}
-                          <SelectGroup>
-                            <SelectLabel>Grandparents</SelectLabel>
-                            <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>
-                            <SelectItem value="paternal-grandmother">Paternal Grandmother</SelectItem>
-                            <SelectItem value="maternal-grandfather">Maternal Grandfather</SelectItem>
-                            <SelectItem value="maternal-grandmother">Maternal Grandmother</SelectItem>
-                            <SelectItem value="great-grandfather">Great Grandfather</SelectItem>
-                            <SelectItem value="great-grandmother">Great Grandmother</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Parents</SelectLabel>
-                            <SelectItem value="father">Father</SelectItem>
-                            <SelectItem value="mother">Mother</SelectItem>
-                            <SelectItem value="stepfather">Stepfather</SelectItem>
-                            <SelectItem value="stepmother">Stepmother</SelectItem>
-                            <SelectItem value="foster-father">Foster Father</SelectItem>
-                            <SelectItem value="foster-mother">Foster Mother</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Siblings</SelectLabel>
-                            <SelectItem value="brother">Brother</SelectItem>
-                            <SelectItem value="sister">Sister</SelectItem>
-                            <SelectItem value="half-brother">Half Brother</SelectItem>
-                            <SelectItem value="half-sister">Half Sister</SelectItem>
-                            <SelectItem value="stepbrother">Stepbrother</SelectItem>
-                            <SelectItem value="stepsister">Stepsister</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Spouse &amp; Partner</SelectLabel>
-                            <SelectItem value="husband">Husband</SelectItem>
-                            <SelectItem value="wife">Wife</SelectItem>
-                            <SelectItem value="partner">Partner</SelectItem>
-                            <SelectItem value="ex-husband">Ex Husband</SelectItem>
-                            <SelectItem value="ex-wife">Ex Wife</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Children</SelectLabel>
-                            <SelectItem value="son">Son</SelectItem>
-                            <SelectItem value="daughter">Daughter</SelectItem>
-                            <SelectItem value="stepson">Stepson</SelectItem>
-                            <SelectItem value="stepdaughter">Stepdaughter</SelectItem>
-                            <SelectItem value="adopted-son">Adopted Son</SelectItem>
-                            <SelectItem value="adopted-daughter">Adopted Daughter</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Grandchildren</SelectLabel>
-                            <SelectItem value="grandson">Grandson</SelectItem>
-                            <SelectItem value="granddaughter">Granddaughter</SelectItem>
-                            <SelectItem value="great-grandson">Great Grandson</SelectItem>
-                            <SelectItem value="great-granddaughter">Great Granddaughter</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Aunts &amp; Uncles</SelectLabel>
-                            <SelectItem value="paternal-uncle">Paternal Uncle (Father&apos;s Brother)</SelectItem>
-                            <SelectItem value="paternal-aunt">Paternal Aunt (Father&apos;s Sister)</SelectItem>
-                            <SelectItem value="maternal-uncle">Maternal Uncle (Mother&apos;s Brother)</SelectItem>
-                            <SelectItem value="maternal-aunt">Maternal Aunt (Mother&apos;s Sister)</SelectItem>
-                            <SelectItem value="uncle-in-law">Uncle-in-law</SelectItem>
-                            <SelectItem value="aunt-in-law">Aunt-in-law</SelectItem>
-                            <SelectItem value="great-uncle">Great Uncle</SelectItem>
-                            <SelectItem value="great-aunt">Great Aunt</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Cousins</SelectLabel>
-                            <SelectItem value="first-cousin">First Cousin</SelectItem>
-                            <SelectItem value="second-cousin">Second Cousin</SelectItem>
-                            <SelectItem value="third-cousin">Third Cousin</SelectItem>
-                            <SelectItem value="first-cousin-once-removed">First Cousin Once Removed</SelectItem>
-                            <SelectItem value="cousin-in-law">Cousin-in-law</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Nieces &amp; Nephews</SelectLabel>
-                            <SelectItem value="nephew">Nephew</SelectItem>
-                            <SelectItem value="niece">Niece</SelectItem>
-                            <SelectItem value="grand-nephew">Grand Nephew</SelectItem>
-                            <SelectItem value="grand-niece">Grand Niece</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>In-Laws</SelectLabel>
-                            <SelectItem value="father-in-law">Father-in-law</SelectItem>
-                            <SelectItem value="mother-in-law">Mother-in-law</SelectItem>
-                            <SelectItem value="brother-in-law">Brother-in-law</SelectItem>
-                            <SelectItem value="sister-in-law">Sister-in-law</SelectItem>
-                            <SelectItem value="son-in-law">Son-in-law</SelectItem>
-                            <SelectItem value="daughter-in-law">Daughter-in-law</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Other</SelectLabel>
-                            <SelectItem value="family-friend">Family Friend</SelectItem>
-                            <SelectItem value="godfather">Godfather</SelectItem>
-                            <SelectItem value="godmother">Godmother</SelectItem>
-                            <SelectItem value="godson">Godson</SelectItem>
-                            <SelectItem value="goddaughter">Goddaughter</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      {/* Inverse relationship hint — shown once the user picks a relationship */}
-                      {relationship && relationship !== 'self' && (
-                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
-                          <ArrowLeftRight className="h-3 w-3 shrink-0" />
-                          They will see you as their{' '}
-                          <span className="font-medium capitalize text-foreground">
-                            {getInverseRelationship(
-                              relationship,
-                              existingMembers.find(m => m.relationship === 'self')?.gender
-                            )}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  )}
+                {!isEditingSelf && (
+                  <div className="space-y-2">
+                    <Label htmlFor="relationship" className="flex items-center gap-1">
+                      Relationship to You
+                      <span className="text-destructive">*</span>
+                      <span className="ml-auto text-[10px] font-normal text-muted-foreground">Required for tree placement</span>
+                    </Label>
+                    <Select
+                      value={relationship}
+                      onValueChange={(v) => { setRelationship(v); if (errors.relationship) setErrors(p => ({ ...p, relationship: '' })) }}
+                    >
+                      <SelectTrigger className={`bg-muted/30 border-border/50 ${errors.relationship ? 'border-destructive' : ''}`}>
+                        <SelectValue placeholder="Select relationship" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Only show 'Myself' when no self-node exists yet — prevents duplicate self-nodes */}
+                        {!existingMembers.some(m =>
+                          (m.relationship === 'self' || m.id === selfMemberId) &&
+                          m.id !== editingMember?.id
+                        ) && (
+                            <SelectGroup>
+                              <SelectLabel>Self</SelectLabel>
+                              <SelectItem value="self">Myself (You)</SelectItem>
+                            </SelectGroup>
+                          )}
+                        <SelectGroup>
+                          <SelectLabel>Grandparents</SelectLabel>
+                          <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>
+                          <SelectItem value="paternal-grandmother">Paternal Grandmother</SelectItem>
+                          <SelectItem value="maternal-grandfather">Maternal Grandfather</SelectItem>
+                          <SelectItem value="maternal-grandmother">Maternal Grandmother</SelectItem>
+                          <SelectItem value="great-grandfather">Great Grandfather</SelectItem>
+                          <SelectItem value="great-grandmother">Great Grandmother</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Parents</SelectLabel>
+                          <SelectItem value="father">Father</SelectItem>
+                          <SelectItem value="mother">Mother</SelectItem>
+                          <SelectItem value="stepfather">Stepfather</SelectItem>
+                          <SelectItem value="stepmother">Stepmother</SelectItem>
+                          <SelectItem value="foster-father">Foster Father</SelectItem>
+                          <SelectItem value="foster-mother">Foster Mother</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Siblings</SelectLabel>
+                          <SelectItem value="brother">Brother</SelectItem>
+                          <SelectItem value="sister">Sister</SelectItem>
+                          <SelectItem value="half-brother">Half Brother</SelectItem>
+                          <SelectItem value="half-sister">Half Sister</SelectItem>
+                          <SelectItem value="stepbrother">Stepbrother</SelectItem>
+                          <SelectItem value="stepsister">Stepsister</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Spouse &amp; Partner</SelectLabel>
+                          <SelectItem value="husband">Husband</SelectItem>
+                          <SelectItem value="wife">Wife</SelectItem>
+                          <SelectItem value="partner">Partner</SelectItem>
+                          <SelectItem value="ex-husband">Ex Husband</SelectItem>
+                          <SelectItem value="ex-wife">Ex Wife</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Children</SelectLabel>
+                          <SelectItem value="son">Son</SelectItem>
+                          <SelectItem value="daughter">Daughter</SelectItem>
+                          <SelectItem value="stepson">Stepson</SelectItem>
+                          <SelectItem value="stepdaughter">Stepdaughter</SelectItem>
+                          <SelectItem value="adopted-son">Adopted Son</SelectItem>
+                          <SelectItem value="adopted-daughter">Adopted Daughter</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Grandchildren</SelectLabel>
+                          <SelectItem value="grandson">Grandson</SelectItem>
+                          <SelectItem value="granddaughter">Granddaughter</SelectItem>
+                          <SelectItem value="great-grandson">Great Grandson</SelectItem>
+                          <SelectItem value="great-granddaughter">Great Granddaughter</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Aunts &amp; Uncles</SelectLabel>
+                          <SelectItem value="paternal-uncle">Paternal Uncle (Father&apos;s Brother)</SelectItem>
+                          <SelectItem value="paternal-aunt">Paternal Aunt (Father&apos;s Sister)</SelectItem>
+                          <SelectItem value="maternal-uncle">Maternal Uncle (Mother&apos;s Brother)</SelectItem>
+                          <SelectItem value="maternal-aunt">Maternal Aunt (Mother&apos;s Sister)</SelectItem>
+                          <SelectItem value="uncle-in-law">Uncle-in-law</SelectItem>
+                          <SelectItem value="aunt-in-law">Aunt-in-law</SelectItem>
+                          <SelectItem value="great-uncle">Great Uncle</SelectItem>
+                          <SelectItem value="great-aunt">Great Aunt</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Cousins</SelectLabel>
+                          <SelectItem value="first-cousin">First Cousin</SelectItem>
+                          <SelectItem value="second-cousin">Second Cousin</SelectItem>
+                          <SelectItem value="third-cousin">Third Cousin</SelectItem>
+                          <SelectItem value="first-cousin-once-removed">First Cousin Once Removed</SelectItem>
+                          <SelectItem value="cousin-in-law">Cousin-in-law</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Nieces &amp; Nephews</SelectLabel>
+                          <SelectItem value="nephew">Nephew</SelectItem>
+                          <SelectItem value="niece">Niece</SelectItem>
+                          <SelectItem value="grand-nephew">Grand Nephew</SelectItem>
+                          <SelectItem value="grand-niece">Grand Niece</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>In-Laws</SelectLabel>
+                          <SelectItem value="father-in-law">Father-in-law</SelectItem>
+                          <SelectItem value="mother-in-law">Mother-in-law</SelectItem>
+                          <SelectItem value="brother-in-law">Brother-in-law</SelectItem>
+                          <SelectItem value="sister-in-law">Sister-in-law</SelectItem>
+                          <SelectItem value="son-in-law">Son-in-law</SelectItem>
+                          <SelectItem value="daughter-in-law">Daughter-in-law</SelectItem>
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>Other</SelectLabel>
+                          <SelectItem value="family-friend">Family Friend</SelectItem>
+                          <SelectItem value="godfather">Godfather</SelectItem>
+                          <SelectItem value="godmother">Godmother</SelectItem>
+                          <SelectItem value="godson">Godson</SelectItem>
+                          <SelectItem value="goddaughter">Goddaughter</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {errors.relationship && (
+                      <p className="text-xs text-destructive">{errors.relationship}</p>
+                    )}
+                    {/* Inverse relationship hint — shown once the user picks a relationship */}
+                    {relationship && relationship !== 'self' && (
+                      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
+                        <ArrowLeftRight className="h-3 w-3 shrink-0" />
+                        They will see you as their{' '}
+                        <span className="font-medium capitalize text-foreground">
+                          {getInverseRelationship(
+                            relationship,
+                            existingMembers.find(m => m.relationship === 'self')?.gender
+                          )}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-2">
-                  <Label>Gender</Label>
+                  <Label className="flex items-center gap-1">
+                    Gender
+                    {!editingMember && <span className="text-destructive">*</span>}
+                    {!editingMember && <span className="ml-auto text-[10px] font-normal text-muted-foreground">Required for tree colour</span>}
+                  </Label>
                   <div className="flex gap-2">
                     {([['male', '♂ Male'], ['female', '♀ Female'], ['other', '⚥ Other']] as const).map(([g, label]) => (
                       <button
                         key={g}
                         type="button"
-                        onClick={() => setGender(prev => prev === g ? '' : g)}
+                        onClick={() => { setGender(prev => prev === g ? '' : g); if (errors.gender) setErrors(p => ({ ...p, gender: '' })) }}
                         className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-all ${gender === g
                           ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70'
+                          : errors.gender
+                            ? 'border-destructive/60 bg-destructive/5 text-muted-foreground'
+                            : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70'
                           }`}
                       >
                         {label}
                       </button>
                     ))}
                   </div>
+                  {errors.gender && <p className="text-xs text-destructive">{errors.gender}</p>}
                 </div>
               </div>
             </div>
@@ -734,7 +830,7 @@ export function AddMemberDialog({
                     Father
                   </Label>
                   <Select value={fatherId} onValueChange={handleFatherChange}>
-                    <SelectTrigger className="bg-muted/30 border-border/50">
+                    <SelectTrigger className={`bg-muted/30 border-border/50 ${errors.fatherId ? 'border-destructive' : ''}`}>
                       <SelectValue placeholder="Select father" />
                     </SelectTrigger>
                     <SelectContent>
@@ -749,6 +845,7 @@ export function AddMemberDialog({
                         ))}
                     </SelectContent>
                   </Select>
+                  {errors.fatherId && <p className="text-xs text-destructive">{errors.fatherId}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="mother" className="flex items-center gap-1">
@@ -756,7 +853,7 @@ export function AddMemberDialog({
                     Mother
                   </Label>
                   <Select value={motherId} onValueChange={handleMotherChange}>
-                    <SelectTrigger className="bg-muted/30 border-border/50">
+                    <SelectTrigger className={`bg-muted/30 border-border/50 ${errors.motherId ? 'border-destructive' : ''}`}>
                       <SelectValue placeholder="Select mother" />
                     </SelectTrigger>
                     <SelectContent>
@@ -771,6 +868,7 @@ export function AddMemberDialog({
                         ))}
                     </SelectContent>
                   </Select>
+                  {errors.motherId && <p className="text-xs text-destructive">{errors.motherId}</p>}
                 </div>
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="spouse" className="flex items-center gap-1">
@@ -778,7 +876,7 @@ export function AddMemberDialog({
                     Spouse
                   </Label>
                   <Select value={spouseId} onValueChange={setSpouseId}>
-                    <SelectTrigger className="bg-muted/30 border-border/50">
+                    <SelectTrigger className={`bg-muted/30 border-border/50 ${errors.spouseId ? 'border-destructive' : ''}`}>
                       <SelectValue placeholder="Select spouse" />
                     </SelectTrigger>
                     <SelectContent>
@@ -790,6 +888,7 @@ export function AddMemberDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  {errors.spouseId && <p className="text-xs text-destructive">{errors.spouseId}</p>}
                 </div>
               </div>
             </div>
@@ -844,8 +943,9 @@ export function AddMemberDialog({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+91 98765 43210"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.phone ? 'border-destructive' : ''}`}
                   />
+                  {errors.phone && <p className="text-xs text-destructive mt-1">{errors.phone}</p>}
                 </div>
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="email" className="flex items-center gap-1">
@@ -858,8 +958,9 @@ export function AddMemberDialog({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.email ? 'border-destructive' : ''}`}
                   />
+                  {errors.email && <p className="text-xs text-destructive mt-1">{errors.email}</p>}
                 </div>
               </div>
             </div>
@@ -935,25 +1036,67 @@ export function AddMemberDialog({
         </ScrollArea>
 
         <DialogFooter className={cn(
-          "p-6 pt-4 border-t border-border/50",
-          isMobile && "flex-row flex-wrap gap-2 sticky bottom-0 bg-background safe-area-pb"
+          "p-6 pt-4 border-t border-border/50 flex-col gap-3",
+          isMobile && "sticky bottom-0 bg-background safe-area-pb"
         )}>
-          {uploadError && (
-            <p className="text-xs text-amber-500 mr-auto">{uploadError}</p>
+          {/* Duplicate warning */}
+          {duplicateWarning && (
+            <div className={cn(
+              'w-full rounded-lg border p-3 text-sm space-y-2.5',
+              duplicateWarning.tier === 'high'
+                ? 'border-destructive/50 bg-destructive/10'
+                : 'border-amber-500/40 bg-amber-500/10'
+            )}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className={cn('h-4 w-4 mt-0.5 shrink-0', duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-500')} />
+                <div className="flex-1 min-w-0">
+                  <p className={cn('font-medium text-xs', duplicateWarning.tier === 'high' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400')}>
+                    {duplicateWarning.tier === 'high' ? 'This person likely already exists' : 'Possible duplicate found'}
+                  </p>
+                  <p className="text-muted-foreground text-xs mt-0.5 truncate">
+                    {duplicateWarning.member.name}
+                    {duplicateWarning.member.birthYear ? ` · Born ${duplicateWarning.member.birthYear}` : ''}
+                    {duplicateWarning.member.relationship ? ` · ${duplicateWarning.member.relationship}` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button" variant="outline" size="sm" className="flex-1 h-7 text-xs"
+                  onClick={() => { onFocusExisting?.(duplicateWarning.member.id); onOpenChange(false) }}
+                >
+                  <UserCheck className="h-3 w-3 mr-1" />
+                  Open Existing
+                </Button>
+                {duplicateWarning.tier === 'medium' && (
+                  <Button
+                    type="button" variant="ghost" size="sm" className="flex-1 h-7 text-xs"
+                    onClick={() => { setDuplicateWarning(null); setBypassDuplicate(true) }}
+                  >
+                    Add Anyway
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="add-member-form"
-            disabled={isSubmitting || !name.trim()}
-            className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
-          >
-            {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{editingMember ? 'Saving...' : 'Adding...'}</>
-            ) : editingMember ? 'Save Changes' : 'Add Member'}
-          </Button>
+          <div className={cn('flex gap-2', isMobile && 'flex-row flex-wrap')}>
+            {uploadError && (
+              <p className="text-xs text-amber-500 mr-auto self-center">{uploadError}</p>
+            )}
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="add-member-form"
+              disabled={isSubmitting || !name.trim() || duplicateWarning?.tier === 'high'}
+              className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
+            >
+              {isSubmitting ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{editingMember ? 'Saving...' : 'Adding...'}</>
+              ) : editingMember ? 'Save Changes' : 'Add Member'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

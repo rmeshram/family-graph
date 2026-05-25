@@ -74,6 +74,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
+  // /auth/phone-onboarding is accessible to authenticated users without a family_id —
+  // do NOT redirect them to /auth/signin even though it's under /auth/.
+  // (middleware has no easy way to query family_id, so we just allow all /auth/* for authed users
+  //  except the above signin/signup which redirect to dashboard)
+
   // Clear demo cookie once a user has actually signed in
   if (user && demoCookie) {
     supabaseResponse.cookies.set('fg_demo', '', { path: '/', maxAge: 0 })

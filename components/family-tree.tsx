@@ -63,6 +63,24 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
   // Track whether dimensions have been measured from the actual DOM
   const hasMeasuredDimensions = useRef(false)
 
+  // ── Animation system ────────────────────────────────────────────────────
+  // Refs mirror state for reads inside RAF callbacks (avoids stale closures).
+  const panRef = useRef({ x: 0, y: 0 })
+  const zoomRef = useRef(1)
+  const animRafRef = useRef<number>(0)
+  const animFromRef = useRef({ x: 0, y: 0, k: 1 })
+  const animToRef = useRef({ x: 0, y: 0, k: 1 })
+  const animStartRef = useRef(0)
+
+  // ── Inertia system ──────────────────────────────────────────────────────
+  const velRef = useRef({ vx: 0, vy: 0 })
+  const lastMouseRef = useRef({ x: 0, y: 0, t: 0 })
+  const inertiaRafRef = useRef<number>(0)
+
+  // ── Background-click deselect tracking ──────────────────────────────────
+  const dragMovedRef = useRef(false)
+  const dragStartClientRef = useRef({ x: 0, y: 0 })
+
   // Collapse all affiliated clusters on first member load
   useEffect(() => {
     const clusterIds = new Set(
@@ -332,24 +350,62 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
+      // Cancel any running animation / inertia so drag takes over immediately
+      cancelAnimationFrame(animRafRef.current)
+      cancelAnimationFrame(inertiaRafRef.current)
+      velRef.current = { vx: 0, vy: 0 }
+      dragMovedRef.current = false
+      dragStartClientRef.current = { x: e.clientX, y: e.clientY }
       setIsDragging(true)
-      setRingNodeId(null)  // dismiss ring when user starts panning
+      setRingNodeId(null)
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
     }
   }, [pan])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isDragging) {
-      setPan({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      })
+    if (!isDragging) return
+    // Track whether this is a real drag (not just a click)
+    const adx = e.clientX - dragStartClientRef.current.x
+    const ady = e.clientY - dragStartClientRef.current.y
+    if (Math.abs(adx) > 4 || Math.abs(ady) > 4) dragMovedRef.current = true
+    // Exponential moving average velocity (px/ms) for inertia
+    const now = performance.now()
+    const dt = now - lastMouseRef.current.t
+    if (dt > 0 && dt < 80) {
+      const rawVx = (e.clientX - lastMouseRef.current.x) / dt
+      const rawVy = (e.clientY - lastMouseRef.current.y) / dt
+      velRef.current.vx = velRef.current.vx * 0.55 + rawVx * 0.45
+      velRef.current.vy = velRef.current.vy * 0.55 + rawVy * 0.45
     }
+    lastMouseRef.current = { x: e.clientX, y: e.clientY, t: now }
+    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y })
   }, [isDragging, dragStart])
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false)
+    // Coast with inertia if release velocity is meaningful
+    const { vx, vy } = velRef.current
+    if (Math.abs(vx) > 0.25 || Math.abs(vy) > 0.25) {
+      let cvx = vx, cvy = vy
+      const DECAY = 0.89 // ~90% speed retained per frame at 60fps
+      const coast = () => {
+        cvx *= DECAY; cvy *= DECAY
+        if (Math.abs(cvx) < 0.04 && Math.abs(cvy) < 0.04) return
+        setPan(prev => ({ x: prev.x + cvx * 16, y: prev.y + cvy * 16 }))
+        inertiaRafRef.current = requestAnimationFrame(coast)
+      }
+      inertiaRafRef.current = requestAnimationFrame(coast)
+    }
+    velRef.current = { vx: 0, vy: 0 }
   }, [])
+
+  // Background click — deselect active node (node buttons use stopPropagation)
+  const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
+    if (dragMovedRef.current) return // was a drag, not a click
+    if ((e.target as Element).closest('button')) return // node/control clicked
+    setRingNodeId(null)
+    if (selectedMemberId) onSelectMember(selectedMemberId) // toggle = deselect
+  }, [selectedMemberId, onSelectMember])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
@@ -445,50 +501,65 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     })
   }, [])
 
-  const centerView = useCallback(() => {
-    setZoom(1)
-    setPan({ x: 0, y: 0 })
+  // Keep mirror refs in sync with state (read by animation callbacks)
+  useEffect(() => { panRef.current = pan }, [pan])
+  useEffect(() => { zoomRef.current = zoom }, [zoom])
+
+  // Cleanup animation + inertia frames on unmount
+  useEffect(() => () => {
+    cancelAnimationFrame(animRafRef.current)
+    cancelAnimationFrame(inertiaRafRef.current)
   }, [])
+
+  // Smooth animate to a target pan+zoom over `durationMs` using ease-out cubic
+  const animateTo = useCallback((targetX: number, targetY: number, targetK: number, durationMs = 480) => {
+    cancelAnimationFrame(animRafRef.current)
+    cancelAnimationFrame(inertiaRafRef.current)
+    animFromRef.current = { x: panRef.current.x, y: panRef.current.y, k: zoomRef.current }
+    animToRef.current = { x: targetX, y: targetY, k: targetK }
+    animStartRef.current = performance.now()
+    const tick = (now: number) => {
+      const raw = Math.min(1, (now - animStartRef.current) / durationMs)
+      const eased = 1 - Math.pow(1 - raw, 3) // ease-out cubic
+      setPan({
+        x: animFromRef.current.x + (animToRef.current.x - animFromRef.current.x) * eased,
+        y: animFromRef.current.y + (animToRef.current.y - animFromRef.current.y) * eased,
+      })
+      setZoom(animFromRef.current.k + (animToRef.current.k - animFromRef.current.k) * eased)
+      if (raw < 1) animRafRef.current = requestAnimationFrame(tick)
+    }
+    animRafRef.current = requestAnimationFrame(tick)
+  }, [])
+
+  const centerView = useCallback(() => {
+    animateTo(0, 0, 1)
+  }, [animateTo])
 
   const fitToView = useCallback(() => {
     if (nodePositions.length === 0) return
-
     const minX = Math.min(...nodePositions.map(p => p.x)) - 100
     const maxX = Math.max(...nodePositions.map(p => p.x)) + 100
     const minY = Math.min(...nodePositions.map(p => p.y)) - 100
     const maxY = Math.max(...nodePositions.map(p => p.y)) + 100
-
     const contentWidth = maxX - minX
     const contentHeight = maxY - minY
-
     const scaleX = dimensions.width / contentWidth
     const scaleY = dimensions.height / contentHeight
-    // Let fitToView find the natural zoom — no artificial floor.
-    // Compact mode (zoom > 0.15) shows readable cards; dot mode is the extreme fallback.
     const newZoom = Math.min(scaleX, scaleY, 1) * 0.9
+    const newX = (dimensions.width - contentWidth * newZoom) / 2 - minX * newZoom
+    const newY = (dimensions.height - contentHeight * newZoom) / 2 - minY * newZoom
+    animateTo(newX, newY, newZoom)
+  }, [nodePositions, dimensions, animateTo])
 
-    setZoom(newZoom)
-    setPan({
-      x: (dimensions.width - contentWidth * newZoom) / 2 - minX * newZoom,
-      y: (dimensions.height - contentHeight * newZoom) / 2 - minY * newZoom,
-    })
-  }, [nodePositions, dimensions])
-
-  // Focus on a specific node — center it in the viewport at a readable zoom
+  // Focus on a specific node — smoothly center it at a readable zoom
   const focusNode = useCallback((nodeId: string) => {
     const pos = nodePositions.find(p => p.id === nodeId)
     if (!pos) return
-    setZoom(prevZoom => {
-      const targetZoom = Math.max(prevZoom, 1.2)
-      const cx = dimensions.width / 2
-      const cy = dimensions.height / 2
-      setPan({
-        x: cx - pos.x * targetZoom,
-        y: cy - pos.y * targetZoom,
-      })
-      return targetZoom
-    })
-  }, [nodePositions, dimensions])
+    const targetZoom = Math.max(zoomRef.current, 1.2)
+    const cx = dimensions.width / 2
+    const cy = dimensions.height / 2
+    animateTo(cx - pos.x * targetZoom, cy - pos.y * targetZoom, targetZoom, 420)
+  }, [nodePositions, dimensions, animateTo])
 
   // Auto-fit on first load and whenever member count or viewport size changes significantly.
   // The ResizeObserver updates `dimensions` which triggers this effect, ensuring mobile
@@ -572,6 +643,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
+      onClick={handleBackgroundClick}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -1092,6 +1164,23 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                             {lifespan}
                           </p>
                         )}
+                        {/* Profile completion micro-dots: photo · birth year · details */}
+                        {!isAnonymous && (
+                          <div className="flex items-center justify-center gap-[3px] mt-1.5">
+                            {[
+                              { filled: !!member.photoUrl, title: 'Photo' },
+                              { filled: !!member.birthYear, title: 'Birth year' },
+                              { filled: !!(member.occupation || member.bio || member.birthPlace || member.currentPlace), title: 'Profile details' },
+                            ].map((dot, i) => (
+                              <div
+                                key={i}
+                                title={dot.filled ? `${dot.title}: added` : `${dot.title}: missing`}
+                                className="h-[5px] w-[5px] rounded-full transition-colors"
+                                style={{ background: dot.filled ? 'rgba(34,197,94,0.65)' : 'rgba(100,116,139,0.25)' }}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </button>
                   </TooltipTrigger>
@@ -1134,8 +1223,13 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                 {/* Inline add-relative actions — shown when this node's ring is active */}
                 {ringNodeId === member.id && onAddRelative && zoom >= 0.65 && (
                   <div
-                    className="absolute left-1/2 -translate-x-1/2"
-                    style={{ top: 'calc(100% + 10px)', zIndex: 20 }}
+                    className="absolute"
+                    style={{
+                      top: 'calc(100% + 10px)',
+                      left: '50%',
+                      zIndex: 20,
+                      animation: 'ringEnter 0.18s ease-out both',
+                    }}
                   >
                     <NodeActionRing member={member} allMembers={members} onAddRelative={onAddRelative} />
                   </div>

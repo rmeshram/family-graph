@@ -6,7 +6,9 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
-  const next = searchParams.get('next') ?? '/dashboard'
+  // Sanitise `next` — must be a relative path starting with a single `/` to prevent open-redirect.
+  const rawNext = searchParams.get('next') ?? '/dashboard'
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard'
 
   // Handle OAuth errors (e.g., provider not configured, user denied access)
   if (error) {

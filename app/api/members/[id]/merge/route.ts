@@ -154,18 +154,76 @@ export async function POST(
 
   // ── 5. Transfer claim if applicable ───────────────────────────────────────
   const dupClaimed = (duplicate as any).is_claimed === true
-  const priUnclaimed = (primary as any).is_claimed !== true
+  const dupClaimedBy: string | null = (duplicate as any).claimed_by_user_id ?? null
+  const priClaimed = (primary as any).is_claimed === true
+  const priClaimedBy: string | null = (primary as any).claimed_by_user_id ?? null
+  const priUnclaimed = !priClaimed
+
+  // GUARD: Both nodes claimed by DIFFERENT users → refuse merge.
+  // Silently dropping a real person's claim is identity-destructive.
+  // An admin must manually revoke one claim before merging.
+  if (dupClaimed && priClaimed && dupClaimedBy !== priClaimedBy) {
+    // Log the blocked attempt for auditability
+    await admin.from('claim_audit_log').insert({
+      node_id: primaryId,
+      actor_id: user.id,
+      action: 'merge_blocked',
+      metadata: {
+        reason: 'BOTH_CLAIMED',
+        primary_id: primaryId,
+        duplicate_id: targetId,
+        primary_claimer: priClaimedBy,
+        duplicate_claimer: dupClaimedBy,
+      },
+    }).then(() => { })
+
+    return NextResponse.json(
+      {
+        error: 'BOTH_CLAIMED',
+        message: 'Both profiles are claimed by different people. Revoke one claim before merging.',
+        primaryClaimer: priClaimedBy,
+        duplicateClaimer: dupClaimedBy,
+      },
+      { status: 409 }
+    )
+  }
+
   if (dupClaimed && priUnclaimed) {
+    // Duplicate is claimed, primary is not — transfer the claim to the surviving node.
     merged['is_claimed'] = true
-    merged['claimed_by_user_id'] = (duplicate as any).claimed_by_user_id
+    merged['claimed_by_user_id'] = dupClaimedBy
     merged['claim_status'] = (duplicate as any).claim_status ?? 'claimed'
     merged['claimed_at'] = (duplicate as any).claimed_at
 
-    // Update the profile's member_id reference
-    const dupClaimedBy = (duplicate as any).claimed_by_user_id
+    // Update the claimer's profile.member_id to point to the surviving node.
     if (dupClaimedBy) {
       await admin.from('profiles').update({ member_id: primaryId }).eq('id', dupClaimedBy)
     }
+
+    // Audit: record claim transfer
+    await admin.from('claim_audit_log').insert({
+      node_id: primaryId,
+      actor_id: user.id,
+      action: 'claim_completed',
+      metadata: {
+        reason: 'merge_claim_transfer',
+        absorbed_id: targetId,
+        transferred_from: dupClaimedBy,
+      },
+    }).then(() => { })
+  } else if (dupClaimed && priClaimed && dupClaimedBy === priClaimedBy) {
+    // Both claimed by the SAME user (e.g. they somehow got two nodes) — merge normally,
+    // keep primary claim, log the absorbed duplicate.
+    await admin.from('claim_audit_log').insert({
+      node_id: primaryId,
+      actor_id: user.id,
+      action: 'claim_abandoned',
+      metadata: {
+        reason: 'merge_same_user_duplicate',
+        absorbed_id: targetId,
+        claimer: dupClaimedBy,
+      },
+    }).then(() => { })
   }
 
   // ── 6. Transfer stories ─────────────────────────────────────────────────────

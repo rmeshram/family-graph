@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useJoinFamily } from '@/hooks/use-invites'
@@ -62,12 +62,21 @@ export default function JoinPage() {
   const [ncName, setNcName] = useState('')
   const [ncBirthYear, setNcBirthYear] = useState('')
   const [ncAttempts, setNcAttempts] = useState<number | null>(null)
+  const nodeClaimSubmittingRef = useRef(false)
 
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setIsAuthed(!!user)
-      if (user) setDisplayName('') // will pre-fill below
+      if (user) {
+        // Pre-fill display name from the user's profile
+        const { data: myProfile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', user.id)
+          .single()
+        setDisplayName((myProfile as any)?.display_name || user.email?.split('@')[0] || '')
+      }
 
       const { data: invite } = await supabase
         .from('invite_links')
@@ -120,13 +129,19 @@ export default function JoinPage() {
         .single()
       const familyPrivacyMode = (familyData as any)?.privacy_mode as 'open' | 'protected' | 'closed' | undefined ?? 'protected'
 
+      // Member count (exact) + name/generation sample for display
+      const { count: exactCount } = await supabase
+        .from('family_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('family_id', inv.family_id)
+
       const { data: members } = await supabase
         .from('family_members')
         .select('name, generation')
         .eq('family_id', inv.family_id)
         .limit(50)
 
-      const memberCount = members?.length ?? 0
+      const memberCount = exactCount ?? members?.length ?? 0
       const generations = new Set(members?.map(m => m.generation) ?? [])
       // Enforce privacy mode: 'closed' shows no names, 'protected' shows count only
       const recentNames = familyPrivacyMode === 'open'
@@ -273,6 +288,8 @@ export default function JoinPage() {
     if (!nodeClaim) return
     if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
     if (!ncName.trim()) return
+    if (nodeClaimSubmittingRef.current) return
+    nodeClaimSubmittingRef.current = true
     const by = ncBirthYear.trim() ? parseInt(ncBirthYear.trim(), 10) : undefined
     if (ncBirthYear.trim() && (Number.isNaN(by!) || by! < 1800 || by! > new Date().getFullYear())) {
       setMessage('Please enter a valid birth year'); return
@@ -326,6 +343,8 @@ export default function JoinPage() {
     } catch (e: unknown) {
       setStatus('node_claim')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      nodeClaimSubmittingRef.current = false
     }
   }
 
