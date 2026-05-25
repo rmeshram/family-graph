@@ -239,7 +239,7 @@ export default function MarketingPage() {
               <a href="#use-cases" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Use Cases</a>
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
               <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">How it Works</a>
-              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
+              {/* <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a> */}
               <Link href="/auth/signin">
                 <Button variant="ghost" size="sm">Sign In</Button>
               </Link>
