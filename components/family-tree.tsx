@@ -18,6 +18,18 @@ import { useViewportCulling, isEdgeVisible } from '@/hooks/use-viewport-culling'
 import { NodeActionRing } from '@/components/node-action-ring'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
 
+/* ── Relationship badge colour map ─────────────────────────────────────────── */
+function getRelBadgeStyle(rel: string | undefined, networkGroup?: string) {
+  if (networkGroup === 'affiliated') return { bg: 'rgba(20,184,166,0.15)', color: 'rgba(52,211,153,0.95)', border: 'rgba(20,184,166,0.42)' }
+  if (networkGroup === 'extended')   return { bg: 'rgba(139,92,246,0.15)', color: 'rgba(167,139,250,0.95)', border: 'rgba(139,92,246,0.42)' }
+  const r = (rel ?? '').toLowerCase()
+  if (r === 'self')                                                     return { bg: 'rgba(99,102,241,0.18)', color: 'rgba(165,180,252,0.95)', border: 'rgba(99,102,241,0.52)' }
+  if (['spouse','husband','wife'].includes(r))                          return { bg: 'rgba(244,63,94,0.15)',  color: 'rgba(251,113,133,0.95)', border: 'rgba(244,63,94,0.42)'  }
+  if (['son','daughter','child','grandson','granddaughter','grandchild'].includes(r))
+                                                                        return { bg: 'rgba(34,197,94,0.12)',  color: 'rgba(134,239,172,0.95)', border: 'rgba(34,197,94,0.38)'  }
+  return                                                                       { bg: 'rgba(245,158,11,0.15)', color: 'rgba(252,211,77,0.95)',  border: 'rgba(245,158,11,0.48)' }
+}
+
 interface FamilyTreeProps {
   members: FamilyMember[]
   selectedMemberId: string | null
@@ -138,10 +150,10 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
 
     const visibleMembers = members.filter(m => !hiddenIds.has(m.id))
 
-    const nodeWidth = 150
-    const nodeHeight = 140
-    const horizontalGap = 40
-    const verticalGap = 140
+    const nodeWidth = 160
+    const nodeHeight = 155
+    const horizontalGap = 44
+    const verticalGap = 155
 
     //  Core + Extended: layout core by generation, extended members in a
     //  separate column grid to the left so they don't widen the core rows.
@@ -347,6 +359,37 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     }
     return map
   }, [nodePositions, memberMap])
+
+  // ── Generation row labels (rendered in transform space) ────────────────────
+  const genLabels = useMemo(() => {
+    const genToY = new Map<number, number[]>()
+    nodePositions.forEach(pos => {
+      const m = memberMap.get(pos.id)
+      if (!m || (m.networkGroup && m.networkGroup !== 'core')) return
+      if (!genToY.has(m.generation)) genToY.set(m.generation, [])
+      genToY.get(m.generation)!.push(pos.y)
+    })
+    if (genToY.size === 0) return []
+    const selfMember = members.find(m => m.relationship === 'self')
+    const allGens = [...genToY.keys()]
+    const selfGen = selfMember?.generation ?? Math.max(...allGens)
+    const sortedGens = allGens.sort((a, b) => a - b)
+    const ROMAN = ['I','II','III','IV','V','VI','VII','VIII']
+    return sortedGens.map((gen, idx) => {
+      const ys = genToY.get(gen)!
+      const minY = Math.min(...ys)
+      const dist = gen - selfGen
+      let name = ''
+      if (dist === 0)       name = 'Your Generation'
+      else if (dist === -1) name = 'Parents'
+      else if (dist === -2) name = 'Grandparents'
+      else if (dist === -3) name = 'Great-grandparents'
+      else if (dist <= -4)  name = 'Ancestors'
+      else if (dist === 1)  name = 'Children'
+      else                  name = 'Grandchildren'
+      return { gen, y: minY, label: `Generation ${ROMAN[idx] ?? String(idx + 1)}`, name }
+    })
+  }, [nodePositions, memberMap, members])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
@@ -897,6 +940,38 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
           })}
         </svg>
 
+        {/* ── Generation row labels ──────────────────────────────────────────── */}
+        {renderMode !== 'dot' && genLabels.map(gl => {
+          const offsetX = dimensions.width / 2
+          const offsetY = dimensions.height / 2
+          return (
+            <div
+              key={`gen-label-${gl.gen}`}
+              className="absolute pointer-events-none select-none flex items-center"
+              style={{
+                left: 0,
+                top: gl.y - 42 + offsetY,
+                width: dimensions.width,
+                justifyContent: 'center',
+                gap: 10,
+              }}
+            >
+              <div style={{ height: 1, width: 44, background: 'rgba(148,163,184,0.10)', flexShrink: 0 }} />
+              <p style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: 'rgba(148,163,184,0.32)',
+                whiteSpace: 'nowrap',
+              }}>
+                {gl.label} · {gl.name}
+              </p>
+              <div style={{ height: 1, width: 44, background: 'rgba(148,163,184,0.10)', flexShrink: 0 }} />
+            </div>
+          )
+        })}
+
         {/*  DOT MODE: zoom < 0.30 — pure SVG, zero React cards in DOM  */}
         {renderMode === 'dot' && (
           <svg
@@ -967,6 +1042,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
             const relationshipLabel = member.relationship && member.relationship !== 'self'
               ? member.relationship.toUpperCase()
               : null
+            const relBadge = getRelBadgeStyle(member.relationship, networkGroup)
 
             // COMPACT mode: stripped-down node, avatar + name only
             if (renderMode === 'compact') {
@@ -1023,14 +1099,14 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
               )
             }
 
-            // FULL mode: complete interactive card
+            // FULL mode: premium interactive card
             return (
               <div
                 key={member.id}
                 className="absolute transition-opacity duration-200"
                 style={{
                   left: pos.x - nodeWidth / 2,
-                  top: pos.y - 60,
+                  top: pos.y - 76,
                   width: nodeWidth,
                   opacity: isExtended ? 0.82 : isAffiliated ? 0.9 : 1,
                   animation: isExtended || isAffiliated ? `fadeSlideIn 0.35s ease both` : 'none',
@@ -1038,26 +1114,14 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                   zIndex: isSelected ? 20 : undefined,
                 }}
               >
-                {/* Relationship label above node */}
-                {relationshipLabel && (
-                  <p
-                    className="text-center text-[8px] font-semibold tracking-[0.04em] uppercase mb-1 leading-tight px-1 text-wrap break-words"
-                    style={{
-                      color: isAffiliated ? 'rgba(20,184,166,0.70)' : isExtended ? 'rgba(139,92,246,0.65)' : 'var(--tree-node-label)',
-                    }}
-                  >
-                    {relationshipLabel}
-                  </p>
-                )}
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       className={cn(
-                        'flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-200 w-full',
+                        'flex flex-col items-center rounded-2xl transition-all duration-200 w-full overflow-hidden',
                         'border backdrop-blur-md',
-                        isSelected ? 'shadow-lg shadow-amber-500/10'
-                          : isHovered ? 'shadow-lg shadow-indigo-500/10' : '',
+                        isSelected ? 'shadow-xl shadow-amber-500/15 ring-1 ring-amber-500/25'
+                          : isHovered ? 'shadow-xl shadow-indigo-500/12 -translate-y-0.5' : '',
                         isUnclaimed ? 'opacity-65' : ''
                       )}
                       style={{
@@ -1068,7 +1132,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                         borderColor: isSelected ? 'var(--tree-node-border-selected)'
                           : isUnclaimed ? 'rgba(148,163,184,0.35)'
                             : isHovered
-                              ? (isAffiliated ? 'rgba(20,184,166,0.55)' : isExtended ? 'rgba(139,92,246,0.55)' : 'var(--tree-node-border-hover)')
+                              ? (isAffiliated ? 'rgba(20,184,166,0.60)' : isExtended ? 'rgba(139,92,246,0.60)' : 'var(--tree-node-border-hover)')
                               : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
                       }}
                       onClick={(e) => {
@@ -1085,100 +1149,141 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
                       onMouseEnter={() => setHoveredMemberId(member.id)}
                       onMouseLeave={() => setHoveredMemberId(null)}
                     >
-                      <div className="relative">
-                        <Avatar
-                          className={cn(
-                            'border-2 transition-all duration-200',
-                            isAffiliated ? 'h-12 w-12' : isExtended ? 'h-12 w-12' : 'h-14 w-14',
-                            isSelected
-                              ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
-                              : isUnclaimed
-                                ? 'border-slate-500/35'
-                                : isHovered
-                                  ? (isAffiliated
-                                    ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                    : isExtended
-                                      ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                      : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
-                                  : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
-                          )}
-                        >
-                          {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
-                          <AvatarFallback
-                            className={cn(
-                              'font-bold text-lg transition-colors',
-                              isAnonymous ? 'bg-muted/60 text-muted-foreground'
-                                : isSelected
-                                  ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
-                                  : isHovered
-                                    ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
-                                      : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
-                                        : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
-                                    : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
-                                      : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
-                                        : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
-                            )}
-                            style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
+                      {/* ── Card header: relationship badge + living status ── */}
+                      <div className="flex items-center justify-between px-2 pt-1.5 pb-1 w-full gap-1">
+                        {(relationshipLabel || member.relationship === 'self') ? (
+                          <span
+                            className="text-[7px] font-bold tracking-wider px-1.5 py-0.5 rounded-full leading-tight whitespace-nowrap"
+                            style={{
+                              background: relBadge.bg,
+                              color: relBadge.color,
+                              border: `1px solid ${relBadge.border}`,
+                            }}
                           >
-                            {displayInitials}
-                          </AvatarFallback>
-                        </Avatar>
-                        {isDeceased && (
-                          <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-slate-600 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                            <span className="text-[8px] text-slate-300">†</span>
-                          </div>
-                        )}
-                        {member.isClaimed && (
-                          <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                            <ShieldCheck className="h-2.5 w-2.5 text-white" />
-                          </div>
-                        )}
-                        {isUnclaimed && (
-                          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex h-4 items-center rounded-full border border-orange-500/50 bg-orange-500/20 px-1.5">
-                            <span className="text-[7px] font-bold text-orange-400 whitespace-nowrap">Not joined</span>
-                          </div>
-                        )}
-                        {member.visibility === 'private' && (
-                          <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-orange-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                            <Lock className="h-2.5 w-2.5 text-white" />
-                          </div>
-                        )}
-                        {isAnonymous && (
-                          <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-slate-600/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
-                            <EyeOff className="h-2.5 w-2.5 text-slate-300" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-center w-full">
-                        <p
-                          className={cn(
-                            'text-[11px] font-semibold truncate w-full',
-                            isAnonymous ? 'text-muted-foreground italic' : ''
+                            {member.relationship === 'self' ? 'YOU' : relationshipLabel}
+                          </span>
+                        ) : <span />}
+                        <span className="flex items-center gap-0.5 text-[7.5px] flex-shrink-0 ml-auto">
+                          {isDeceased ? (
+                            <span style={{ color: 'rgba(148,163,184,0.55)' }}>In memory</span>
+                          ) : (
+                            <>
+                              <span style={{ color: '#22c55e', fontSize: 7, lineHeight: 1 }}>●</span>
+                              <span style={{ color: 'rgba(148,163,184,0.55)' }}>Living</span>
+                            </>
                           )}
-                          style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
-                        >
-                          {displayName}
-                        </p>
-                        {lifespan && (
-                          <p className="text-[9px] mt-0.5" style={{ color: 'var(--tree-node-subtext)' }}>
-                            {lifespan}
-                          </p>
-                        )}
-                        {/* Profile completion micro-dots: photo · birth year · details */}
-                        {!isAnonymous && (
-                          <div className="flex items-center justify-center gap-[3px] mt-1.5">
-                            {[
-                              { filled: !!member.photoUrl, title: 'Photo' },
-                              { filled: !!member.birthYear, title: 'Birth year' },
-                              { filled: !!(member.occupation || member.bio || member.birthPlace || member.currentPlace), title: 'Profile details' },
-                            ].map((dot, i) => (
-                              <div
-                                key={i}
-                                title={dot.filled ? `${dot.title}: added` : `${dot.title}: missing`}
-                                className="h-[5px] w-[5px] rounded-full transition-colors"
-                                style={{ background: dot.filled ? 'rgba(34,197,94,0.65)' : 'rgba(100,116,139,0.25)' }}
-                              />
-                            ))}
+                        </span>
+                      </div>
+                      {/* thin divider */}
+                      <div style={{
+                        height: 1,
+                        width: '100%',
+                        background: isAffiliated ? 'rgba(20,184,166,0.12)' : isExtended ? 'rgba(139,92,246,0.12)' : 'rgba(100,116,139,0.14)',
+                      }} />
+
+                      {/* ── Card body: avatar + name + metadata ── */}
+                      <div className="flex flex-col items-center gap-1.5 px-2.5 py-2.5 w-full">
+                        <div className="relative">
+                          <Avatar
+                            className={cn(
+                              'border-2 transition-all duration-200',
+                              isAffiliated ? 'h-11 w-11' : isExtended ? 'h-11 w-11' : 'h-12 w-12',
+                              isSelected
+                                ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                : isUnclaimed
+                                  ? 'border-slate-500/35'
+                                  : isHovered
+                                    ? (isAffiliated
+                                      ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                      : isExtended
+                                        ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                        : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
+                                    : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
+                            )}
+                          >
+                            {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
+                            <AvatarFallback
+                              className={cn(
+                                'font-bold transition-colors',
+                                isAffiliated ? 'text-sm' : isExtended ? 'text-sm' : 'text-base',
+                                isAnonymous ? 'bg-muted/60 text-muted-foreground'
+                                  : isSelected
+                                    ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
+                                    : isHovered
+                                      ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
+                                        : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
+                                          : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
+                                      : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
+                                        : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
+                                          : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
+                              )}
+                              style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
+                            >
+                              {displayInitials}
+                            </AvatarFallback>
+                          </Avatar>
+                          {isDeceased && (
+                            <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-slate-600 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <span className="text-[8px] text-slate-300">†</span>
+                            </div>
+                          )}
+                          {member.isClaimed && (
+                            <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <ShieldCheck className="h-2.5 w-2.5 text-white" />
+                            </div>
+                          )}
+                          {isUnclaimed && (
+                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex h-4 items-center rounded-full border border-orange-500/50 bg-orange-500/20 px-1.5">
+                              <span className="text-[7px] font-bold text-orange-400 whitespace-nowrap">Not joined</span>
+                            </div>
+                          )}
+                          {member.visibility === 'private' && (
+                            <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-orange-500/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <Lock className="h-2.5 w-2.5 text-white" />
+                            </div>
+                          )}
+                          {isAnonymous && (
+                            <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-slate-600/90 border-2 flex items-center justify-center" style={{ borderColor: 'var(--surface-base)' }}>
+                              <EyeOff className="h-2.5 w-2.5 text-slate-300" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Name: given name + family name on separate lines */}
+                        <div className="text-center w-full">
+                          {isAnonymous ? (
+                            <p className="text-[11px] font-semibold text-muted-foreground italic">? Member</p>
+                          ) : (
+                            <>
+                              <p
+                                className="text-[11px] font-semibold leading-tight truncate w-full"
+                                style={{ color: 'var(--tree-node-text)' }}
+                              >
+                                {member.name.split(' ').slice(0, -1).join(' ') || member.name}
+                              </p>
+                              {member.name.split(' ').length > 1 && (
+                                <p className="text-[9px] mt-0.5 truncate w-full" style={{ color: 'var(--tree-node-subtext)' }}>
+                                  {member.name.split(' ').slice(-1)[0]}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Metadata: lifespan + location */}
+                        {!isAnonymous && (lifespan || member.currentPlace || member.birthPlace) && (
+                          <div className="flex flex-col items-center gap-0.5 w-full mt-0.5">
+                            {lifespan && (
+                              <p className="text-[8px] flex items-center gap-1" style={{ color: 'var(--tree-node-subtext)' }}>
+                                <span>📅</span><span>{lifespan}</span>
+                              </p>
+                            )}
+                            {(member.currentPlace || member.birthPlace) && (
+                              <p className="text-[8px] flex items-center gap-1" style={{ color: 'var(--tree-node-subtext)' }}>
+                                <span>📍</span>
+                                <span className="truncate max-w-[92px]">{member.currentPlace || member.birthPlace}</span>
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1344,7 +1449,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
       })}
 
       {/*  Legend  */}
-      <div className="absolute bottom-16 right-4 z-[3] flex flex-col gap-1.5 rounded-xl px-3 py-2.5 backdrop-blur-md border border-border/30 text-[10px]"
+      <div className="absolute bottom-[72px] left-4 z-[3] flex flex-col gap-1.5 rounded-xl px-3 py-2.5 backdrop-blur-md border border-border/30 text-[10px]"
         style={{ background: 'var(--surface-card)' }}
       >
         <div className="flex items-center gap-2">
@@ -1361,63 +1466,110 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="absolute bottom-4 right-4 flex gap-1.5 z-[3]">
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={() => {
-            const cx = dimensions.width / 2; const cy = dimensions.height / 2
-            setZoom(z => { const nz = Math.min(z * 1.25, 4); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz })
-          }}
-          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
-          style={{ background: 'var(--surface-card)' }}
+      {/* ─── Minimap ───────────────────────────────────────────────────── */}
+      {nodePositions.length > 0 && (() => {
+        const mapW = 176, mapH = 112
+        const pad = 80
+        const allX = nodePositions.map(p => p.x)
+        const allY = nodePositions.map(p => p.y)
+        const mnX = Math.min(...allX) - pad, mxX = Math.max(...allX) + pad + 160
+        const mnY = Math.min(...allY) - pad, mxY = Math.max(...allY) + pad + 155
+        const cW = mxX - mnX, cH = mxY - mnY
+        const sc = Math.min(mapW / cW, mapH / cH, 1)
+        const oX = (mapW - cW * sc) / 2
+        const oY = (mapH - cH * sc) / 2
+        const toMx = (x: number) => (x - mnX) * sc + oX
+        const toMy = (y: number) => (y - mnY) * sc + oY
+        // Viewport rectangle in minimap coords
+        const vpX = -pan.x / zoom
+        const vpY = -pan.y / zoom
+        const vpW = dimensions.width / zoom
+        const vpH = dimensions.height / zoom
+        const vpMx = Math.max(0, toMx(vpX))
+        const vpMy = Math.max(0, toMy(vpY))
+        const vpMw = Math.min(vpW * sc, mapW - vpMx)
+        const vpMh = Math.min(vpH * sc, mapH - vpMy)
+        return (
+          <div
+            className="absolute z-[3] rounded-xl border border-border/40 overflow-hidden backdrop-blur-md cursor-pointer hover:border-border/70 transition-colors"
+            style={{ bottom: 56, right: 16, width: mapW, height: mapH, background: 'rgba(9,9,11,0.80)' }}
+            title="Minimap — click to navigate"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const mx = e.clientX - rect.left
+              const my = e.clientY - rect.top
+              const cx = (mx - oX) / sc + mnX
+              const cy = (my - oY) / sc + mnY
+              const targetZoom = Math.max(zoomRef.current, 0.65)
+              animateTo(dimensions.width / 2 - cx * targetZoom, dimensions.height / 2 - cy * targetZoom, targetZoom, 350)
+            }}
+          >
+            <svg width={mapW} height={mapH}>
+              {nodePositions.map(pos => {
+                const m = memberMap.get(pos.id)
+                const fill = m?.networkGroup === 'affiliated' ? '#14B8A6' : m?.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
+                const r = m?.networkGroup === 'core' ? 3.5 : 2.5
+                return (
+                  <circle key={pos.id} cx={toMx(pos.x)} cy={toMy(pos.y)} r={r}
+                    fill={fill} opacity={selectedMemberId === pos.id ? 1 : 0.65}
+                  />
+                )
+              })}
+              {vpMw > 2 && vpMh > 2 && (
+                <rect x={vpMx} y={vpMy} width={vpMw} height={vpMh}
+                  fill="rgba(255,255,255,0.04)"
+                  stroke="rgba(255,255,255,0.32)"
+                  strokeWidth={1} rx={2}
+                />
+              )}
+            </svg>
+            <span className="absolute bottom-1 right-2 text-[8px] font-medium tracking-wider uppercase" style={{ color: 'rgba(148,163,184,0.45)', pointerEvents: 'none' }}>MAP</span>
+          </div>
+        )
+      })()}
+
+      {/* ─── Controls pill ─────────────────────────────────────────────── */}
+      <div
+        className="absolute bottom-4 right-4 z-[3] flex items-center rounded-xl border border-border/40 overflow-hidden backdrop-blur-md divide-x divide-border/30"
+        style={{ background: 'var(--surface-card)' }}
+      >
+        <button
+          onClick={() => { const cx = dimensions.width / 2; const cy = dimensions.height / 2; setZoom(z => { const nz = Math.min(z * 1.25, 4); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz }) }}
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
           title="Zoom in (+)"
         >
           <ZoomIn className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={() => {
-            const cx = dimensions.width / 2; const cy = dimensions.height / 2
-            setZoom(z => { const nz = Math.max(z * 0.8, 0.2); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz })
-          }}
-          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
-          style={{ background: 'var(--surface-card)' }}
+        </button>
+        <div className="flex h-9 w-12 items-center justify-center text-[11px] font-medium tabular-nums select-none" style={{ color: 'var(--tree-node-subtext)' }}>
+          {Math.round(zoom * 100)}%
+        </div>
+        <button
+          onClick={() => { const cx = dimensions.width / 2; const cy = dimensions.height / 2; setZoom(z => { const nz = Math.max(z * 0.8, 0.2); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz }) }}
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
           title="Zoom out (-)"
         >
           <ZoomOut className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
+        </button>
+        <button
           onClick={fitToView}
-          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
-          style={{ background: 'var(--surface-card)' }}
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
           title="Fit all to view (F)"
         >
           <Grid3X3 className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
+        </button>
+        <button
           onClick={centerView}
-          className="h-8 w-8 backdrop-blur-md border border-slate-700/40 text-muted-foreground hover:text-foreground"
-          style={{ background: 'var(--surface-card)' }}
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
           title="Reset view (0)"
         >
           <Maximize2 className="h-3.5 w-3.5" />
-        </Button>
+        </button>
       </div>
 
-      {/* Zoom indicator + hint */}
+      {/* Keyboard hints */}
       <div className="absolute bottom-4 left-4 flex items-center gap-2 z-[3]">
-        <div className="px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-700/40 text-[11px] text-muted-foreground" style={{ background: 'var(--surface-card)' }}>
-          {Math.round(zoom * 100)}%
-        </div>
-        <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-700/40 text-[10px] text-muted-foreground/60" style={{ background: 'var(--surface-card)' }}>
-          Scroll to zoom · Drag to pan · Double-click node to focus · F to fit
+        <div className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-lg backdrop-blur-md border border-border/30 text-[10px] text-muted-foreground/55" style={{ background: 'var(--surface-card)' }}>
+          Scroll to zoom · Drag to pan · Double-click to focus · F to fit
         </div>
       </div>
     </div>
