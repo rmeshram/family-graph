@@ -15,9 +15,9 @@
  * driven by `pathSequence` → `pfPathNodes` set on the dashboard.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
+import { ChevronDown, ChevronUp, ArrowRight, Share2, Check } from 'lucide-react'
 import { FamilyMember } from '@/lib/types'
 import { computeSemanticRelationship } from '@/lib/relation-engine'
 import { lookupIndianTerm } from '@/lib/cultural-terms'
@@ -115,6 +115,22 @@ export function PathFinderPanel({
   }, [semanticResult, toMember])
 
   const conf = semanticResult ? confidenceTier(semanticResult.confidence) : null
+
+  const [shareCopied, setShareCopied] = useState(false)
+
+  const handleWhatsAppShare = useCallback(() => {
+    if (!fromMember || !toMember) return
+    const fromName = fromMember.name.split(' ')[0]
+    const toName = toMember.name
+    const relLabel = semanticResult?.found ? semanticResult.canonicalLabel : `${pathSequence.length - 1}-step relative`
+    const sentence = semanticResult?.found ? `\n"${semanticResult.chainSentence}"` : ''
+    const hops = pathSequence.length > 2 ? `\nConnected through ${pathSequence.length - 2} shared relative${pathSequence.length - 2 !== 1 ? 's' : ''}.` : ''
+    const text = `🌳 Did you know?\n\n*${fromName}* and *${toName}* are *${relLabel}*!${sentence}${hops}\n\nDiscover your family connections at outverse.in`
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
+  }, [fromMember, toMember, semanticResult, pathSequence.length])
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--surface-header)' }}>
@@ -594,6 +610,24 @@ export function PathFinderPanel({
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Share on WhatsApp */}
+              <div className="px-3 pb-2">
+                <button
+                  onClick={handleWhatsAppShare}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[11px] font-semibold border transition-all hover:opacity-90 active:scale-[0.98]"
+                  style={{
+                    borderColor: 'rgba(37,211,102,0.4)',
+                    background: 'rgba(37,211,102,0.08)',
+                    color: 'rgb(37,211,102)',
+                  }}
+                >
+                  {shareCopied
+                    ? <><Check className="h-3.5 w-3.5" /> Opening WhatsApp…</>
+                    : <><Share2 className="h-3.5 w-3.5" /> Share on WhatsApp</>
+                  }
+                </button>
               </div>
 
               {/* Clear */}

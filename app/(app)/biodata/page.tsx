@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 import { sampleFamilyMembers } from "@/lib/sample-data"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
@@ -18,8 +20,8 @@ import type { FamilyMember } from "@/lib/types"
 const CURRENT_YEAR = new Date().getFullYear()
 
 export default function BiodataPage() {
-  const { user, familyId, loading: authLoading } = useAuth()
-  const { members: dbMembers, loading } = useMembers(familyId)
+  const { user, profile, familyId, loading: authLoading } = useAuth()
+  const { members: dbMembers, loading, updateMember } = useMembers(familyId)
   const { toast } = useToast()
   const isDemoMode = !authLoading && !user
   const allMembers = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
@@ -32,6 +34,10 @@ export default function BiodataPage() {
 
   const [selectedId, setSelectedId] = useState(eligible[0]?.id ?? "")
   const [copied, setCopied] = useState(false)
+  const [togglingVisibility, setTogglingVisibility] = useState(false)
+
+  const selfMemberId = profile?.member_id ?? null
+  const isAdmin = profile?.role === 'admin'
 
   const member = allMembers.find(m => m.id === selectedId)
   const father = member
@@ -279,6 +285,37 @@ export default function BiodataPage() {
               {/* Biodata Preview */}
               {member && (
                 <div className="space-y-4">
+                  {/* Matrimony visibility toggle — only for own profile or admin */}
+                  {(selectedId === selfMemberId || isAdmin) && !isDemoMode && (
+                    <div className="flex items-center gap-3 rounded-xl border border-pink-500/25 bg-pink-500/5 px-4 py-3">
+                      <Heart className="h-4 w-4 text-pink-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <Label htmlFor="biodata-visible" className="font-medium text-sm cursor-pointer">
+                          Visible for matrimony search
+                        </Label>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Allow extended family & community to discover this biodata
+                        </p>
+                      </div>
+                      <Switch
+                        id="biodata-visible"
+                        checked={member?.isBiodataVisible ?? false}
+                        disabled={togglingVisibility}
+                        onCheckedChange={async (checked) => {
+                          setTogglingVisibility(true)
+                          try {
+                            await updateMember(selectedId, { isBiodataVisible: checked })
+                            toast({ title: checked ? 'Biodata visible for search' : 'Biodata hidden from search', description: checked ? 'Your profile is now discoverable in community matrimony search.' : 'Your profile is no longer shown in matrimony search.' })
+                          } catch (e: unknown) {
+                            toast({ title: 'Could not update visibility', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' })
+                          } finally {
+                            setTogglingVisibility(false)
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* Action buttons */}
                   <div className="flex flex-wrap gap-2">
                     <Button

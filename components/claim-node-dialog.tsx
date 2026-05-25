@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { UserCheck, Lock, Globe, Users, AlertCircle, ShieldCheck } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { UserCheck, Lock, Globe, Users, AlertCircle, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils'
 interface ClaimNodeDialogProps {
   member: FamilyMember | null
   userId: string | null
+  /** The current user's already-claimed member id (profiles.member_id). Used for one-account-one-node guard. */
+  selfMemberId?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onClaim: (memberId: string, userId: string, opts?: { submittedName?: string; submittedBirthYear?: number }) => Promise<void>
@@ -56,30 +58,76 @@ const VISIBILITY_OPTIONS: {
     },
   ]
 
+function confidenceTier(score: number): { label: string; className: string } {
+  if (score >= 80) return { label: 'High confidence', className: 'bg-green-500/20 text-green-400 border-green-500/30' }
+  if (score >= 55) return { label: 'Medium confidence', className: 'bg-amber-500/20 text-amber-400 border-amber-500/30' }
+  return { label: 'Low confidence', className: 'bg-red-500/20 text-red-400 border-red-500/30' }
+}
+
 export function ClaimNodeDialog({
   member,
   userId,
+  selfMemberId,
   open,
   onOpenChange,
   onClaim,
   onSetVisibility,
 }: ClaimNodeDialogProps) {
+  const [submittedName, setSubmittedName] = useState('')
+  const [submittedBirthYear, setSubmittedBirthYear] = useState('')
   const [claiming, setClaiming] = useState(false)
   const [visibilityLoading, setVisibilityLoading] = useState<string | null>(null)
+  const [claimError, setClaimError] = useState<{
+    code: string
+    message?: string
+    mismatchFields?: string[]
+    attemptsLeft?: number
+    lockedUntil?: string
+    claimedNodeId?: string
+  } | null>(null)
+  const [justClaimed, setJustClaimed] = useState(false)
+  const [confidenceScore, setConfidenceScore] = useState<number | null>(null)
+
+  // Reset state when dialog opens / member changes
+  useEffect(() => {
+    if (open && member) {
+      setSubmittedName(member.name)
+      setSubmittedBirthYear(member.birthYear ? String(member.birthYear) : '')
+      setClaimError(null)
+      setJustClaimed(false)
+      setConfidenceScore(null)
+    }
+  }, [open, member?.id])
 
   if (!member) return null
 
   const alreadyClaimed = !!member.isClaimed
   const claimedByMe = alreadyClaimed && member.claimedByUserId === userId
+  // User already has a DIFFERENT claimed node in this family
+  const alreadyLinkedElsewhere = !!(selfMemberId && selfMemberId !== member.id)
+
+  const showVisibilityControls = (claimedByMe || justClaimed) && onSetVisibility
 
   const handleClaim = async () => {
-    if (!userId) return
+    if (!userId || !submittedName.trim()) return
+    setClaimError(null)
     setClaiming(true)
     try {
-      await onClaim(member.id, userId)
-      onOpenChange(false)
-    } catch {
-      // error handled by parent toast
+      await onClaim(member.id, userId, {
+        submittedName: submittedName.trim(),
+        submittedBirthYear: submittedBirthYear ? parseInt(submittedBirthYear, 10) : undefined,
+      })
+      setJustClaimed(true)
+    } catch (err: any) {
+      setClaimError({
+        code: err.error ?? 'UNKNOWN',
+        message: err.message,
+        mismatchFields: err.mismatchFields,
+        attemptsLeft: err.attemptsLeft,
+        lockedUntil: err.lockedUntil,
+        claimedNodeId: err.claimedNodeId,
+      })
+      if (err.confidenceScore != null) setConfidenceScore(err.confidenceScore)
     } finally {
       setClaiming(false)
     }
@@ -101,25 +149,127 @@ export function ClaimNodeDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCheck className="h-5 w-5 text-primary" />
-            {claimedByMe ? 'Your profile node' : alreadyClaimed ? 'Already claimed' : 'Is this you?'}
+            {showVisibilityControls
+              ? 'Your profile node'
+              : alreadyClaimed
+                ? 'Already claimed'
+                : 'Is this you?'}
           </DialogTitle>
           <DialogDescription>
-            {claimedByMe
+            {showVisibilityControls
               ? 'This is your node in the family tree. Manage visibility below.'
               : alreadyClaimed
                 ? 'This person has already been claimed by another family member.'
-                : `Claim "${member.name}" to link it to your account. You can then control who sees your details.`}
+                : `Verify your identity to claim "${member.name}"`}
           </DialogDescription>
         </DialogHeader>
 
-        {!alreadyClaimed && userId && (
-          <Button onClick={handleClaim} disabled={claiming} className="w-full">
-            <UserCheck className="h-4 w-4 mr-2" />
-            {claiming ? 'Claiming…' : `Yes, I'm ${member.name.split(' ')[0]}`}
-          </Button>
+        {/* ── One-account guard ─────────────────────────────── */}
+        {!alreadyClaimed && !claimedByMe && alreadyLinkedElsewhere && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-400">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>You already have a claimed profile in this family. Go to Settings → Privacy to unlink it first.</p>
+          </div>
         )}
 
-        {claimedByMe && onSetVisibility && (
+        {/* ── Deceased / unauthenticated ────────────────────── */}
+        {member.isDeceased && !claimedByMe && (
+          <div className="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/30 p-3 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>This profile is marked as deceased. Contact the tree owner to make changes.</p>
+          </div>
+        )}
+
+        {/* ── Identity form for unclaimed node ─────────────── */}
+        {!alreadyClaimed && userId && !alreadyLinkedElsewhere && !member.isDeceased && !showVisibilityControls && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="claim-name" className="text-xs">Your full name</Label>
+              <Input
+                id="claim-name"
+                value={submittedName}
+                onChange={e => setSubmittedName(e.target.value)}
+                placeholder="As it appears on official documents"
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="claim-year" className="text-xs">Birth year <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="claim-year"
+                type="number"
+                value={submittedBirthYear}
+                onChange={e => setSubmittedBirthYear(e.target.value)}
+                placeholder="e.g. 1985"
+                min={1800}
+                max={2100}
+                className="h-9 text-sm"
+              />
+            </div>
+
+            {/* Error states */}
+            {claimError && (
+              <div className={cn(
+                'flex items-start gap-2 rounded-lg border p-3 text-xs',
+                claimError.code === 'IDENTITY_MISMATCH'
+                  ? 'border-red-500/30 bg-red-500/10 text-red-400'
+                  : claimError.code === 'LOCKED_OUT'
+                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+              )}>
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  {claimError.code === 'IDENTITY_MISMATCH' && (
+                    <>
+                      <p className="font-medium">Identity mismatch</p>
+                      {claimError.mismatchFields?.includes('name') && <p>• Name does not match the profile</p>}
+                      {claimError.mismatchFields?.includes('birth_year') && <p>• Birth year does not match</p>}
+                      {claimError.attemptsLeft != null && claimError.attemptsLeft > 0 && (
+                        <p className="text-muted-foreground">{claimError.attemptsLeft} attempt{claimError.attemptsLeft !== 1 ? 's' : ''} remaining</p>
+                      )}
+                    </>
+                  )}
+                  {claimError.code === 'LOCKED_OUT' && (
+                    <p>Too many failed attempts. Try again after {claimError.lockedUntil ? new Date(claimError.lockedUntil).toLocaleString() : 'tomorrow'}.</p>
+                  )}
+                  {claimError.code === 'ALREADY_CLAIMED' && <p>This profile has already been claimed.</p>}
+                  {claimError.code === 'RATE_LIMITED' && <p>Too many requests — try again in an hour.</p>}
+                  {claimError.code === 'ALREADY_LINKED_IN_FAMILY' && <p>You already have a claimed profile in this family. Unlink it via Settings → Privacy first.</p>}
+                  {!['IDENTITY_MISMATCH', 'LOCKED_OUT', 'ALREADY_CLAIMED', 'RATE_LIMITED', 'ALREADY_LINKED_IN_FAMILY'].includes(claimError.code) && (
+                    <p>{claimError.message ?? 'Something went wrong. Please try again.'}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <Button
+              onClick={handleClaim}
+              disabled={claiming || !submittedName.trim()}
+              className="w-full"
+            >
+              <ShieldCheck className="h-4 w-4 mr-2" />
+              {claiming ? 'Verifying…' : `Claim as ${member.name.split(' ')[0]}`}
+            </Button>
+          </div>
+        )}
+
+        {/* ── Just claimed — success banner ─────────────────── */}
+        {justClaimed && (
+          <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-400">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-medium">Profile claimed!</p>
+              {confidenceScore != null && (
+                <Badge variant="outline" className={cn('text-[10px] px-1.5 mt-1', confidenceTier(confidenceScore).className)}>
+                  {confidenceTier(confidenceScore).label} · {confidenceScore}%
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Visibility controls (own node) ────────────────── */}
+        {showVisibilityControls && (
           <>
             <Separator />
             <div className="space-y-2">

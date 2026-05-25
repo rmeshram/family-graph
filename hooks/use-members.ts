@@ -52,6 +52,8 @@ function dbToMember(row: DBMember): FamilyMember {
     dateOfBirth: (row as any).date_of_birth ?? undefined,
     // Migration 016: anonymous display mode
     showAsAnonymous: (row as any).show_as_anonymous ?? false,
+    // Migration 020: matrimony biodata opt-in
+    isBiodataVisible: (row as any).is_biodata_visible ?? false,
     // Migration 003: extended & affiliated family
     networkGroup: ((row as any).network_group as FamilyMember['networkGroup']) ?? 'core',
     affiliatedFamilyId: (row as any).affiliated_family_id ?? undefined,
@@ -306,6 +308,8 @@ export function useMembers(familyId: string | null) {
     if ('email' in updates) patch.email = updates.email ?? null
     if ('instagramHandle' in updates) patch.instagram_handle = (updates as any).instagramHandle ?? null
     if ('visibility' in updates) patch.visibility = updates.visibility
+    if ('showAsAnonymous' in updates) patch.show_as_anonymous = (updates as any).showAsAnonymous
+    if ('isBiodataVisible' in updates) patch.is_biodata_visible = (updates as any).isBiodataVisible
 
     // Snapshot for rollback + bidirectional spouse diff
     const previous = members

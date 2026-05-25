@@ -60,10 +60,20 @@ export async function POST(
   if (!isAdmin && !isFamilyOwner)
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
 
-  if (!['claimed', 'claim_pending'].includes((node as any).claim_status))
+  const revocableStatuses = ['claimed', 'claim_pending', 'invite_sent']
+  if (!revocableStatuses.includes((node as any).claim_status))
     return NextResponse.json({ error: 'NOT_CLAIMED' }, { status: 409 })
 
   const revokedAt = new Date().toISOString()
+
+  // If an invite was sent, also expire the pending invite_links row
+  if ((node as any).claim_status === 'invite_sent') {
+    await admin.from('invite_links')
+      .update({ consumed_at: revokedAt } as any)
+      .eq('node_id', id)
+      .is('consumed_at', null)
+  }
+
   await admin.from('family_members').update({
     claim_status: 'revoked',
     is_claimed: false,

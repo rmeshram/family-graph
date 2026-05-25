@@ -115,6 +115,8 @@ export interface FamilyMember {
   visibility?: 'public' | 'family' | 'private'
   /** When true, the node is displayed as a grey "? Member" placeholder to non-admins */
   showAsAnonymous?: boolean
+  /** When true, this profile is visible for matrimony / community search */
+  isBiodataVisible?: boolean
   // Extended & affiliated family network
   networkGroup?: 'core' | 'extended' | 'affiliated'
   affiliatedFamilyId?: string     // shared key for all members of same external family cluster

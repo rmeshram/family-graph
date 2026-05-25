@@ -176,7 +176,7 @@ export async function POST(
     .maybeSingle()
   if (existingLink) {
     return NextResponse.json(
-      { error: 'ALREADY_LINKED_IN_FAMILY', message: 'You are already linked to a different profile in this family.' },
+      { error: 'ALREADY_LINKED_IN_FAMILY', claimedNodeId: existingLink.node_id, message: 'You are already linked to a different profile in this family.' },
       { status: 409 }
     )
   }
