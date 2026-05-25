@@ -21,13 +21,13 @@ import type { QuickRelType } from '@/components/quick-add-member-dialog'
 /* ── Relationship badge colour map ─────────────────────────────────────────── */
 function getRelBadgeStyle(rel: string | undefined, networkGroup?: string) {
   if (networkGroup === 'affiliated') return { bg: 'rgba(20,184,166,0.15)', color: 'rgba(52,211,153,0.95)', border: 'rgba(20,184,166,0.42)' }
-  if (networkGroup === 'extended')   return { bg: 'rgba(139,92,246,0.15)', color: 'rgba(167,139,250,0.95)', border: 'rgba(139,92,246,0.42)' }
+  if (networkGroup === 'extended') return { bg: 'rgba(139,92,246,0.15)', color: 'rgba(167,139,250,0.95)', border: 'rgba(139,92,246,0.42)' }
   const r = (rel ?? '').toLowerCase()
-  if (r === 'self')                                                     return { bg: 'rgba(99,102,241,0.18)', color: 'rgba(165,180,252,0.95)', border: 'rgba(99,102,241,0.52)' }
-  if (['spouse','husband','wife'].includes(r))                          return { bg: 'rgba(244,63,94,0.15)',  color: 'rgba(251,113,133,0.95)', border: 'rgba(244,63,94,0.42)'  }
-  if (['son','daughter','child','grandson','granddaughter','grandchild'].includes(r))
-                                                                        return { bg: 'rgba(34,197,94,0.12)',  color: 'rgba(134,239,172,0.95)', border: 'rgba(34,197,94,0.38)'  }
-  return                                                                       { bg: 'rgba(245,158,11,0.15)', color: 'rgba(252,211,77,0.95)',  border: 'rgba(245,158,11,0.48)' }
+  if (r === 'self') return { bg: 'rgba(99,102,241,0.18)', color: 'rgba(165,180,252,0.95)', border: 'rgba(99,102,241,0.52)' }
+  if (['spouse', 'husband', 'wife'].includes(r)) return { bg: 'rgba(244,63,94,0.15)', color: 'rgba(251,113,133,0.95)', border: 'rgba(244,63,94,0.42)' }
+  if (['son', 'daughter', 'child', 'grandson', 'granddaughter', 'grandchild'].includes(r))
+    return { bg: 'rgba(34,197,94,0.12)', color: 'rgba(134,239,172,0.95)', border: 'rgba(34,197,94,0.38)' }
+  return { bg: 'rgba(245,158,11,0.15)', color: 'rgba(252,211,77,0.95)', border: 'rgba(245,158,11,0.48)' }
 }
 
 interface FamilyTreeProps {
@@ -374,19 +374,19 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     const allGens = [...genToY.keys()]
     const selfGen = selfMember?.generation ?? Math.max(...allGens)
     const sortedGens = allGens.sort((a, b) => a - b)
-    const ROMAN = ['I','II','III','IV','V','VI','VII','VIII']
+    const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
     return sortedGens.map((gen, idx) => {
       const ys = genToY.get(gen)!
       const minY = Math.min(...ys)
       const dist = gen - selfGen
       let name = ''
-      if (dist === 0)       name = 'Your Generation'
+      if (dist === 0) name = 'Your Generation'
       else if (dist === -1) name = 'Parents'
       else if (dist === -2) name = 'Grandparents'
       else if (dist === -3) name = 'Great-grandparents'
-      else if (dist <= -4)  name = 'Ancestors'
-      else if (dist === 1)  name = 'Children'
-      else                  name = 'Grandchildren'
+      else if (dist <= -4) name = 'Ancestors'
+      else if (dist === 1) name = 'Children'
+      else name = 'Grandchildren'
       return { gen, y: minY, label: `Generation ${ROMAN[idx] ?? String(idx + 1)}`, name }
     })
   }, [nodePositions, memberMap, members])
