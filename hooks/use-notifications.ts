@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { FamilyMember } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
@@ -34,6 +34,7 @@ export type NotifType =
   | 'anniversary'
   | 'memorial'
   | 'role_changed'
+  | 'member_updated'
 
 export interface AppNotification {
   id: string
@@ -51,6 +52,8 @@ export interface AppNotification {
   priority?: NotifPriority
   /** For grouped notifications: how many items are in the group */
   groupCount?: number
+  /** Actor photo URL — renders in bell icon instead of initials when available */
+  memberAvatarUrl?: string
 }
 
 const TODAY = new Date()
@@ -95,6 +98,8 @@ export function useNotifications(
   events: MinEvent[] = [],
   familyId?: string | null,
   isAdmin?: boolean,
+  /** The current user's own member node ID — suppresses self-update notifications */
+  currentUserMemberId?: string | null,
 ) {
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
@@ -402,6 +407,128 @@ export function useNotifications(
     return () => { supabase.removeChannel(channel) }
   }, [familyId])
 
+  // ── Realtime: family_members UPDATE → member_updated notification ─────────
+  // Fires when meaningful visible fields change: photo, name, bio, occupation,
+  // location. Throttled per-member per 5 min to prevent save-spam.
+  // Skips: private/anonymous members, own-profile edits, is_claimed/visibility
+  // transitions (those are handled by joinNotifs/visibilityNotifs).
+  const profileUpdateThrottleRef = useRef<Map<string, number>>(new Map())
+  const [profileUpdateNotifs, setProfileUpdateNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`family_members_profile_update:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const prevRow = payload.old as any
+          const nextRow = payload.new as any
+
+          // Skip anonymous or private members
+          if (nextRow.visibility === 'private') return
+          if (nextRow.show_as_anonymous) return
+
+          // Skip own profile edits (don't notify yourself)
+          if (currentUserMemberId && nextRow.id === currentUserMemberId) return
+
+          // Skip is_claimed transitions (handled by joinNotifs)
+          const claimedFlipped = !prevRow.is_claimed && nextRow.is_claimed
+          if (claimedFlipped) return
+
+          // Skip pure visibility changes (handled by visibilityNotifs)
+          const onlyVisibilityChanged =
+            prevRow.visibility !== nextRow.visibility &&
+            prevRow.photo_url === nextRow.photo_url &&
+            prevRow.name === nextRow.name &&
+            prevRow.bio === nextRow.bio &&
+            prevRow.occupation === nextRow.occupation &&
+            prevRow.current_place === nextRow.current_place &&
+            prevRow.birth_place === nextRow.birth_place &&
+            JSON.stringify(prevRow.parent_ids) === JSON.stringify(nextRow.parent_ids) &&
+            JSON.stringify(prevRow.spouse_ids) === JSON.stringify(nextRow.spouse_ids)
+          if (onlyVisibilityChanged) return
+
+          // Detect what meaningfully changed
+          const photoChanged = prevRow.photo_url !== nextRow.photo_url && !!nextRow.photo_url
+          const nameChanged = prevRow.name !== nextRow.name
+          const bioChanged = prevRow.bio !== nextRow.bio
+          const occupationChanged = prevRow.occupation !== nextRow.occupation
+          const locationChanged =
+            prevRow.current_place !== nextRow.current_place ||
+            prevRow.birth_place !== nextRow.birth_place
+          const relationshipChanged =
+            JSON.stringify(prevRow.parent_ids) !== JSON.stringify(nextRow.parent_ids) ||
+            JSON.stringify(prevRow.spouse_ids) !== JSON.stringify(nextRow.spouse_ids)
+
+          if (!photoChanged && !nameChanged && !bioChanged && !occupationChanged && !locationChanged && !relationshipChanged) return
+
+          // Throttle: one notification per member per 5-minute window
+          const now = Date.now()
+          const lastTime = profileUpdateThrottleRef.current.get(nextRow.id) ?? 0
+          if (now - lastTime < 5 * 60 * 1000) return
+          profileUpdateThrottleRef.current.set(nextRow.id, now)
+
+          const displayName = privacyAwareName(nextRow.name ?? 'A family member', nextRow.visibility)
+          const initials = getInitials(nextRow.name ?? '')
+
+          // Build contextual message
+          let title: string
+          let body: string
+          let priority: NotifPriority = 'low'
+
+          if (photoChanged && !nameChanged && !bioChanged && !occupationChanged && !locationChanged && !relationshipChanged) {
+            title = `${displayName} updated their profile photo`
+            body = 'Their profile picture has changed'
+            priority = 'medium'
+          } else if (relationshipChanged && !photoChanged && !nameChanged && !bioChanged) {
+            title = `${displayName}'s family connections updated`
+            body = 'Their relationships in the tree have changed'
+            priority = 'low'
+          } else {
+            const changes: string[] = []
+            if (photoChanged) changes.push('photo')
+            if (nameChanged) changes.push('name')
+            if (bioChanged) changes.push('bio')
+            if (occupationChanged) changes.push('occupation')
+            if (locationChanged) changes.push('location')
+            title = `${displayName} updated their profile`
+            body = changes.length > 0
+              ? `Updated: ${changes.join(', ')}`
+              : 'Profile details were updated'
+            priority = 'low'
+          }
+
+          const bucketKey = `profile-update-${nextRow.id}-${Math.floor(now / (5 * 60 * 1000))}`
+          setProfileUpdateNotifs(prev => {
+            if (prev.some(n => n.id === bucketKey)) return prev
+            const notif: AppNotification = {
+              id: bucketKey,
+              type: 'member_updated',
+              title,
+              body,
+              memberName: displayName,
+              memberInitials: initials,
+              memberAvatarUrl: photoChanged ? nextRow.photo_url ?? undefined : undefined,
+              timestamp: new Date(),
+              read: false,
+              href: '/dashboard',
+              priority,
+            }
+            return [notif, ...prev].slice(0, 20)
+          })
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.warn('[family_members_profile_update] realtime error:', err)
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId, currentUserMemberId])
+
   // ── Realtime: profiles UPDATE → role_changed notification ─────────────────
   // Notifies the affected user (and admins) when their role is changed.
   // Subscribes to profiles table changes where family_id matches.
@@ -647,13 +774,14 @@ export function useNotifications(
         ...storyNotifs,          // realtime: new stories
         ...visibilityNotifs,     // realtime: visibility changes
         ...roleNotifs,           // realtime: role changes
+        ...profileUpdateNotifs,  // realtime: profile field changes (photo, bio, etc.)
         ...notifications,        // computed: birthdays, events, members, reminders
       ]
       const deduped = deduplicateNotifs(merged)
       const sorted = sortNotifications(deduped)
       return sorted.map(n => ({ ...n, read: readIds.has(n.id) }))
     },
-    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, readIds]
+    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, profileUpdateNotifs, readIds]
   )
 
   const unreadCount = useMemo(
@@ -671,11 +799,13 @@ export function useNotifications(
         ...claimNotifs.map(n => n.id),
         ...joinNotifs.map(n => n.id),
         ...pendingClaimNotifs.map(n => n.id),
+        ...roleNotifs.map(n => n.id),
+        ...profileUpdateNotifs.map(n => n.id),
       ])
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...allIds])) } catch { /* ignore */ }
       return allIds
     })
-  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, pendingClaimNotifs])
+  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs])
 
   return { notifications: notificationsWithRead, unreadCount, markAllRead }
 }

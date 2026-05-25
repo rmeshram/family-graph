@@ -147,6 +147,7 @@ function OnboardingContent() {
       // (stale/expired token causes auth.uid() = NULL → RLS blocks insert)
       const { data: { session }, error: sessionErr } = await supabase.auth.refreshSession()
       if (sessionErr || !session) {
+        setIsLoading(false)
         router.push("/auth/signin")
         return
       }
@@ -167,7 +168,11 @@ function OnboardingContent() {
       const nameParts = userData.name.trim().split(" ")
       const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]
       const familyName = `${lastName || "My"} Family`
-      const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase()
+      const inviteCode = (() => {
+        const bytes = new Uint8Array(12)
+        crypto.getRandomValues(bytes)
+        return Array.from(bytes, b => b.toString(36)).join('').replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()
+      })()
 
       let familyId!: string
       let familyInviteCode!: string
@@ -229,16 +234,7 @@ function OnboardingContent() {
         familyInviteCode = family.invite_code
       }
 
-      // 2. Update profile with family_id FIRST so RLS policies work for member inserts
-      // (family_members INSERT policy checks family_id = my_family_id(), which reads from profiles)
-      const { error: profileErr } = await supabase.from("profiles").update({
-        family_id: familyId,
-        display_name: userData.name.trim(),
-        role: "admin",
-      }).eq("id", user.id)
-      if (profileErr) throw profileErr
-
-      // 3. Create parent members (generation 2)
+      // 2. Validate parent birth years BEFORE any DB writes to avoid a broken half-onboarded state
       const currentYear = new Date().getFullYear()
       for (const parent of [parent1, parent2]) {
         if (parent.birthYear) {
@@ -250,6 +246,17 @@ function OnboardingContent() {
           }
         }
       }
+
+      // 3. Update profile with family_id so RLS policies work for member inserts
+      // (family_members INSERT policy checks family_id = my_family_id(), which reads from profiles)
+      const { error: profileErr } = await supabase.from("profiles").update({
+        family_id: familyId,
+        display_name: userData.name.trim(),
+        role: "admin",
+      }).eq("id", user.id)
+      if (profileErr) throw profileErr
+
+      // 4. Create parent members (generation 2)
       const parentIds: string[] = []
       for (const parent of [parent1, parent2]) {
         if (!parent.name.trim()) continue
@@ -341,7 +348,10 @@ function OnboardingContent() {
 
   const canProceed = () => {
     switch (steps[currentStep].id) {
-      case "yourself": return userData.name.trim() !== ""
+      case "yourself": {
+        const trimmed = userData.name.trim()
+        return trimmed.length >= 2 && /\p{L}/u.test(trimmed)
+      }
       case "goals": return true // goals are optional — never block completion
       default: return true
     }
@@ -386,9 +396,17 @@ function OnboardingContent() {
           <div className="space-y-5 py-2">
             {/* Profile photo */}
             <div className="flex items-center gap-4">
-              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => {
+              <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={e => {
                 const f = e.target.files?.[0]
                 if (!f) return
+                if (f.size > 5 * 1024 * 1024) {
+                  setErrorMsg('Photo must be under 5 MB.')
+                  return
+                }
+                if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(f.type)) {
+                  setErrorMsg('Please upload a JPEG, PNG, or WebP image.')
+                  return
+                }
                 setPhotoFile(f)
                 setPhotoPreview(URL.createObjectURL(f))
               }} />
@@ -496,7 +514,7 @@ function OnboardingContent() {
                   </div>
                   {state.name && <Check className="ml-auto h-4 w-4 text-green-400" />}
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <Input
                     placeholder={`${label}'s name`}
                     value={state.name}

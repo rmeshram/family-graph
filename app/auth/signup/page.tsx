@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, Suspense } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -149,6 +149,11 @@ function PhoneSignUp({ onSwitchToEmail }: { onSwitchToEmail?: () => void }) {
   const [resendSeconds, setResendSeconds] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const e164 = normalizePhone(phone) ?? ''
+
+  // Clean up the resend countdown timer on unmount
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [])
 
   const startResendTimer = () => {
     setResendSeconds(OTP_RESEND_SECONDS)

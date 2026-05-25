@@ -9,7 +9,9 @@ function getOrigin(): string {
 }
 
 function randomCode(len = 8) {
-  return Math.random().toString(36).substring(2, 2 + len).toUpperCase()
+  const bytes = new Uint8Array(Math.ceil(len * 1.5))
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, b => b.toString(36)).join('').replace(/[^a-z0-9]/gi, '').slice(0, len).toUpperCase()
 }
 
 export function useInvites(familyId: string | null) {

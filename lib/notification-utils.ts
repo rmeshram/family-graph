@@ -29,6 +29,7 @@ const PRIORITY_MAP: Record<string, NotifPriority> = {
   event_upcoming: 'low',
   memory_added: 'low',
   node_match_found: 'low',
+  member_updated: 'low',
 }
 
 export function getNotifPriority(type: string): NotifPriority {

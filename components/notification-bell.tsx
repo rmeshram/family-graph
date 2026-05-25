@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   Bell, Users, Camera, ChevronRight, Calendar, UserCheck, ShieldAlert,
-  BookOpen, GitMerge, Eye, Heart, Flame, AlertCircle,
+  BookOpen, GitMerge, Eye, Heart, Flame, AlertCircle, UserCog, Shield,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,8 @@ const TYPE_ICON: Record<string, React.ElementType> = {
   story_added: BookOpen,
   relationship_updated: GitMerge,
   visibility_changed: Eye,
+  role_changed: Shield,
+  member_updated: UserCog,
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -57,6 +59,8 @@ const TYPE_COLOR: Record<string, string> = {
   story_added: 'bg-violet-500/10 text-violet-400',
   relationship_updated: 'bg-teal-500/10 text-teal-400',
   visibility_changed: 'bg-slate-500/10 text-slate-400',
+  role_changed: 'bg-indigo-500/10 text-indigo-400',
+  member_updated: 'bg-sky-500/10 text-sky-400',
 }
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -99,8 +103,11 @@ function NotificationItem({ notif, onClose, onOpenSettings }: { notif: AppNotifi
     >
       {/* Icon with optional high-priority pulse ring */}
       <div className="relative shrink-0">
-        <div className={cn('flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold', colorClass)}>
-          {notif.memberInitials ? notif.memberInitials : <Icon className="h-4 w-4" />}
+        <div className={cn('flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold overflow-hidden', colorClass)}>
+          {notif.memberAvatarUrl
+            ? <img src={notif.memberAvatarUrl} alt={notif.memberName ?? ''} className="w-full h-full object-cover" />
+            : notif.memberInitials ? notif.memberInitials : <Icon className="h-4 w-4" />
+          }
         </div>
         {isHighPriority && !notif.read && (
           <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background animate-pulse" />
@@ -208,7 +215,7 @@ export function NotificationBell({ notifications, unreadCount, onOpen, onOpenSet
 
       <PopoverContent
         align="end"
-        className="w-80 p-0 border border-border/60 bg-card shadow-xl"
+        className="w-[min(320px,calc(100vw-16px))] p-0 border border-border/60 bg-card shadow-xl"
         sideOffset={8}
       >
         {/* Header */}
@@ -222,7 +229,7 @@ export function NotificationBell({ notifications, unreadCount, onOpen, onOpenSet
         </div>
 
         {/* Notification list */}
-        <div className="max-h-[400px] overflow-y-auto">
+        <div className="max-h-[min(400px,60vh)] overflow-y-auto overscroll-contain">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <Bell className="h-8 w-8 opacity-30" />

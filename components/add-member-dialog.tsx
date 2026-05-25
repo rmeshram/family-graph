@@ -279,6 +279,11 @@ export function AddMemberDialog({
       e.deathYear = 'Must be after birth year'
     if (instagramHandle && !/^[a-zA-Z0-9._]{1,30}$/.test(instagramHandle.replace(/^@/, '')))
       e.instagramHandle = 'Invalid handle (letters, numbers, . _ only)'
+    // Phone/email format validation
+    if (phone && !/^[+]?[0-9\s\-()]{7,20}$/.test(phone.trim()))
+      e.phone = 'Enter a valid phone number'
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))
+      e.email = 'Enter a valid email address'
     // Prevent self-referential relationships
     const selfId = editingMember?.id
     if (selfId) {
@@ -444,7 +449,11 @@ export function AddMemberDialog({
 
   return (
     <Dialog open={open} onOpenChange={(open) => {
-      if (!open) resetForm()
+      if (!open) {
+        // Revoke any pending object URL to prevent memory leak when dialog is cancelled
+        if (photoPreview) URL.revokeObjectURL(photoPreview)
+        resetForm()
+      }
       onOpenChange(open)
     }}>
       <DialogContent className={cn(
@@ -934,8 +943,9 @@ export function AddMemberDialog({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+91 98765 43210"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.phone ? 'border-destructive' : ''}`}
                   />
+                  {errors.phone && <p className="text-xs text-destructive mt-1">{errors.phone}</p>}
                 </div>
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="email" className="flex items-center gap-1">
@@ -948,8 +958,9 @@ export function AddMemberDialog({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
-                    className="bg-muted/30 border-border/50"
+                    className={`bg-muted/30 border-border/50 ${errors.email ? 'border-destructive' : ''}`}
                   />
+                  {errors.email && <p className="text-xs text-destructive mt-1">{errors.email}</p>}
                 </div>
               </div>
             </div>

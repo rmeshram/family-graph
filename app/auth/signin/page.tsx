@@ -159,6 +159,11 @@ function PhoneSignIn({ onSwitchToEmail }: { onSwitchToEmail?: () => void }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const e164 = normalizePhone(phone) ?? ''
 
+  // Clean up the resend countdown timer on unmount
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [])
+
   const startResendTimer = () => {
     setResendSeconds(OTP_RESEND_SECONDS)
     timerRef.current = setInterval(() => {

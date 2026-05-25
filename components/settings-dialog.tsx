@@ -3,6 +3,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { copyToClipboard } from '@/lib/utils'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -80,6 +90,9 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
   const [showBirthplaces, setShowBirthplaces] = usePref('showBirthplaces', true)
   const [birthdayNotifs, setBirthdayNotifs] = usePref('birthdayNotifs', true)
   const [anniversaryNotifs, setAnniversaryNotifs] = usePref('anniversaryNotifs', false)
+
+  // Remove from family confirmation
+  const [removeConfirmUserId, setRemoveConfirmUserId] = useState<string | null>(null)
 
   // Connected families
   const [linkedData, setLinkedData] = useState<{
@@ -310,6 +323,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
 
   // Family members management
   const [familyProfiles, setFamilyProfiles] = useState<FamilyProfile[]>([])
+  const removeConfirmProfile = removeConfirmUserId ? familyProfiles.find(p => p.id === removeConfirmUserId) : null
   const [loadingProfiles, setLoadingProfiles] = useState(false)
 
   const fetchFamilyProfiles = useCallback(async () => {
@@ -815,7 +829,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeFromFamily(fp.id)}
+                              onClick={() => setRemoveConfirmUserId(fp.id)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -1171,22 +1185,54 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
 
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
-        <DrawerContent className="h-[92vh] flex flex-col">
-          <div className="flex-1 overflow-y-auto px-4 pb-8">
-            {innerContent}
-          </div>
-        </DrawerContent>
-      </Drawer>
+      <>
+        <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
+          <DrawerContent className="h-[92vh] flex flex-col">
+            <div className="flex-1 overflow-y-auto px-4 pb-8">
+              {innerContent}
+            </div>
+          </DrawerContent>
+        </Drawer>
+        <AlertDialog open={!!removeConfirmUserId} onOpenChange={v => { if (!v) setRemoveConfirmUserId(null) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove from family?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {removeConfirmProfile?.display_name ?? 'This person'} will lose access to the family tree immediately. You can re-invite them later.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (removeConfirmUserId) removeFromFamily(removeConfirmUserId); setRemoveConfirmUserId(null) }}>Remove</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[580px] max-h-[85vh] overflow-y-auto">
-        {innerContent}
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[580px] max-h-[85vh] overflow-y-auto">
+          {innerContent}
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={!!removeConfirmUserId} onOpenChange={v => { if (!v) setRemoveConfirmUserId(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from family?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeConfirmProfile?.display_name ?? 'This person'} will lose access to the family tree immediately. You can re-invite them later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (removeConfirmUserId) removeFromFamily(removeConfirmUserId); setRemoveConfirmUserId(null) }}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
 
