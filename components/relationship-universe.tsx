@@ -1901,386 +1901,386 @@ export function RelationshipUniverse({
           className="absolute top-2 left-14 right-2 z-30 flex flex-row gap-1.5 overflow-x-auto"
           style={{ zIndex: 10, scrollbarWidth: 'none' }}
         >
-      {([
-        { cat: null, label: 'All', color: 'var(--primary)' },
-        { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
-        { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
-        { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
-        { cat: 'community', label: 'Community', color: 'var(--community)' },
-      ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
-        <button
-          key={label}
-          onClick={() => setFilterCat(cat)}
-          className="shrink-0 rounded-full px-3 py-1 text-xs font-medium border transition-all backdrop-blur-md shadow-sm"
-          style={{
-            background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-            borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
-            color: filterCat === cat ? color : 'var(--universe-chip-text)',
-          }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  ) : (
-    <div className="absolute top-4 right-4 z-30 flex flex-col gap-1.5 items-end" style={{ zIndex: 10 }}>
-      {([
-        { cat: null, label: 'All', color: 'var(--primary)' },
-        { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
-        { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
-        { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
-        { cat: 'community', label: 'Community', color: 'var(--community)' },
-      ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
-        <button
-          key={label}
-          onClick={() => setFilterCat(cat)}
-          className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md shadow-sm"
-          style={{
-            background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-            borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
-            color: filterCat === cat ? color : 'var(--universe-chip-text)',
-          }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-{/* ── Intelligence Panel toggle buttons — desktop only (mobile: in legend bar) ── */ }
-{
-  !isMobileView && (
-    <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
-      <button
-        onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
-        className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
-        style={{
-          background: showAnalytics ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-          borderColor: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-border)',
-          color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)',
-        }}
-      >
-        ◈ Overview
-      </button>
-      <button
-        onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
-        className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
-        style={{
-          background: showIntelPanel ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-          borderColor: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-border)',
-          color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)',
-        }}
-      >
-        ✦ Intelligence
-      </button>
-    </div>
-  )
-}
-
-{/* ── Overview Analytics Panel ─────────────────────────────────── */ }
-<AnimatePresence>
-  {showAnalytics && (
-    <motion.div
-      initial={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
-      animate={isMobileView ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
-      exit={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
-      className={cn(
-        "absolute z-30 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto",
-        isMobileView ? "bottom-14 left-2 right-2" : "bottom-14 right-4 w-72"
-      )}
-      style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
-    >
-      <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Family Overview</h3>
-      <div className="space-y-3">
-        <div className="flex justify-between text-sm border-b pb-2" style={{ borderColor: 'var(--border)' }}>
-          <span style={{ color: 'var(--muted-foreground)' }}>Total relatives</span>
-          <span className="font-semibold" style={{ color: 'var(--foreground)' }}>{analytics.total}</span>
-        </div>
-        <div className="flex justify-between text-xs">
-          <span style={{ color: 'var(--muted-foreground)' }}>Generations deep</span>
-          <span style={{ color: 'var(--foreground)' }}>{analytics.maxDepth}</span>
-        </div>
-        <div className="space-y-2 pt-0.5">
           {([
-            { label: 'Paternal', key: 'paternal' as UCategory, color: 'var(--paternal)' },
-            { label: 'Maternal', key: 'maternal' as UCategory, color: 'var(--maternal)' },
-            { label: 'Marriage', key: 'marriage' as UCategory, color: 'var(--marriage)' },
-            { label: 'Community', key: 'community' as UCategory, color: 'var(--community)' },
-          ]).map(({ label, key, color }) => {
-            const count = analytics.counts[key]
-            const pct = analytics.total > 0 ? (count / analytics.total) * 100 : 0
-            return (
-              <div key={key} className="space-y-0.5">
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: 'var(--muted-foreground)' }}>{label}</span>
-                  <span style={{ color: 'var(--foreground)' }}>{count}</span>
-                </div>
-                <div className="h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--muted)' }}>
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }}
-                    transition={{ delay: 0.15, duration: 0.55 }}
-                    className="h-full rounded-full" style={{ background: color }} />
-                </div>
-              </div>
-            )
-          })}
+            { cat: null, label: 'All', color: 'var(--primary)' },
+            { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
+            { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
+            { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
+            { cat: 'community', label: 'Community', color: 'var(--community)' },
+          ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
+            <button
+              key={label}
+              onClick={() => setFilterCat(cat)}
+              className="shrink-0 rounded-full px-3 py-1 text-xs font-medium border transition-all backdrop-blur-md shadow-sm"
+              style={{
+                background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
+                color: filterCat === cat ? color : 'var(--universe-chip-text)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        {analytics.topCities.length > 0 && (
-          <div className="pt-1">
-            <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--muted-foreground)' }}>City Spread</p>
-            <div className="flex flex-wrap gap-1">
-              {analytics.topCities.map(([city, count]) => (
-                <span key={city} className="rounded-full border px-2 py-0.5 text-[10px]"
-                  style={{ background: 'var(--muted)', borderColor: 'var(--border)', color: 'var(--foreground)' }}>{city} ({count})</span>
-              ))}
-            </div>
-          </div>
-        )}
-        {analytics.topGotras.length > 0 && (
-          <div className="pt-1">
-            <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--muted-foreground)' }}>Gotra / Community</p>
-            <div className="flex flex-wrap gap-1">
-              {analytics.topGotras.map(([g, count]) => (
-                <span key={g} className="rounded-full border px-2 py-0.5 text-[10px]"
-                  style={{ background: 'var(--glow-gold)', borderColor: 'var(--border)', color: 'var(--accent)' }}>{g} ({count})</span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
-{/* ── Relationship Intelligence Panel ──────────────────────────── */ }
-<AnimatePresence>
-  {showIntelPanel && intelligence && (
-    <motion.div
-      initial={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
-      animate={isMobileView ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
-      exit={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
-      className={cn(
-        "absolute z-30 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto",
-        isMobileView ? "bottom-14 left-2 right-2" : "bottom-14 right-4 w-72"
-      )}
-      style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
-    >
-      <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Relationship Intelligence</h3>
-      <div className="space-y-4">
-
-        {/* Trust Network */}
-        <div className="rounded-xl border p-3 space-y-1.5" style={{ background: 'var(--muted)', borderColor: 'var(--border)' }}>
-          <div className="flex justify-between text-xs">
-            <span style={{ color: 'var(--muted-foreground)' }}>Trust Network Score</span>
-            <span className="font-bold" style={{ color: intelligence.trustScore >= 60 ? 'var(--success)' : 'var(--warning)' }}>
-              {intelligence.trustScore}%
-            </span>
-          </div>
-          <div className="h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-            <div className="h-full rounded-full transition-all" style={{ width: `${intelligence.trustScore}%`, background: intelligence.trustScore >= 60 ? 'var(--success)' : 'var(--warning)' }} />
-          </div>
-          <p className="text-[10px]" style={{ color: 'var(--muted-foreground)' }}>
-            {intelligence.verifiedCount} of {people.length} members verified · {intelligence.marriagePortals} marriage bridge{intelligence.marriagePortals !== 1 ? 's' : ''}
-          </p>
+      ) : (
+        <div className="absolute top-4 right-4 z-30 flex flex-col gap-1.5 items-end" style={{ zIndex: 10 }}>
+          {([
+            { cat: null, label: 'All', color: 'var(--primary)' },
+            { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
+            { cat: 'maternal', label: 'Maternal', color: 'var(--maternal)' },
+            { cat: 'marriage', label: 'Marriage', color: 'var(--marriage)' },
+            { cat: 'community', label: 'Community', color: 'var(--community)' },
+          ] as { cat: UCategory | null; label: string; color: string }[]).map(({ cat, label, color }) => (
+            <button
+              key={label}
+              onClick={() => setFilterCat(cat)}
+              className="rounded-full px-3 py-1 text-xs font-medium border transition-all text-left backdrop-blur-md shadow-sm"
+              style={{
+                background: filterCat === cat ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: filterCat === cat ? color : 'var(--universe-chip-border)',
+                color: filterCat === cat ? color : 'var(--universe-chip-text)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+      )
+      }
 
-        {/* Influence Map */}
-        {intelligence.topInfluencers.length > 0 && (
-          <div>
-            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>Most Connected</p>
-            <div className="space-y-1.5">
-              {intelligence.topInfluencers.map((inf, i) => (
-                <button
-                  key={inf.id}
-                  onClick={(e) => { e.stopPropagation(); onSelectMember(inf.id) }}
-                  className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:opacity-90"
-                  style={{ background: i === 0 ? 'var(--glow-primary)' : 'transparent', border: `1px solid ${i === 0 ? 'var(--primary)' : 'var(--border)'}` }}
-                >
-                  <span className="text-[10px] font-bold w-4 shrink-0" style={{ color: 'var(--muted-foreground)' }}>#{i + 1}</span>
-                  <span className="flex-1 text-[11px] font-medium text-left truncate" style={{ color: 'var(--foreground)' }}>{inf.name}</span>
-                  <span className="text-[10px] shrink-0" style={{ color: 'var(--primary)' }}>{inf.score} links</span>
-                </button>
-              ))}
-            </div>
+      {/* ── Intelligence Panel toggle buttons — desktop only (mobile: in legend bar) ── */}
+      {
+        !isMobileView && (
+          <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
+            <button
+              onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
+              className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
+              style={{
+                background: showAnalytics ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-border)',
+                color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)',
+              }}
+            >
+              ◈ Overview
+            </button>
+            <button
+              onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
+              className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
+              style={{
+                background: showIntelPanel ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                borderColor: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-border)',
+                color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)',
+              }}
+            >
+              ✦ Intelligence
+            </button>
           </div>
-        )}
+        )
+      }
 
-        {/* Suggested Connections */}
-        {intelligence.suggestions.length > 0 && (
-          <div>
-            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>People You May Know</p>
-            <div className="space-y-1.5">
-              {intelligence.suggestions.map(s => (
-                <button
-                  key={s.id}
-                  onClick={(e) => { e.stopPropagation(); onSelectMember(s.id) }}
-                  className="w-full flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors hover:opacity-90"
-                  style={{ borderColor: 'var(--border)', background: 'var(--muted)' }}
-                >
-                  <span className="flex-1 text-[11px] font-medium truncate" style={{ color: 'var(--foreground)' }}>{s.name}</span>
-                  <span className="text-[10px] shrink-0 rounded-full px-1.5 py-0.5 border" style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)', background: 'var(--surface-card)' }}>{s.reason}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Path Intelligence hint */}
-        {selectedMemberId && intelligence.distFromSelf.has(selectedMemberId) && (
-          <div className="rounded-xl border p-3" style={{ background: 'var(--muted)', borderColor: 'var(--border)' }}>
-            <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--muted-foreground)' }}>Social Proximity</p>
-            <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
-              {intelligence.distFromSelf.get(selectedMemberId) === 1
-                ? 'Direct connection'
-                : `${intelligence.distFromSelf.get(selectedMemberId)} degrees away`}
-            </p>
-            {intelligence.strengthMap.has(selectedMemberId) && (
-              <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
-                Relationship strength: {intelligence.strengthMap.get(selectedMemberId)}/10
-              </p>
+      {/* ── Overview Analytics Panel ─────────────────────────────────── */}
+      <AnimatePresence>
+        {showAnalytics && (
+          <motion.div
+            initial={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            animate={isMobileView ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
+            exit={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            className={cn(
+              "absolute z-30 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto",
+              isMobileView ? "bottom-14 left-2 right-2" : "bottom-14 right-4 w-72"
             )}
+            style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
+          >
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Family Overview</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm border-b pb-2" style={{ borderColor: 'var(--border)' }}>
+                <span style={{ color: 'var(--muted-foreground)' }}>Total relatives</span>
+                <span className="font-semibold" style={{ color: 'var(--foreground)' }}>{analytics.total}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: 'var(--muted-foreground)' }}>Generations deep</span>
+                <span style={{ color: 'var(--foreground)' }}>{analytics.maxDepth}</span>
+              </div>
+              <div className="space-y-2 pt-0.5">
+                {([
+                  { label: 'Paternal', key: 'paternal' as UCategory, color: 'var(--paternal)' },
+                  { label: 'Maternal', key: 'maternal' as UCategory, color: 'var(--maternal)' },
+                  { label: 'Marriage', key: 'marriage' as UCategory, color: 'var(--marriage)' },
+                  { label: 'Community', key: 'community' as UCategory, color: 'var(--community)' },
+                ]).map(({ label, key, color }) => {
+                  const count = analytics.counts[key]
+                  const pct = analytics.total > 0 ? (count / analytics.total) * 100 : 0
+                  return (
+                    <div key={key} className="space-y-0.5">
+                      <div className="flex justify-between text-xs">
+                        <span style={{ color: 'var(--muted-foreground)' }}>{label}</span>
+                        <span style={{ color: 'var(--foreground)' }}>{count}</span>
+                      </div>
+                      <div className="h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--muted)' }}>
+                        <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+                          transition={{ delay: 0.15, duration: 0.55 }}
+                          className="h-full rounded-full" style={{ background: color }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {analytics.topCities.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--muted-foreground)' }}>City Spread</p>
+                  <div className="flex flex-wrap gap-1">
+                    {analytics.topCities.map(([city, count]) => (
+                      <span key={city} className="rounded-full border px-2 py-0.5 text-[10px]"
+                        style={{ background: 'var(--muted)', borderColor: 'var(--border)', color: 'var(--foreground)' }}>{city} ({count})</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {analytics.topGotras.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--muted-foreground)' }}>Gotra / Community</p>
+                  <div className="flex flex-wrap gap-1">
+                    {analytics.topGotras.map(([g, count]) => (
+                      <span key={g} className="rounded-full border px-2 py-0.5 text-[10px]"
+                        style={{ background: 'var(--glow-gold)', borderColor: 'var(--border)', color: 'var(--accent)' }}>{g} ({count})</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Relationship Intelligence Panel ──────────────────────────── */}
+      <AnimatePresence>
+        {showIntelPanel && intelligence && (
+          <motion.div
+            initial={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            animate={isMobileView ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
+            exit={isMobileView ? { opacity: 0, y: 20 } : { opacity: 0, x: 20 }}
+            className={cn(
+              "absolute z-30 rounded-2xl border backdrop-blur-2xl p-4 shadow-2xl overflow-y-auto",
+              isMobileView ? "bottom-14 left-2 right-2" : "bottom-14 right-4 w-72"
+            )}
+            style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
+          >
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Relationship Intelligence</h3>
+            <div className="space-y-4">
+
+              {/* Trust Network */}
+              <div className="rounded-xl border p-3 space-y-1.5" style={{ background: 'var(--muted)', borderColor: 'var(--border)' }}>
+                <div className="flex justify-between text-xs">
+                  <span style={{ color: 'var(--muted-foreground)' }}>Trust Network Score</span>
+                  <span className="font-bold" style={{ color: intelligence.trustScore >= 60 ? 'var(--success)' : 'var(--warning)' }}>
+                    {intelligence.trustScore}%
+                  </span>
+                </div>
+                <div className="h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${intelligence.trustScore}%`, background: intelligence.trustScore >= 60 ? 'var(--success)' : 'var(--warning)' }} />
+                </div>
+                <p className="text-[10px]" style={{ color: 'var(--muted-foreground)' }}>
+                  {intelligence.verifiedCount} of {people.length} members verified · {intelligence.marriagePortals} marriage bridge{intelligence.marriagePortals !== 1 ? 's' : ''}
+                </p>
+              </div>
+
+              {/* Influence Map */}
+              {intelligence.topInfluencers.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>Most Connected</p>
+                  <div className="space-y-1.5">
+                    {intelligence.topInfluencers.map((inf, i) => (
+                      <button
+                        key={inf.id}
+                        onClick={(e) => { e.stopPropagation(); onSelectMember(inf.id) }}
+                        className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:opacity-90"
+                        style={{ background: i === 0 ? 'var(--glow-primary)' : 'transparent', border: `1px solid ${i === 0 ? 'var(--primary)' : 'var(--border)'}` }}
+                      >
+                        <span className="text-[10px] font-bold w-4 shrink-0" style={{ color: 'var(--muted-foreground)' }}>#{i + 1}</span>
+                        <span className="flex-1 text-[11px] font-medium text-left truncate" style={{ color: 'var(--foreground)' }}>{inf.name}</span>
+                        <span className="text-[10px] shrink-0" style={{ color: 'var(--primary)' }}>{inf.score} links</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Suggested Connections */}
+              {intelligence.suggestions.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>People You May Know</p>
+                  <div className="space-y-1.5">
+                    {intelligence.suggestions.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={(e) => { e.stopPropagation(); onSelectMember(s.id) }}
+                        className="w-full flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors hover:opacity-90"
+                        style={{ borderColor: 'var(--border)', background: 'var(--muted)' }}
+                      >
+                        <span className="flex-1 text-[11px] font-medium truncate" style={{ color: 'var(--foreground)' }}>{s.name}</span>
+                        <span className="text-[10px] shrink-0 rounded-full px-1.5 py-0.5 border" style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)', background: 'var(--surface-card)' }}>{s.reason}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Path Intelligence hint */}
+              {selectedMemberId && intelligence.distFromSelf.has(selectedMemberId) && (
+                <div className="rounded-xl border p-3" style={{ background: 'var(--muted)', borderColor: 'var(--border)' }}>
+                  <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: 'var(--muted-foreground)' }}>Social Proximity</p>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                    {intelligence.distFromSelf.get(selectedMemberId) === 1
+                      ? 'Direct connection'
+                      : `${intelligence.distFromSelf.get(selectedMemberId)} degrees away`}
+                  </p>
+                  {intelligence.strengthMap.has(selectedMemberId) && (
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
+                      Relationship strength: {intelligence.strengthMap.get(selectedMemberId)}/10
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {intelligence.suggestions.length === 0 && intelligence.topInfluencers.length === 0 && (
+                <p className="text-xs text-center py-4" style={{ color: 'var(--muted-foreground)' }}>Add more family members to unlock relationship intelligence</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Floating mobile controls (zoom + recenter) ────────────── */}
+      {/* Hidden when node popup is open so the popup (z-50) is fully accessible */}
+      {
+        isMobileView && !(selectedMemberId && selectedPerson && !detailPanelOpen && !pathFinderOpen) && (
+          <div
+            className="absolute bottom-20 right-4 z-40 flex flex-col gap-2 transition-opacity duration-300"
+            style={{ opacity: showMobileControls ? 1 : 0, pointerEvents: showMobileControls ? 'auto' : 'none' }}
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); animateZoomBy(1.30); resetControlsTimer() }}
+              className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+            >+</button>
+            <button
+              onClick={(e) => { e.stopPropagation(); animateZoomBy(0.77); resetControlsTimer() }}
+              className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+            >−</button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (effectiveSelfId) panToPerson(effectiveSelfId, isMobileView ? 0.72 : 0.88)
+                else animateFitAll()
+                resetControlsTimer()
+              }}
+              className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-base active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--primary)' }}
+              title="Recenter graph"
+            >⌖</button>
           </div>
+        )
+      }
+
+      {/* ── Desktop FABs (Zoom In, Zoom Out, Fit, Recenter) ──────────── */}
+      {
+        !isMobileView && (
+          <div className="absolute top-4 left-4 z-40 flex flex-col gap-1.5">
+            {/* Zoom In */}
+            <button
+              onClick={(e) => { e.stopPropagation(); animateZoomBy(1.25) }}
+              title="Zoom in"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base font-bold hover:scale-105 active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+            >+</button>
+            {/* Zoom Out */}
+            <button
+              onClick={(e) => { e.stopPropagation(); animateZoomBy(0.80) }}
+              title="Zoom out"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base font-bold hover:scale-105 active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+            >−</button>
+            {/* Fit all nodes */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                animateFitAll()
+              }}
+              title="Fit all to screen"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-xs hover:scale-105 active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
+            >▭</button>
+            {/* Recenter on self */}
+            <button
+              onClick={(e) => { e.stopPropagation(); panToPerson(effectiveSelfId, 0.92) }}
+              title="Recenter on me"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base hover:scale-105 active:scale-95 transition-transform"
+              style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--primary)' }}
+            >⌖</button>
+          </div>
+        )
+      }
+
+      {/* ── Legend + zoom level + mobile panel toggles ─────────────── */}
+      <div
+        className="absolute bottom-4 left-4 right-4 z-30 flex items-center gap-x-2 rounded-full border backdrop-blur-md px-3 py-1.5"
+        style={{ zIndex: 10, background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)' }}
+      >
+        {/* Mobile: Overview + Intelligence icon buttons, then separator */}
+        {isMobileView && (
+          <>
+            <button
+              onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
+              className="shrink-0 text-sm leading-none transition-all"
+              title="Overview"
+              style={{ color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)' }}
+            >◈</button>
+            <button
+              onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
+              className="shrink-0 text-sm leading-none transition-all"
+              title="Intelligence"
+              style={{ color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)' }}
+            >✦</button>
+            <span className="shrink-0 h-3 w-px" style={{ background: 'var(--universe-chip-border)' }} />
+          </>
         )}
 
-        {intelligence.suggestions.length === 0 && intelligence.topInfluencers.length === 0 && (
-          <p className="text-xs text-center py-4" style={{ color: 'var(--muted-foreground)' }}>Add more family members to unlock relationship intelligence</p>
+        {/* Legend dots — labels on desktop, dots-only on mobile */}
+        {([
+          { color: 'var(--paternal)', label: 'Paternal' },
+          { color: 'var(--maternal)', label: 'Maternal' },
+          { color: 'var(--marriage)', label: 'Marriage' },
+          { color: 'var(--community)', label: 'Community' },
+        ]).map(({ color, label }) => (
+          <span key={label} className="flex items-center gap-1 text-[10px] shrink-0" style={{ color: 'var(--universe-chip-text)' }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 4px ${color}` }} />
+            {!isMobileView && label}
+          </span>
+        ))}
+
+        {/* Find Relationship — icon-only on mobile, with label on desktop */}
+        <button
+          onClick={() => onOpenPathFinder?.()}
+          className="ml-auto flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border shrink-0 transition-all"
+          style={{
+            borderColor: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-border)',
+            color: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-text)',
+            background: pathFinderOpen ? 'var(--glow-primary)' : 'transparent',
+          }}
+          title="Find relationship path between any two people"
+        >
+          <span>⟷</span>
+          {!isMobileView && <span>Find Relationship</span>}
+        </button>
+
+        {/* Zoom level — desktop only */}
+        {!isMobileView && (
+          <span className="text-[10px] shrink-0 hidden sm:block" style={{ color: 'var(--universe-chip-text)', opacity: 0.7 }}>
+            {zoomLevel === 'cluster' ? 'Cluster' : zoomLevel === 'name' ? 'Name' : zoomLevel === 'detail' ? 'Detail' : 'Full'} view · {Math.round(k * 100)}%
+          </span>
         )}
       </div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
-{/* ── Floating mobile controls (zoom + recenter) ────────────── */ }
-{/* Hidden when node popup is open so the popup (z-50) is fully accessible */ }
-{
-  isMobileView && !(selectedMemberId && selectedPerson && !detailPanelOpen && !pathFinderOpen) && (
-    <div
-      className="absolute bottom-20 right-4 z-40 flex flex-col gap-2 transition-opacity duration-300"
-      style={{ opacity: showMobileControls ? 1 : 0, pointerEvents: showMobileControls ? 'auto' : 'none' }}
-    >
-      <button
-        onClick={(e) => { e.stopPropagation(); animateZoomBy(1.30); resetControlsTimer() }}
-        className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
-      >+</button>
-      <button
-        onClick={(e) => { e.stopPropagation(); animateZoomBy(0.77); resetControlsTimer() }}
-        className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-xl font-bold active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
-      >−</button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          if (effectiveSelfId) panToPerson(effectiveSelfId, isMobileView ? 0.72 : 0.88)
-          else animateFitAll()
-          resetControlsTimer()
-        }}
-        className="flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md shadow-lg text-base active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--primary)' }}
-        title="Recenter graph"
-      >⌖</button>
-    </div>
-  )
-}
-
-{/* ── Desktop FABs (Zoom In, Zoom Out, Fit, Recenter) ──────────── */ }
-{
-  !isMobileView && (
-    <div className="absolute top-4 left-4 z-40 flex flex-col gap-1.5">
-      {/* Zoom In */}
-      <button
-        onClick={(e) => { e.stopPropagation(); animateZoomBy(1.25) }}
-        title="Zoom in"
-        className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base font-bold hover:scale-105 active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
-      >+</button>
-      {/* Zoom Out */}
-      <button
-        onClick={(e) => { e.stopPropagation(); animateZoomBy(0.80) }}
-        title="Zoom out"
-        className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base font-bold hover:scale-105 active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
-      >−</button>
-      {/* Fit all nodes */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          animateFitAll()
-        }}
-        title="Fit all to screen"
-        className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-xs hover:scale-105 active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--universe-chip-text)' }}
-      >▭</button>
-      {/* Recenter on self */}
-      <button
-        onClick={(e) => { e.stopPropagation(); panToPerson(effectiveSelfId, 0.92) }}
-        title="Recenter on me"
-        className="flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur-md shadow-md text-base hover:scale-105 active:scale-95 transition-transform"
-        style={{ background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)', color: 'var(--primary)' }}
-      >⌖</button>
-    </div>
-  )
-}
-
-{/* ── Legend + zoom level + mobile panel toggles ─────────────── */ }
-<div
-  className="absolute bottom-4 left-4 right-4 z-30 flex items-center gap-x-2 rounded-full border backdrop-blur-md px-3 py-1.5"
-  style={{ zIndex: 10, background: 'var(--universe-chip-bg)', borderColor: 'var(--universe-chip-border)' }}
->
-  {/* Mobile: Overview + Intelligence icon buttons, then separator */}
-  {isMobileView && (
-    <>
-      <button
-        onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
-        className="shrink-0 text-sm leading-none transition-all"
-        title="Overview"
-        style={{ color: showAnalytics ? 'var(--primary)' : 'var(--universe-chip-text)' }}
-      >◈</button>
-      <button
-        onClick={() => { setShowIntelPanel(v => !v); setShowAnalytics(false) }}
-        className="shrink-0 text-sm leading-none transition-all"
-        title="Intelligence"
-        style={{ color: showIntelPanel ? 'var(--marriage)' : 'var(--universe-chip-text)' }}
-      >✦</button>
-      <span className="shrink-0 h-3 w-px" style={{ background: 'var(--universe-chip-border)' }} />
-    </>
-  )}
-
-  {/* Legend dots — labels on desktop, dots-only on mobile */}
-  {([
-    { color: 'var(--paternal)', label: 'Paternal' },
-    { color: 'var(--maternal)', label: 'Maternal' },
-    { color: 'var(--marriage)', label: 'Marriage' },
-    { color: 'var(--community)', label: 'Community' },
-  ]).map(({ color, label }) => (
-    <span key={label} className="flex items-center gap-1 text-[10px] shrink-0" style={{ color: 'var(--universe-chip-text)' }}>
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 4px ${color}` }} />
-      {!isMobileView && label}
-    </span>
-  ))}
-
-  {/* Find Relationship — icon-only on mobile, with label on desktop */}
-  <button
-    onClick={() => onOpenPathFinder?.()}
-    className="ml-auto flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border shrink-0 transition-all"
-    style={{
-      borderColor: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-border)',
-      color: pathFinderOpen ? 'var(--primary)' : 'var(--universe-chip-text)',
-      background: pathFinderOpen ? 'var(--glow-primary)' : 'transparent',
-    }}
-    title="Find relationship path between any two people"
-  >
-    <span>⟷</span>
-    {!isMobileView && <span>Find Relationship</span>}
-  </button>
-
-  {/* Zoom level — desktop only */}
-  {!isMobileView && (
-    <span className="text-[10px] shrink-0 hidden sm:block" style={{ color: 'var(--universe-chip-text)', opacity: 0.7 }}>
-      {zoomLevel === 'cluster' ? 'Cluster' : zoomLevel === 'name' ? 'Name' : zoomLevel === 'detail' ? 'Detail' : 'Full'} view · {Math.round(k * 100)}%
-    </span>
-  )}
-</div>
     </div >
   )
 }

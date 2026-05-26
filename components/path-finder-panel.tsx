@@ -43,7 +43,7 @@ function genLabel(delta: number): string {
 
 function edgeArrow(edgeType: string): string {
   if (edgeType === 'PARENT' || edgeType === 'UP') return '↑'
-  if (edgeType === 'CHILD'  || edgeType === 'DOWN') return '↓'
+  if (edgeType === 'CHILD' || edgeType === 'DOWN') return '↓'
   if (edgeType === 'SPOUSE') return '↔'
   if (edgeType === 'SIBLING' || edgeType === 'SIB') return '↔'
   return '·'
