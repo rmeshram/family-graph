@@ -54,7 +54,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
-import { normalizeStoredName } from '@/lib/match-detection'
+import { normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
 function FamilyTreeSkeleton() {
@@ -786,6 +786,16 @@ export default function FamilyGraphApp() {
       return
     }
     try {
+      // Safety net: reject exact-name duplicates that somehow bypassed dialog-level checks.
+      const duplicate = findExactNameMatch(members, memberData.name)
+      if (duplicate) {
+        toast({
+          title: 'Duplicate name',
+          description: `${normalizeStoredName(memberData.name)} is already in this tree. Please use the existing member or choose a different name.`,
+          variant: 'destructive',
+        })
+        return
+      }
       const newMember = await dbAddMember(memberData, user.id)
       toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
       // Run relationship intelligence: surface actionable suggestions to the user

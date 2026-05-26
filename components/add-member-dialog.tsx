@@ -27,7 +27,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight, AlertTriangle, UserCheck } from 'lucide-react'
-import { scoreCandidate, normalizeStoredName } from '@/lib/match-detection'
+import { scoreCandidate, normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
 import { getInverseRelationship } from '@/lib/relationship-engine'
 import { computeRelationLabel } from '@/lib/relation-engine'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -186,6 +186,12 @@ export function AddMemberDialog({
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
   const [bypassDuplicate, setBypassDuplicate] = useState(false)
 
+  // Real-time exact-name duplicate detection — updates as the user types.
+  // Skips the member currently being edited so renaming with the same name is OK.
+  const exactNameMatch = !editingMember
+    ? findExactNameMatch(existingMembers, name, undefined)
+    : null
+
   // ── Smart co-parent auto-fill ───────────────────────────────────────────
   const handleFatherChange = (value: string) => {
     setFatherId(value)
@@ -317,29 +323,40 @@ export function AddMemberDialog({
     if (!validate()) return
     if (isSubmitting) return
 
-    // Duplicate detection — only when adding a new member (not editing)
-    if (!editingMember && !bypassDuplicate) {
+    // ── Duplicate detection — only when adding a new member (not editing) ────
+    if (!editingMember) {
       const storedName = normalizeStoredName(name)
-      let bestMatch: DuplicateWarning | null = null
-      for (const m of existingMembers) {
-        const result = scoreCandidate(
-          {
-            nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
-            addedByName: null, relationship: m.relationship ?? null,
-            birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
-          },
-          { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null, phone: phone || null, email: email || null }
-        )
-        if (result && result.confidenceScore >= 40) {
-          const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
-          if (!bestMatch || result.confidenceScore > bestMatch.score) {
-            bestMatch = { member: m, score: result.confidenceScore, tier }
+
+      // 1. Hard block: exact name match — no bypass allowed.
+      const exactMatch = findExactNameMatch(existingMembers, storedName)
+      if (exactMatch) {
+        setDuplicateWarning({ member: exactMatch as FamilyMember, score: 100, tier: 'high' })
+        return
+      }
+
+      // 2. Soft warning: fuzzy / contact-info match — user may bypass.
+      if (!bypassDuplicate) {
+        let bestMatch: DuplicateWarning | null = null
+        for (const m of existingMembers) {
+          const result = scoreCandidate(
+            {
+              nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
+              addedByName: null, relationship: m.relationship ?? null,
+              birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
+            },
+            { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null, phone: phone || null, email: email || null }
+          )
+          if (result && result.confidenceScore >= 40) {
+            const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
+            if (!bestMatch || result.confidenceScore > bestMatch.score) {
+              bestMatch = { member: m, score: result.confidenceScore, tier }
+            }
           }
         }
-      }
-      if (bestMatch) {
-        setDuplicateWarning(bestMatch)
-        return
+        if (bestMatch) {
+          setDuplicateWarning(bestMatch)
+          return
+        }
       }
     }
 
@@ -536,12 +553,29 @@ export function AddMemberDialog({
                   <Input
                     id="name"
                     value={name}
-                    onChange={(e) => { setName(e.target.value); if (errors.name) setErrors(p => ({ ...p, name: '' })) }}
+                    onChange={(e) => {
+                      setName(e.target.value)
+                      if (errors.name) setErrors(p => ({ ...p, name: '' }))
+                      // Clear stale duplicate warning when user edits the name
+                      if (duplicateWarning) { setDuplicateWarning(null); setBypassDuplicate(false) }
+                    }}
                     placeholder="e.g., John Smith"
-                    className={`bg-muted/30 border-border/50 ${errors.name ? 'border-destructive' : ''}`}
+                    className={`bg-muted/30 border-border/50 ${
+                      errors.name ? 'border-destructive' : exactNameMatch ? 'border-amber-500/60' : ''
+                    }`}
                     required
                   />
                   {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+                  {!errors.name && exactNameMatch && (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-500">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      <span>
+                        <span className="font-medium">{exactNameMatch.name}</span> is already in this tree
+                        {exactNameMatch.relationship ? ` · ${exactNameMatch.relationship}` : ''}
+                        {exactNameMatch.birthYear ? ` · b. ${exactNameMatch.birthYear}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Hide 'Relationship to You' when editing self — self cannot have a relationship to self. */}
@@ -1068,12 +1102,14 @@ export function AddMemberDialog({
                   <UserCheck className="h-3 w-3 mr-1" />
                   Open Existing
                 </Button>
-                {duplicateWarning.tier === 'medium' && (
+                {/* "Add Anyway" is only available for fuzzy near-match warnings,
+                     never for exact name matches (score === 100) which are hard-blocked. */}
+                {duplicateWarning.tier === 'medium' && duplicateWarning.score < 100 && (
                   <Button
                     type="button" variant="ghost" size="sm" className="flex-1 h-7 text-xs"
                     onClick={() => { setDuplicateWarning(null); setBypassDuplicate(true) }}
                   >
-                    Add Anyway
+                    Add as Different Person
                   </Button>
                 )}
               </div>
@@ -1089,7 +1125,7 @@ export function AddMemberDialog({
             <Button
               type="submit"
               form="add-member-form"
-              disabled={isSubmitting || !name.trim() || duplicateWarning?.tier === 'high'}
+              disabled={isSubmitting || !name.trim() || !!exactNameMatch || duplicateWarning?.tier === 'high'}
               className="bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90"
             >
               {isSubmitting ? (

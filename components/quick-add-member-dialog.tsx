@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import type { FamilyMember } from '@/lib/types'
-import { scoreCandidate, normalizeStoredName } from '@/lib/match-detection'
+import { scoreCandidate, normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
 
 export type QuickRelType = 'father' | 'mother' | 'spouse' | 'child' | 'sibling'
 
@@ -129,29 +129,38 @@ export function QuickAddMemberDialog({
 
     const storedName = normalizeStoredName(name)
 
-    // Duplicate detection — pause on first attempt if a likely match exists
-    if (existingMembers?.length && !duplicateWarning) {
-      let bestMatch: DuplicateWarning | null = null
-      for (const m of existingMembers) {
-        if (m.id === anchorMember.id) continue
-        const result = scoreCandidate(
-          {
-            nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
-            addedByName: null, relationship: m.relationship ?? null,
-            birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
-          },
-          { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null }
-        )
-        if (result && result.confidenceScore >= 40) {
-          const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
-          if (!bestMatch || result.confidenceScore > bestMatch.score) {
-            bestMatch = { member: m, score: result.confidenceScore, tier }
+    if (existingMembers?.length) {
+      // 1. Hard block: exact name match — no bypass.
+      const exactMatch = findExactNameMatch(existingMembers, storedName, anchorMember.id)
+      if (exactMatch) {
+        setDuplicateWarning({ member: exactMatch as FamilyMember, score: 100, tier: 'high' })
+        return
+      }
+
+      // 2. Soft warning: fuzzy / contact-info match — user may bypass.
+      if (!duplicateWarning) {
+        let bestMatch: DuplicateWarning | null = null
+        for (const m of existingMembers) {
+          if (m.id === anchorMember.id) continue
+          const result = scoreCandidate(
+            {
+              nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
+              addedByName: null, relationship: m.relationship ?? null,
+              birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
+            },
+            { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null }
+          )
+          if (result && result.confidenceScore >= 40) {
+            const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
+            if (!bestMatch || result.confidenceScore > bestMatch.score) {
+              bestMatch = { member: m, score: result.confidenceScore, tier }
+            }
           }
         }
-      }
-      if (bestMatch) {
-        setDuplicateWarning(bestMatch)
-        return // pause — user must choose
+        if (bestMatch) {
+          setDuplicateWarning(bestMatch)
+          return
+        }
       }
     }
 
@@ -264,13 +273,14 @@ export function QuickAddMemberDialog({
                   {isLinking ? <Spinner className="h-3 w-3 mr-1" /> : <UserCheck className="h-3 w-3 mr-1" />}
                   {onLinkExisting ? `Use as ${label}` : 'Open Existing'}
                 </Button>
-                {duplicateWarning.tier === 'medium' && (
+                {/* 'Add as Different Person' only for fuzzy warnings, never for exact-name hard-blocks. */}
+                {duplicateWarning.tier === 'medium' && duplicateWarning.score < 100 && (
                   <Button
                     type="button" variant="ghost" size="sm" className="flex-1 h-7 text-xs"
                     disabled={isSubmitting || isLinking}
                     onClick={() => { setDuplicateWarning(null); doAdd(normalizeStoredName(name)) }}
                   >
-                    {isSubmitting ? <Spinner className="h-3 w-3" /> : 'Add Anyway'}
+                    {isSubmitting ? <Spinner className="h-3 w-3" /> : 'Add as Different Person'}
                   </Button>
                 )}
               </div>
@@ -281,7 +291,7 @@ export function QuickAddMemberDialog({
             <Button type="button" variant="outline" className="flex-1" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1" disabled={isSubmitting || duplicateWarning?.tier === 'high'}>
+            <Button type="submit" className="flex-1" disabled={isSubmitting || !!duplicateWarning}>
               {isSubmitting ? <Spinner className="h-4 w-4" /> : `Add ${label}`}
             </Button>
           </div>
