@@ -6,11 +6,59 @@
 
 import type { FamilyMember } from './types'
 
-type EdgeType = 'UP' | 'DOWN' | 'SPOUSE'
+type EdgeType = 'UP' | 'DOWN' | 'SPOUSE' | 'SIB'
 
 interface PathEdge {
   memberId: string
   edge: EdgeType
+}
+
+// ─── Adjacency Pre-computation ────────────────────────────────────────────────
+
+interface Adjacency {
+  childrenOf: Map<string, string[]>
+  siblingsOf: Map<string, Set<string>>
+  spousesOf: Map<string, Set<string>>
+}
+
+/**
+ * Pre-computes parent→children, member→siblings, and bidirectional spouse maps.
+ * Siblings: any two members sharing ≥1 parentId get a SIB edge in BFS.
+ * Spouses: bidirectional regardless of which side stores the link.
+ * O(n · avg_children) time and space — fast for any real family size.
+ */
+function buildAdjacency(members: FamilyMember[]): Adjacency {
+  const childrenOf = new Map<string, string[]>()
+  const siblingsOf = new Map<string, Set<string>>()
+  const spousesOf = new Map<string, Set<string>>()
+
+  for (const m of members) {
+    siblingsOf.set(m.id, new Set())
+    spousesOf.set(m.id, new Set())
+  }
+
+  for (const m of members) {
+    for (const pid of m.parentIds) {
+      if (!childrenOf.has(pid)) childrenOf.set(pid, [])
+      childrenOf.get(pid)!.push(m.id)
+    }
+    for (const sid of m.spouseIds) {
+      spousesOf.get(m.id)!.add(sid)
+      if (!spousesOf.has(sid)) spousesOf.set(sid, new Set())
+      spousesOf.get(sid)!.add(m.id)
+    }
+  }
+
+  // Materialize SIB edges: any two children of the same parent are siblings
+  for (const children of childrenOf.values()) {
+    for (const a of children) {
+      for (const b of children) {
+        if (a !== b) siblingsOf.get(a)?.add(b)
+      }
+    }
+  }
+
+  return { childrenOf, siblingsOf, spousesOf }
 }
 
 // ─── BFS with edge tracking ───────────────────────────────────────────────────
@@ -22,6 +70,7 @@ export function findRelationshipPath(
 ): FamilyMember[] | null {
   if (fromId === toId) return []
   const memberMap = new Map(members.map(m => [m.id, m]))
+  const adj = buildAdjacency(members)
   const visited = new Set<string>()
   const queue: { id: string; path: string[] }[] = [{ id: fromId, path: [fromId] }]
 
@@ -32,12 +81,11 @@ export function findRelationshipPath(
     if (id === toId) return path.map(i => memberMap.get(i)!).filter(Boolean)
     const m = memberMap.get(id)
     if (!m) continue
-    const neighbors = [
+    const neighbors: string[] = [
       ...m.parentIds,
-      ...m.spouseIds,
-      ...members.filter(x => x.parentIds.includes(id)).map(x => x.id),
-      // Reverse SPOUSE: members who list this node as their spouse
-      ...members.filter(x => x.spouseIds.includes(id) && !m.spouseIds.includes(x.id)).map(x => x.id),
+      ...(adj.childrenOf.get(id) ?? []),
+      ...[...(adj.spousesOf.get(id) ?? [])],
+      ...[...(adj.siblingsOf.get(id) ?? [])],
     ]
     for (const nId of neighbors) {
       if (!visited.has(nId)) queue.push({ id: nId, path: [...path, nId] })
@@ -53,17 +101,8 @@ function findEdgePath(
 ): PathEdge[] | null {
   if (fromId === toId) return []
   const memberMap = new Map(members.map(m => [m.id, m]))
+  const adj = buildAdjacency(members)
   const visited = new Set<string>()
-
-  // Precompute reverse-spouse map for bidirectional SPOUSE traversal.
-  // Handles the case where only one side stores the spouseIds link.
-  const reverseSpouses = new Map<string, string[]>()
-  for (const m of members) {
-    for (const sid of m.spouseIds) {
-      if (!reverseSpouses.has(sid)) reverseSpouses.set(sid, [])
-      reverseSpouses.get(sid)!.push(m.id)
-    }
-  }
 
   interface QueueItem { id: string; edges: PathEdge[] }
   const queue: QueueItem[] = [{ id: fromId, edges: [] }]
@@ -77,24 +116,25 @@ function findEdgePath(
     const m = memberMap.get(id)
     if (!m) continue
 
-    // UP: to parent
+    // UP: to parents
     for (const pid of m.parentIds) {
       if (!visited.has(pid))
         queue.push({ id: pid, edges: [...edges, { memberId: pid, edge: 'UP' }] })
     }
-    // DOWN: to child
-    for (const child of members.filter(x => x.parentIds.includes(id))) {
-      if (!visited.has(child.id))
-        queue.push({ id: child.id, edges: [...edges, { memberId: child.id, edge: 'DOWN' }] })
+    // DOWN: to children (via adjacency — avoids O(n) filter per node)
+    for (const cid of adj.childrenOf.get(id) ?? []) {
+      if (!visited.has(cid))
+        queue.push({ id: cid, edges: [...edges, { memberId: cid, edge: 'DOWN' }] })
     }
-    // SPOUSE (forward + reverse)
-    const spouseIds = [
-      ...m.spouseIds,
-      ...(reverseSpouses.get(id) ?? []).filter(s => !m.spouseIds.includes(s)),
-    ]
-    for (const sid of spouseIds) {
+    // SPOUSE: bidirectional via adjacency (handles cases where only one side stores the link)
+    for (const sid of adj.spousesOf.get(id) ?? []) {
       if (!visited.has(sid))
         queue.push({ id: sid, edges: [...edges, { memberId: sid, edge: 'SPOUSE' }] })
+    }
+    // SIB: members sharing ≥1 parentId — 1-hop shortcut replacing UP,DOWN for siblings
+    for (const sibId of adj.siblingsOf.get(id) ?? []) {
+      if (!visited.has(sibId))
+        queue.push({ id: sibId, edges: [...edges, { memberId: sibId, edge: 'SIB' }] })
     }
   }
   return null
@@ -113,10 +153,91 @@ function edgeSeq(edges: PathEdge[]): string {
   return edges.map(e => e.edge).join(',')
 }
 
+// ─── Relationship Pattern Dictionary ─────────────────────────────────────────
+//
+// Maps BFS edge sequences to human-readable labels.
+// SIB edges are materialized at BFS time from shared parentIds (buildAdjacency).
+//
+// Priority rules in computeRelationLabel:
+//   1. Uncle/aunt get special-cased first for paternal/maternal disambiguation
+//   2. Dictionary lookup on full edge-sequence string
+//   3. Gender of TARGET member selects male/female variant (fallback: neutral)
+//   4. Unrecognised sequence → "${n}-step relative"
+//
+// Legacy UP/DOWN-only patterns (marked "Legacy") are kept as fallbacks for
+// edge-cases where SIB edges cannot be materialized (isolated/incomplete data).
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PatternLabel {
+  neutral: string
+  male?: string
+  female?: string
+}
+
+const RELATIONSHIP_PATTERNS: Record<string, PatternLabel> = {
+  // ── 1-step ────────────────────────────────────────────────────────────────
+  'UP':                    { neutral: 'Parent',                   male: 'Father',                       female: 'Mother' },
+  'DOWN':                  { neutral: 'Child',                    male: 'Son',                          female: 'Daughter' },
+  'SPOUSE':                { neutral: 'Spouse',                   male: 'Husband',                      female: 'Wife' },
+  'SIB':                   { neutral: 'Sibling',                  male: 'Brother',                      female: 'Sister' },
+  // ── 2-step ────────────────────────────────────────────────────────────────
+  'UP,UP':                 { neutral: 'Grandparent',              male: 'Grandfather (Dada/Nana)',       female: 'Grandmother (Dadi/Nani)' },
+  'DOWN,DOWN':             { neutral: 'Grandchild',               male: 'Grandson',                     female: 'Granddaughter' },
+  'UP,SIB':                { neutral: 'Uncle/Aunt',               male: 'Uncle',                        female: 'Aunt' },
+  'SIB,DOWN':              { neutral: 'Nephew/Niece',             male: 'Nephew (Bhatija/Bhanja)',       female: 'Niece (Bhatiji/Bhanji)' },
+  'SPOUSE,UP':             { neutral: 'Parent-in-law',            male: 'Father-in-law',                female: 'Mother-in-law' },
+  'DOWN,SPOUSE':           { neutral: 'Child-in-law',             male: 'Son-in-law',                   female: 'Daughter-in-law' },
+  'SPOUSE,SIB':            { neutral: 'Sibling-in-law',           male: 'Brother-in-law (Saala/Devar)', female: 'Sister-in-law (Saali/Nanad)' },
+  'SIB,SPOUSE':            { neutral: "Sibling's Spouse",         male: 'Jija (Didi ka Pati)',           female: 'Bhabhi (Bhai ki Patni)' },
+  'UP,SPOUSE':             { neutral: 'Step-parent',              male: 'Step-father',                  female: 'Step-mother' },
+  'SPOUSE,DOWN':           { neutral: 'Step-child',               male: 'Step-son',                     female: 'Step-daughter' },
+  'SPOUSE,SPOUSE':         { neutral: 'Co-spouse (Sautan/Sauta)' },
+  // Legacy 2-step (BFS prefers SIB shortcut; these handle isolated/incomplete data)
+  'UP,DOWN':               { neutral: 'Sibling',                  male: 'Brother',                      female: 'Sister' },
+  'DOWN,UP':               { neutral: 'Sibling',                  male: 'Brother',                      female: 'Sister' },
+  // ── 3-step ────────────────────────────────────────────────────────────────
+  'UP,UP,UP':              { neutral: 'Great-grandparent',        male: 'Great-grandfather',            female: 'Great-grandmother' },
+  'DOWN,DOWN,DOWN':        { neutral: 'Great-grandchild',         male: 'Great-grandson',               female: 'Great-granddaughter' },
+  'UP,SIB,DOWN':           { neutral: 'First Cousin',             male: 'First Cousin (Bhai)',          female: 'First Cousin (Didi)' },
+  'SPOUSE,SIB,SPOUSE':     { neutral: 'Co-sibling-in-law',        male: 'Co-brother',                   female: 'Co-sister' },
+  'UP,SIB,SPOUSE':         { neutral: "Uncle/Aunt's Spouse",      male: 'Fua (Bua ka Pati)',            female: 'Chachi/Mausi' },
+  'SIB,DOWN,DOWN':         { neutral: 'Grand-nephew/niece',       male: 'Grand-nephew',                 female: 'Grand-niece' },
+  'UP,UP,SIB':             { neutral: 'Great-uncle/aunt',         male: 'Great-uncle',                  female: 'Great-aunt' },
+  'SPOUSE,SIB,DOWN':       { neutral: "Spouse's Nephew/Niece",    male: "Spouse's Nephew",              female: "Spouse's Niece" },
+  'SIB,DOWN,SPOUSE':       { neutral: "Nephew/Niece's Spouse" },
+  'UP,SPOUSE,DOWN':        { neutral: 'Step-sibling',             male: 'Step-brother',                 female: 'Step-sister' },
+  'DOWN,DOWN,SPOUSE':      { neutral: 'Grandchild-in-law',        male: 'Grandson-in-law',              female: 'Granddaughter-in-law' },
+  'DOWN,SPOUSE,UP':        { neutral: "Child's In-law" },
+  // Legacy 3-step
+  'UP,UP,DOWN':            { neutral: 'Uncle/Aunt',               male: 'Uncle',                        female: 'Aunt' },
+  'UP,DOWN,DOWN':          { neutral: 'Nephew/Niece',             male: 'Nephew (Bhatija/Bhanja)',       female: 'Niece (Bhatiji/Bhanji)' },
+  'SPOUSE,UP,DOWN':        { neutral: 'Sibling-in-law',           male: 'Brother-in-law (Saala/Devar)', female: 'Sister-in-law (Saali/Nanad)' },
+  'UP,DOWN,SPOUSE':        { neutral: "Sibling's Spouse",         male: 'Jija',                         female: 'Bhabhi' },
+  'DOWN,DOWN,UP':          { neutral: 'Nephew/Niece',             male: 'Nephew',                       female: 'Niece' },
+  'UP,UP,SPOUSE':          { neutral: 'Grandparent',              male: 'Grandfather',                  female: 'Grandmother' },
+  'UP,SPOUSE,UP':          { neutral: 'Grandparent (in-law)' },
+  'SPOUSE,DOWN,DOWN':      { neutral: 'Step-grandchild',          male: 'Grandson (step)',              female: 'Granddaughter (step)' },
+  // ── 4-step ────────────────────────────────────────────────────────────────
+  'UP,UP,SIB,DOWN':        { neutral: 'Second Cousin' },
+  'UP,SIB,DOWN,DOWN':      { neutral: "First Cousin's Child" },
+  'UP,SIB,DOWN,SPOUSE':    { neutral: "First Cousin's Spouse" },
+  'UP,UP,SIB,SPOUSE':      { neutral: 'Uncle/Aunt by marriage' },
+  'SIB,DOWN,DOWN,DOWN':    { neutral: 'Great-grand-nephew/niece', male: 'Great-grand-nephew',           female: 'Great-grand-niece' },
+  // Legacy 4-step
+  'UP,UP,DOWN,DOWN':       { neutral: 'First Cousin',             male: 'First Cousin (Bhai)',          female: 'First Cousin (Behen)' },
+  'UP,UP,DOWN,SPOUSE':     { neutral: 'Uncle/Aunt by marriage',   male: 'Uncle (by marriage)',          female: 'Aunt (by marriage)' },
+  'SPOUSE,UP,DOWN,DOWN':   { neutral: "Spouse's Nephew/Niece",    male: 'Nephew-in-law (Bhatija)',      female: 'Niece-in-law (Bhatiji)' },
+  'UP,DOWN,DOWN,SPOUSE':   { neutral: "Nephew/Niece's Spouse",    male: 'Nephew-in-law',               female: 'Niece-in-law' },
+  // ── 5-step ────────────────────────────────────────────────────────────────
+  'UP,UP,SIB,DOWN,DOWN':   { neutral: "Second Cousin's Child" },
+  'UP,SIB,DOWN,DOWN,DOWN': { neutral: "First Cousin's Grandchild" },
+}
+
 /**
- * Returns a human-readable relationship label.
- * e.g. "Father", "Paternal Uncle (Chacha)", "Father's Sister (Bua)"
- * Falls back to "X steps away" for unrecognised paths.
+ * Returns a human-readable relationship label between two family members.
+ * Uses BFS path → edge sequence → RELATIONSHIP_PATTERNS dictionary.
+ * e.g. "Father", "Paternal Uncle (Chacha/Tau)", "Co-sister", "First Cousin (Bhai)"
+ * Falls back to "N-step relative" for unrecognised paths.
  */
 export function computeRelationLabel(
   fromId: string,
@@ -135,128 +256,27 @@ export function computeRelationLabel(
   const male = isMale(target)
   const female = isFemale(target)
 
-  // ── Direct 1-step ──────────────────────────────────────────────────────────
-  if (seq === 'UP') return male ? 'Father' : female ? 'Mother' : 'Parent'
-  if (seq === 'DOWN') return male ? 'Son' : female ? 'Daughter' : 'Child'
-  if (seq === 'SPOUSE') return male ? 'Husband' : female ? 'Wife' : 'Spouse'
-
-  // ── 2-step ─────────────────────────────────────────────────────────────────
-  if (seq === 'UP,UP') return male ? 'Grandfather (Dada/Nana)' : female ? 'Grandmother (Dadi/Nani)' : 'Grandparent'
-  if (seq === 'DOWN,DOWN') return male ? 'Grandson' : female ? 'Granddaughter' : 'Grandchild'
-
-  if (seq === 'UP,DOWN') {
-    // sibling (from→parent→child)
-    return male ? 'Brother' : female ? 'Sister' : 'Sibling'
-  }
-  if (seq === 'DOWN,UP') {
-    // child's parent = self OR step-parent; treat as sibling's path
-    return male ? 'Brother' : female ? 'Sister' : 'Sibling'
-  }
-  if (seq === 'SPOUSE,UP') return male ? 'Father-in-law' : female ? 'Mother-in-law' : 'Parent-in-law'
-  if (seq === 'SPOUSE,DOWN') return male ? 'Son-in-law' : female ? 'Daughter-in-law' : 'Child-in-law'
-  if (seq === 'UP,SPOUSE') {
-    // parent's spouse who is not your parent = step-parent
-    return male ? 'Step-father' : female ? 'Step-mother' : 'Step-parent'
-  }
-  if (seq === 'DOWN,SPOUSE') return male ? 'Son-in-law' : female ? 'Daughter-in-law' : 'Child-in-law'
-  if (seq === 'SPOUSE,SPOUSE') return 'Co-spouse (Sautan/Sauta)'
-
-  // ── 3-step ─────────────────────────────────────────────────────────────────
-  if (seq === 'UP,UP,UP') return male ? 'Great-grandfather' : female ? 'Great-grandmother' : 'Great-grandparent'
-  if (seq === 'DOWN,DOWN,DOWN') return male ? 'Great-grandson' : female ? 'Great-granddaughter' : 'Great-grandchild'
-
-  if (seq === 'UP,UP,DOWN') {
-    // grandparent→child = parent's sibling = uncle/aunt
-    return male ? 'Uncle (Chacha/Mama)' : female ? 'Aunt (Chachi/Mami)' : 'Uncle/Aunt'
-  }
-  if (seq === 'UP,DOWN,DOWN') {
-    // parent → sibling → sibling's child = nephew / niece
-    return male ? 'Nephew (Bhatija/Bhanja)' : female ? 'Niece (Bhatiji/Bhanji)' : 'Nephew/Niece'
-  }
-  if (seq === 'UP,UP,SPOUSE') {
-    // grandparent's spouse = other grandparent
-    return male ? 'Grandfather' : female ? 'Grandmother' : 'Grandparent'
-  }
-  if (seq === 'UP,SPOUSE,UP') {
-    // parent → spouse → parent = parent-in-law of parent (step-grandparent-ish)
-    return male ? 'Maternal Grandfather' : female ? 'Maternal Grandmother' : 'Grandparent (in-law)'
-  }
-  if (seq === 'UP,DOWN,SPOUSE') {
-    // sibling's spouse
-    return male ? "Brother's Husband / Jija" : female ? "Brother's Wife / Bhabhi" : "Sibling's Spouse"
-  }
-  if (seq === 'SPOUSE,UP,DOWN') {
-    // spouse's sibling
-    return male ? 'Brother-in-law (Saala/Devar)' : female ? 'Sister-in-law (Saali/Nanad)' : 'Sibling-in-law'
-  }
-  if (seq === 'SPOUSE,DOWN,DOWN') {
-    return male ? 'Grandson (step)' : female ? 'Granddaughter (step)' : 'Step-grandchild'
-  }
-  if (seq === 'DOWN,UP,UP') {
-    return male ? 'Grandfather' : female ? 'Grandmother' : 'Grandparent'
-  }
-  if (seq === 'UP,UP,DOWN,DOWN') {
-    return male ? 'First Cousin (Bhai)' : female ? 'First Cousin (Behen)' : 'First Cousin'
-  }
-  if (seq === 'DOWN,DOWN,UP') {
-    return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
-  }
-  if (seq === 'UP,DOWN,UP') {
-    // Uncle/Aunt → their parent = grandparent again
-    return male ? 'Grandfather' : female ? 'Grandmother' : 'Grandparent'
-  }
-  if (seq === 'DOWN,SPOUSE,UP') {
-    // child's spouse's parent = in-law
-    return male ? 'Son-in-law\'s Father' : female ? 'Son-in-law\'s Mother' : 'In-law\'s Parent'
-  }
-
-  // ── Parent's sibling variants ───────────────────────────────────────────────
-  // Distinguish paternal/maternal uncle-aunt by which parent
-  if (edges.length === 3 && seq === 'UP,UP,DOWN') {
-    const parentEdge = edges[0]
-    const parent = memberMap.get(parentEdge.memberId)
-    const gpEdge = edges[1]
-    const gp = memberMap.get(gpEdge.memberId)
-    if (parent && gp) {
-      const paternalSide = gp.spouseIds.some(s => s === parent.id) || parent.parentIds.includes(gp.id)
-      if (isMale(target)) return paternalSide ? 'Paternal Uncle (Chacha/Tau)' : 'Maternal Uncle (Mama)'
-      if (isFemale(target)) return paternalSide ? 'Paternal Aunt (Bua)' : 'Maternal Aunt (Mausi/Mami)'
+  // ── Paternal / maternal uncle-aunt disambiguation ──────────────────────────
+  // The parent's gender tells us which side of the family the uncle/aunt is on.
+  // 'UP,SIB' = primary path (parent → parent's sibling)
+  // 'UP,UP,DOWN' = legacy path for the same relationship
+  if (seq === 'UP,SIB' || seq === 'UP,UP,DOWN') {
+    const parent = memberMap.get(edges[0].memberId)
+    if (parent) {
+      const parentIsMale = isMale(parent)
+      const parentIsFemale = isFemale(parent)
+      if (male) return parentIsMale ? 'Paternal Uncle (Chacha/Tau)' : parentIsFemale ? 'Maternal Uncle (Mama)' : 'Uncle'
+      if (female) return parentIsMale ? 'Paternal Aunt (Bua)' : parentIsFemale ? 'Maternal Aunt (Mausi/Mami)' : 'Aunt'
     }
     return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
   }
 
-  // ── Nephew / Niece ─────────────────────────────────────────────────────────
-  if (seq === 'UP,DOWN,DOWN,DOWN' || seq === 'DOWN,UP,DOWN') {
-    return male ? 'Nephew (Bhatija/Bhanja)' : female ? 'Niece (Bhatiji/Bhanji)' : 'Nephew/Niece'
-  }
-  // ── In-law chains (SPOUSE + UP/DOWN) ──────────────────────────────────────
-  // spouse → sibling → sibling's child = nephew/niece-in-law
-  if (seq === 'SPOUSE,UP,DOWN,DOWN') {
-    return male ? 'Nephew-in-law (Bhatija)' : female ? 'Niece-in-law (Bhatiji)' : 'Nephew/Niece-in-law'
-  }
-  // grandparent → uncle/aunt → their spouse = uncle/aunt by marriage
-  if (seq === 'UP,UP,DOWN,SPOUSE') {
-    return male ? 'Uncle (by marriage)' : female ? 'Aunt (by marriage)' : 'Uncle/Aunt (by marriage)'
-  }
-  // sibling's child's spouse = nephew/niece-in-law
-  if (seq === 'UP,DOWN,DOWN,SPOUSE') {
-    return male ? 'Nephew-in-law' : female ? 'Niece-in-law' : 'Nephew/Niece-in-law'
-  }
-  // parent → step-parent → step-parent's child = step-sibling
-  if (seq === 'UP,SPOUSE,DOWN') {
-    return male ? 'Step-brother' : female ? 'Step-sister' : 'Step-sibling'
-  }
-  // grandchild's spouse = grandchild-in-law
-  if (seq === 'DOWN,DOWN,SPOUSE') {
-    return male ? 'Grandson-in-law' : female ? 'Granddaughter-in-law' : 'Grandchild-in-law'
-  }
-  // sibling → nephew → grandnephew
-  if (seq === 'UP,DOWN,DOWN,DOWN') {
-    return male ? 'Grand-nephew' : female ? 'Grand-niece' : 'Grand-nephew/niece'
-  }
-  // ── Fallback ───────────────────────────────────────────────────────────────
-  const steps = edges.length
-  return `${steps}-step relative`
+  // ── Dictionary look-up ─────────────────────────────────────────────────────
+  const pattern = RELATIONSHIP_PATTERNS[seq]
+  if (!pattern) return `${edges.length}-step relative`
+  if (male && pattern.male) return pattern.male
+  if (female && pattern.female) return pattern.female
+  return pattern.neutral
 }
 
 // ─── Graph Edge Enrichment from Relationship Labels ──────────────────────────
@@ -515,9 +535,10 @@ export interface SemanticRelationship {
 // Single-step edge label based on edge direction + target gender
 function edgeStepLabel(edgeType: EdgeType, target: FamilyMember): string {
   const m = isMale(target), f = isFemale(target)
-  if (edgeType === 'UP') return m ? 'Father' : f ? 'Mother' : 'Parent'
-  if (edgeType === 'DOWN') return m ? 'Son' : f ? 'Daughter' : 'Child'
-  /* SPOUSE */               return m ? 'Husband' : f ? 'Wife' : 'Spouse'
+  if (edgeType === 'UP')    return m ? 'Father'  : f ? 'Mother'  : 'Parent'
+  if (edgeType === 'DOWN')  return m ? 'Son'     : f ? 'Daughter': 'Child'
+  if (edgeType === 'SIB')   return m ? 'Brother' : f ? 'Sister'  : 'Sibling'
+  /* SPOUSE */               return m ? 'Husband' : f ? 'Wife'    : 'Spouse'
 }
 
 /**
@@ -571,7 +592,8 @@ function buildRelationMetadata(
   to: FamilyMember,
 ): RelationMetadata {
   const hasSpouse = edges.some(e => e.edge === 'SPOUSE')
-  const allBlood = edges.every(e => e.edge === 'UP' || e.edge === 'DOWN')
+  // SIB edges are blood relations (derived from shared parentIds)
+  const allBlood = edges.every(e => e.edge === 'UP' || e.edge === 'DOWN' || e.edge === 'SIB')
   const type: 'blood' | 'marriage' | 'mixed' = allBlood ? 'blood' : hasSpouse && !allBlood ? (edges.some(e => e.edge !== 'SPOUSE') ? 'mixed' : 'marriage') : 'mixed'
 
   let side: 'paternal' | 'maternal' | 'spouse' | 'mixed' | null = null
@@ -582,9 +604,17 @@ function buildRelationMetadata(
 
   const upCount = edges.filter(e => e.edge === 'UP').length
   const downCount = edges.filter(e => e.edge === 'DOWN').length
+  const sibCount = edges.filter(e => e.edge === 'SIB').length
   let cousinDegree: number | null = null
   let removedLevel: number | null = null
-  if (!hasSpouse && upCount >= 2 && downCount >= 2) {
+
+  // Cousin via SIB shortcut: UP{n},SIB,DOWN{m} — upCount-th cousin, |n-m|-removed
+  if (!hasSpouse && sibCount >= 1 && upCount >= 1 && downCount >= 1) {
+    cousinDegree = upCount
+    const diff = Math.abs(upCount - downCount)
+    removedLevel = diff > 0 ? diff : null
+  } else if (!hasSpouse && upCount >= 2 && downCount >= 2) {
+    // Legacy path: UP,UP,...,DOWN,DOWN without SIB shortcut
     cousinDegree = Math.min(upCount, downCount) - 1
     const diff = Math.abs(upCount - downCount)
     removedLevel = diff > 0 ? diff : null
