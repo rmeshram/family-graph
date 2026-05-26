@@ -32,7 +32,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2, Copy, Share2, AlertCircle, UserCheck, EyeOff, UserX, Phone,
+  Download, Upload, Trash2, Shield, Bell, Palette, Database, Users, Crown, Eye, Edit3, Lock, Globe, Link2, Unlink, CheckCircle2, Clock, XCircle, Loader2, Copy, Share2, AlertCircle, UserCheck, EyeOff, UserX, Phone, ShieldOff,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
@@ -46,6 +46,7 @@ interface FamilyProfile {
   display_name: string | null
   role: string
   avatar_url: string | null
+  member_id: string | null
 }
 
 function usePref(key: string, def: boolean) {
@@ -74,9 +75,11 @@ interface SettingsDialogProps {
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
   /** Callback to toggle anonymous display mode on the user's own node */
   onSetAnonymous?: (memberId: string, anon: boolean) => void
+  /** Called after a successful self-unclaim so the parent can refresh member data */
+  onUnclaim?: () => void
 }
 
-export function SettingsDialog({ open, onOpenChange, onExport, onImport, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onExport, onImport, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous, onUnclaim }: SettingsDialogProps) {
   const isMobile = useIsMobile()
   const { user, profile, familyId, loading: authLoading } = useAuth()
   const supabase = createClient()
@@ -93,6 +96,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
 
   // Remove from family confirmation
   const [removeConfirmUserId, setRemoveConfirmUserId] = useState<string | null>(null)
+
+  // Self-unclaim state
+  const [unclaiming, setUnclaiming] = useState(false)
+  const [showUnclaimConfirm, setShowUnclaimConfirm] = useState(false)
 
   // Connected families
   const [linkedData, setLinkedData] = useState<{
@@ -337,6 +344,23 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
     }
   }, [fetchPendingClaims])
 
+  const handleSelfUnclaim = useCallback(async () => {
+    if (!selfMember?.id) return
+    setUnclaiming(true)
+    try {
+      const res = await fetch(`/api/nodes/${selfMember.id}/unclaim`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message ?? data.error ?? 'Unclaim failed')
+      toast.success('Profile unlinked. Your account is no longer tied to this node.')
+      setShowUnclaimConfirm(false)
+      onUnclaim?.()
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not unlink profile')
+    } finally {
+      setUnclaiming(false)
+    }
+  }, [selfMember?.id, onUnclaim])
+
   // Family members management
   const [familyProfiles, setFamilyProfiles] = useState<FamilyProfile[]>([])
   const removeConfirmProfile = removeConfirmUserId ? familyProfiles.find(p => p.id === removeConfirmUserId) : null
@@ -347,7 +371,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
     setLoadingProfiles(true)
     const { data } = await supabase
       .from('profiles')
-      .select('id, display_name, role, avatar_url')
+      .select('id, display_name, role, avatar_url, member_id')
       .eq('family_id', familyId)
     setFamilyProfiles((data ?? []) as FamilyProfile[])
     setLoadingProfiles(false)
@@ -403,6 +427,21 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
       toast.success('Member removed from family')
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not remove member')
+    }
+  }
+
+  const [revokingNodeId, setRevokingNodeId] = useState<string | null>(null)
+  const handleAdminRevokeClaim = async (nodeId: string) => {
+    setRevokingNodeId(nodeId)
+    try {
+      const res = await fetch(`/api/nodes/${nodeId}/revoke-claim`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message ?? data.error ?? 'Revoke failed')
+      toast.success('Claim revoked')
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not revoke claim')
+    } finally {
+      setRevokingNodeId(null)
     }
   }
 
@@ -859,6 +898,21 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
+                            {/* Revoke claim button: only when this profile has a claimed node */}
+                            {fp.member_id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-amber-400"
+                                title="Revoke profile claim"
+                                disabled={revokingNodeId === fp.member_id}
+                                onClick={() => fp.member_id && handleAdminRevokeClaim(fp.member_id)}
+                              >
+                                {revokingNodeId === fp.member_id
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <ShieldOff className="h-3.5 w-3.5" />}
+                              </Button>
+                            )}
                           </div>
                         )}
                         {/* Non-admin or viewing own row: just show role badge */}
@@ -930,6 +984,70 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                     onCheckedChange={(v) => onSetAnonymous?.(selfMember.id, v)}
                   />
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Unlink My Profile (self-unclaim, 7-day window) ─── */}
+          {selfMember && (
+            <Card className="bg-muted/30 border-destructive/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <ShieldOff className="h-4 w-4 text-muted-foreground" />
+                  Unlink My Profile
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Unlink your account from <span className="font-medium text-foreground">{selfMember.name}</span>. This resets the node to unclaimed so someone else can claim it.
+                </p>
+                {selfMember.claimedAt && (() => {
+                  const claimedAt = new Date(selfMember.claimedAt!)
+                  const daysLeft = Math.max(0, 7 - Math.floor((Date.now() - claimedAt.getTime()) / 86_400_000))
+                  const inWindow = daysLeft > 0
+                  return (
+                    <div className={`text-xs rounded-lg px-3 py-2 ${inWindow ? 'bg-amber-500/10 text-amber-400' : 'bg-muted text-muted-foreground'}`}>
+                      {inWindow
+                        ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining in the 7-day self-unclaim window`
+                        : 'The 7-day unclaim window has passed. Contact the tree owner to revoke.'}
+                    </div>
+                  )
+                })()}
+                {!showUnclaimConfirm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-destructive/30 text-destructive hover:bg-destructive/10"
+                    onClick={() => setShowUnclaimConfirm(true)}
+                  >
+                    <ShieldOff className="h-3.5 w-3.5 mr-2" />
+                    Unlink My Profile
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-destructive font-medium">Are you sure? This cannot be undone without re-claiming.</p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setShowUnclaimConfirm(false)}
+                        disabled={unclaiming}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="flex-1"
+                        onClick={handleSelfUnclaim}
+                        disabled={unclaiming}
+                      >
+                        {unclaiming ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirm Unlink'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

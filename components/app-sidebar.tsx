@@ -17,7 +17,7 @@ import { NotificationBell } from '@/components/notification-bell'
 import {
   GitBranch, Camera, UserPlus, Clock, Sparkles,
   Users, Globe, Star, BarChart3, Activity,
-  CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut, Printer, BookOpen,
+  CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut, Printer, BookOpen, Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
@@ -35,6 +35,7 @@ const ALL_NAV_ITEMS = [
   { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400', flag: null },
   { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400', flag: 'enableFamilyPoster' as const },
   { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400', flag: 'enableKulgathaPDF' as const },
+  { icon: Shield, label: 'Moderation', href: '/moderation', color: 'text-violet-400', flag: 'enableModeratorUI' as const },
 ]
 const NAV_ITEMS = ALL_NAV_ITEMS.filter(item => item.flag === null || FEATURE_FLAGS[item.flag])
 

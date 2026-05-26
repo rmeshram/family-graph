@@ -38,8 +38,8 @@ const steps = [
   },
   {
     id: "yourself",
-    title: "Tell us about yourself",
-    description: "You are the root of your family tree.",
+    title: "What's your name?",
+    description: "Just your personal name — we'll set up the family automatically.",
     icon: User,
   },
   {
@@ -426,7 +426,7 @@ function OnboardingContent() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="name">Full Name *</Label>
+              <Label htmlFor="name">Your full name *</Label>
               <Input
                 id="name"
                 placeholder="e.g. Rahul Sharma"
@@ -435,6 +435,7 @@ function OnboardingContent() {
                 className="h-11 bg-muted/50 border-border"
                 autoFocus
               />
+              <p className="text-[11px] text-muted-foreground">Your personal name — not the family name.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

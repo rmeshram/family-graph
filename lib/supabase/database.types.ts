@@ -361,6 +361,7 @@ export type Database = {
           avatar_url: string | null
           phone: string | null
           role: string
+          branch_root_member_id: string | null
           created_at: string
         }
         Insert: {
@@ -371,6 +372,7 @@ export type Database = {
           avatar_url?: string | null
           phone?: string | null
           role?: string
+          branch_root_member_id?: string | null
           created_at?: string
         }
         Update: {
@@ -381,6 +383,7 @@ export type Database = {
           avatar_url?: string | null
           phone?: string | null
           role?: string
+          branch_root_member_id?: string | null
           created_at?: string
         }
         Relationships: []

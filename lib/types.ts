@@ -21,7 +21,33 @@ export type RelationshipType =
   | 'step-father' | 'step-mother' | 'step-child'
   | 'other'
 
-export type FamilyRole = 'admin' | 'contributor' | 'viewer'
+export type FamilyRole = 'admin' | 'moderator' | 'branch_admin' | 'contributor' | 'viewer'
+
+export type ConflictType =
+  | 'too_many_parents'
+  | 'cycle_detected'
+  | 'birth_year_gap'
+  | 'self_parent'
+  | 'self_spouse'
+  | 'unidirectional_spouse'
+  | 'duplicate_identity'
+  | 'generation_mismatch'
+
+export interface PendingConflict {
+  id: string
+  familyId: string
+  nodeId: string | null
+  conflictType: ConflictType
+  description: string
+  severity: 'warning' | 'error'
+  status: 'open' | 'resolved' | 'dismissed'
+  detectedBy: string | null
+  resolvedBy: string | null
+  resolution: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
 
 export type ClaimStatus =
   | 'unclaimed'
@@ -115,6 +141,8 @@ export interface FamilyMember {
   visibility?: 'public' | 'family' | 'private'
   /** When true, the node is displayed as a grey "? Member" placeholder to non-admins */
   showAsAnonymous?: boolean
+  /** When true, this profile is visible for matrimony / community search */
+  isBiodataVisible?: boolean
   // Extended & affiliated family network
   networkGroup?: 'core' | 'extended' | 'affiliated'
   affiliatedFamilyId?: string     // shared key for all members of same external family cluster

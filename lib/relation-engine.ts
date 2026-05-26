@@ -709,3 +709,19 @@ export function computeSemanticRelationship(
     confidence: computeConfidence(edges, canonicalLabel),
   }
 }
+
+/**
+ * Returns the number of relationship hops between two members,
+ * or null if no connection exists in the graph.
+ * 0 = same person, 1 = direct (parent/child/spouse), 2 = grandparent/sibling, etc.
+ */
+export function computeDegreesOfSeparation(
+  fromId: string,
+  toId: string,
+  members: FamilyMember[],
+): number | null {
+  if (fromId === toId) return 0
+  const edges = findEdgePath(fromId, toId, members)
+  if (edges === null) return null
+  return edges.length
+}

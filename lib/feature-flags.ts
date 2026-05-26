@@ -31,6 +31,14 @@ export const FEATURE_FLAGS = {
   enableInviteRelationshipStep: false,
   /** Admin review queue for low-confidence claims. ON — already shipped in settings dialog. */
   enableClaimReviewQueue: true,
+  /** Moderator role: dedicated claim review + conflict resolution UI (/admin/moderation). */
+  enableModeratorUI: true,
+  /** Graph conflict detection panel in settings — shows pending_conflicts from DB. */
+  enableConflictPanel: true,
+  /** Relationship step wizard during invite join — requires enableInviteRelationshipStep to also be true. */
+  enableStructuralMappingWizard: false,
+  /** branch_admin role: scoped edit permissions on a subtree. */
+  enableBranchAdmin: false,
   /** Realtime notifications driven by claim_audit_log + family_members inserts. */
   enableRealtimeNotifications: true,
   /** Phone number + OTP sign-in / sign-up (WhatsApp / SMS).

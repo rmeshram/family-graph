@@ -60,20 +60,29 @@ function scoreIdentity(
 
   if (a && b) {
     if (a === b) {
-      score += 15; reasons.push('name')
+      // Perfect full-name match
+      score += 60; reasons.push('name')
     } else if (levenshtein(a, b) <= 2 && Math.max(a.length, b.length) >= 4) {
-      score += 10; reasons.push('name_fuzzy')
+      // Minor typo / transliteration difference
+      score += 45; reasons.push('name_fuzzy')
     } else {
-      mismatches.push('name')
+      // First-name-only match (handles "Rahul" vs "Rahul Sharma" or vice-versa)
+      const aFirst = a.split(' ')[0]
+      const bFirst = b.split(' ')[0]
+      if (aFirst.length >= 3 && aFirst === bFirst) {
+        score += 30; reasons.push('name_partial')
+      } else {
+        mismatches.push('name')
+      }
     }
   }
 
   if (nodeBirthYear && submittedBirthYear) {
     const diff = Math.abs(nodeBirthYear - submittedBirthYear)
     if (diff === 0) {
-      score += 20; reasons.push('birth_year_exact')
+      score += 40; reasons.push('birth_year_exact')
     } else if (diff <= 2) {
-      score += 12; reasons.push('birth_year_approx')
+      score += 25; reasons.push('birth_year_approx')
     } else {
       mismatches.push('birth_year')
     }
@@ -176,7 +185,7 @@ export async function POST(
     .maybeSingle()
   if (existingLink) {
     return NextResponse.json(
-      { error: 'ALREADY_LINKED_IN_FAMILY', message: 'You are already linked to a different profile in this family.' },
+      { error: 'ALREADY_LINKED_IN_FAMILY', claimedNodeId: existingLink.node_id, message: 'You are already linked to a different profile in this family.' },
       { status: 409 }
     )
   }
@@ -243,8 +252,10 @@ export async function POST(
   const lockedUntil =
     attempts >= MAX_ATTEMPTS ? new Date(Date.now() + 86_400_000).toISOString() : null
 
-  // Identity check failed
-  if (score < 40 || (mismatches.length > 0 && score < 65)) {
+  // Identity check failed — name must match in some form, and total score must reach 40.
+  // Birth-year mismatch alone (with correct name) does NOT block the claim —
+  // name is the primary identity signal; birth year is supportive.
+  if (mismatches.includes('name') || score < 40) {
     await admin.from('claim_requests').upsert(
       {
         node_id: nodeId,

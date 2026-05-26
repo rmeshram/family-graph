@@ -37,6 +37,8 @@ import {
   Mail,
   UserX,
   EyeOff,
+  ShieldOff,
+  UserCheck,
 } from 'lucide-react'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { cn, computeProfileCompleteness } from '@/lib/utils'
@@ -78,6 +80,10 @@ interface MemberDetailProps {
   familyId?: string | null
   /** Logged-in user id — required for milestone creation */
   userId?: string | null
+  /** Called when non-owner wants to claim this unclaimed node. Opens the claim dialog. */
+  onClaim?: (memberId: string) => void
+  /** Admin-only: revoke an existing claim on this node. */
+  onRevokeClaim?: (memberId: string) => void
 }
 
 const milestoneIcons: Record<string, React.ReactNode> = {
@@ -115,6 +121,8 @@ export function MemberDetail({
   memberPrivacySettings,
   familyId,
   userId,
+  onClaim,
+  onRevokeClaim,
 }: MemberDetailProps) {
   const initials = member.name
     .split(' ')
@@ -735,6 +743,16 @@ export function MemberDetail({
             </div>
           </div>
         )}
+        {/* Claim This Profile — for unclaimed, non-deceased nodes, when viewer has no other claimed node */}
+        {!member.isClaimed && !isYourNode && !member.isDeceased && onClaim && currentUserId && !selfMemberId && (
+          <button
+            onClick={() => onClaim(member.id)}
+            className="mb-2 w-full flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary transition-colors hover:bg-primary/20"
+          >
+            <UserCheck className="h-4 w-4 shrink-0" />
+            <span>This is me — Claim this profile</span>
+          </button>
+        )}
         {/* Invite nudge for unclaimed members */}
         {!member.isClaimed && !isYourNode && onInvite && (
           <button
@@ -744,6 +762,16 @@ export function MemberDetail({
           >
             <UserPlus className="h-4 w-4 shrink-0" />
             <span>Invite {member.name.split(' ')[0]} to join the tree</span>
+          </button>
+        )}
+        {/* Admin revoke — only for claimed nodes that aren't the viewer's own */}
+        {isAdmin && member.isClaimed && !isYourNode && onRevokeClaim && (
+          <button
+            onClick={() => onRevokeClaim(member.id)}
+            className="mb-2 w-full flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/20"
+          >
+            <ShieldOff className="h-4 w-4 shrink-0" />
+            <span>Revoke claim from this profile</span>
           </button>
         )}
         {(onEdit || onAddStory || onDelete) && (

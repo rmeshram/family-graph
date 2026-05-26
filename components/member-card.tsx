@@ -22,9 +22,13 @@ interface MemberCardProps {
    * would be misleading (e.g. showing "Brother" to the member's mother).
    */
   hasSelf?: boolean
+  /** Show "Unclaimed" badge — typically for admin/contributor role */
+  showUnclaimedBadge?: boolean
+  /** Number of graph hops between the logged-in user and this member. Shown for distant relatives (≥3). */
+  degreesOfSeparation?: number | null
 }
 
-export function MemberCard({ member, isSelected, onClick, compact = false, isSelf = false, relationLabel, hasSelf = false }: MemberCardProps) {
+export function MemberCard({ member, isSelected, onClick, compact = false, isSelf = false, relationLabel, hasSelf = false, showUnclaimedBadge = false, degreesOfSeparation }: MemberCardProps) {
   const initials = member.name
     .split(' ')
     .map((n) => n[0])
@@ -133,9 +137,28 @@ export function MemberCard({ member, isSelected, onClick, compact = false, isSel
                 {isSelf ? 'You' : (relationLabel ?? member.relationship?.replace(/-/g, ' '))}
               </Badge>
             )}
+            {degreesOfSeparation !== null && degreesOfSeparation !== undefined && degreesOfSeparation >= 3 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] px-1.5 py-0 h-4 border-dashed border-muted-foreground/30 text-muted-foreground/70"
+                title={`${degreesOfSeparation} degrees of separation`}
+              >
+                {degreesOfSeparation}°
+              </Badge>
+            )}
             {hasStories && (
               <Badge variant="outline" className="text-xs bg-accent/10 text-accent border-accent/30">
                 {member.stories!.length} {member.stories!.length === 1 ? 'story' : 'stories'}
+              </Badge>
+            )}
+            {showUnclaimedBadge && !member.isClaimed && !member.isDeceased && (
+              <Badge variant="outline" className="text-xs border-dashed border-muted-foreground/40 text-muted-foreground/60">
+                Unclaimed
+              </Badge>
+            )}
+            {member.isBiodataVisible && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-pink-500/40 text-pink-400/80" title="Biodata visible for matrimony search">
+                ❤ Matrimony
               </Badge>
             )}
           </div>

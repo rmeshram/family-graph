@@ -497,7 +497,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 export default function FamilyGraphApp() {
   const isMobile = useIsMobile()
   const { user, familyId, profile, loading: authLoading } = useAuth()
-  const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility, setAnonymous } = useMembers(familyId)
+  const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility, setAnonymous, refetch: refetchMembers } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
   const isDemoMode = !authLoading && !user
@@ -913,6 +913,18 @@ export default function FamilyGraphApp() {
     }
   }, [selectedMemberId, members, familyId, dbDeleteMember, toast])
 
+  const handleRevokeClaim = useCallback(async (memberId: string) => {
+    try {
+      const res = await fetch(`/api/nodes/${memberId}/revoke-claim`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message ?? data.error ?? 'Revoke failed')
+      toast({ title: 'Claim revoked', description: 'The profile node is now unclaimed.' })
+      refetchMembers()
+    } catch (e: unknown) {
+      toast({ title: 'Could not revoke', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+    }
+  }, [toast, refetchMembers])
+
   const handleAddStory = useCallback(async (memberId: string, storyData: Omit<Story, 'id' | 'createdAt'>) => {
     if (familyId) {
       try {
@@ -1056,7 +1068,7 @@ export default function FamilyGraphApp() {
             ))}
           </div>
 
-          {/* Extended family toggle */}
+          {/* Extended family toggle — shows linked-family count when active */}
           <button
             onClick={() => setShowExtended(v => !v)}
             className={cn(
@@ -1069,7 +1081,27 @@ export default function FamilyGraphApp() {
           >
             <Users2 className="h-3 w-3" />
             <span className="hidden md:inline">Extended</span>
+            {!isDemoMode && linkedMembers.length > 0 && (
+              <span className={cn(
+                'rounded-full px-1.5 py-px text-[9px] font-bold leading-none',
+                showExtended ? 'bg-teal-500/30 text-teal-200' : 'bg-muted-foreground/20 text-muted-foreground'
+              )}>
+                +{linkedMembers.length}
+              </span>
+            )}
           </button>
+
+          {/* Network size chip — appears once linked families exist */}
+          {!isDemoMode && linkedFamilies.length > 0 && (
+            <div
+              className="hidden sm:flex items-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/5 px-2 py-1 text-[10px] text-violet-400 shrink-0"
+              title={`You are connected to ${members.length} people across ${linkedFamilies.length + 1} families`}
+            >
+              <Network className="h-3 w-3" />
+              <span className="font-semibold">{members.length}</span>
+              <span className="text-muted-foreground hidden lg:inline">connected</span>
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-1.5">
             <Button variant="ghost" size="sm" onClick={() => setIsSearchDialogOpen(true)} className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground">
@@ -1466,6 +1498,8 @@ export default function FamilyGraphApp() {
                 familyId={isDemoMode ? null : familyId}
                 userId={user?.id ?? null}
                 memberPrivacySettings={selectedMember.claimedByUserId === user?.id ? myPrivacySettings : undefined}
+                onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
+                onRevokeClaim={isAdmin ? handleRevokeClaim : undefined}
                 onSetVisibility={!isViewer ? async (memberId, v) => {
                   try {
                     await setVisibility(memberId, v)
@@ -1548,6 +1582,8 @@ export default function FamilyGraphApp() {
                       familyId={isDemoMode ? null : familyId}
                       userId={user?.id ?? null}
                       memberPrivacySettings={selectedMember?.claimedByUserId === user?.id ? myPrivacySettings : undefined}
+                      onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
+                      onRevokeClaim={isAdmin ? handleRevokeClaim : undefined}
                       onSetVisibility={!isViewer ? async (memberId, v) => {
                         try {
                           await setVisibility(memberId, v)
@@ -1632,6 +1668,7 @@ export default function FamilyGraphApp() {
             toast({ title: 'Could not update anonymous setting', description: err?.message, variant: 'destructive' })
           }
         }}
+        onUnclaim={refetchMembers}
       />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}
@@ -1644,11 +1681,13 @@ export default function FamilyGraphApp() {
       <ClaimNodeDialog
         member={members.find(m => m.id === claimTargetId) ?? null}
         userId={user?.id ?? null}
+        selfMemberId={selfMember?.id ?? null}
         open={isClaimDialogOpen}
         onOpenChange={setIsClaimDialogOpen}
-        onClaim={async (memberId, userId) => {
-          await claimMember(memberId, userId)
-          toast({ title: 'Node claimed!', description: 'Your profile is now linked to this tree.' })
+        onClaim={async (memberId, _userId, opts) => {
+          await claimMember(memberId, _userId, opts)
+          toast({ title: 'Profile claimed!', description: 'Your account is now linked to this node.' })
+          refetchMembers()
         }}
         onSetVisibility={async (memberId, visibility) => {
           await setVisibility(memberId, visibility)

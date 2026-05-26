@@ -201,6 +201,12 @@ export function useNotifications(
               type = 'claim_revoked'
               priority = 'high'
               break
+            case 'claim_unclaimed':
+              title = `${nodeName} unlinked their profile`
+              body = 'The profile node is now unclaimed and available.'
+              type = 'claim_revoked'
+              priority = 'medium'
+              break
             case 'invite_sent':
               title = `Invite sent for ${nodeName}`
               body = 'They can now claim their profile.'

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useMemo, useState } from 'react'
 import { Search, Users, Layers, Clock, Network, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { computeRelationLabel } from '@/lib/relation-engine'
+import { computeRelationLabel, computeDegreesOfSeparation } from '@/lib/relation-engine'
 
 interface MemberListSidebarProps {
   members: FamilyMember[]
@@ -79,6 +79,17 @@ export function MemberListSidebar({
       map[m.id] = m.id === selfMemberId
         ? 'You'
         : computeRelationLabel(selfMemberId, m.id, members)
+    }
+    return map
+  }, [selfMemberId, members])
+
+  const degreesMap = useMemo<Record<string, number | null>>(() => {
+    if (!selfMemberId) return {}
+    const map: Record<string, number | null> = {}
+    for (const m of members) {
+      map[m.id] = m.id === selfMemberId
+        ? 0
+        : computeDegreesOfSeparation(selfMemberId, m.id, members)
     }
     return map
   }, [selfMemberId, members])
@@ -240,6 +251,7 @@ export function MemberListSidebar({
                     isSelf={selfMemberId ? member.id === selfMemberId : false}
                     relationLabel={relationLabels[member.id] ?? undefined}
                     hasSelf={!!selfMemberId}
+                    degreesOfSeparation={degreesMap[member.id]}
                   />
                 ))
               ) : (
@@ -277,6 +289,7 @@ export function MemberListSidebar({
                           isSelf={selfMemberId ? member.id === selfMemberId : false}
                           relationLabel={relationLabels[member.id] ?? undefined}
                           hasSelf={!!selfMemberId}
+                          degreesOfSeparation={degreesMap[member.id]}
                         />
                       ))}
                     </div>
@@ -304,6 +317,7 @@ export function MemberListSidebar({
                       isSelf={selfMemberId ? member.id === selfMemberId : false}
                       relationLabel={relationLabels[member.id] ?? undefined}
                       hasSelf={!!selfMemberId}
+                      degreesOfSeparation={degreesMap[member.id]}
                     />
                   ))}
                 </div>
