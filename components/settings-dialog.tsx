@@ -100,6 +100,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
   // Self-unclaim state
   const [unclaiming, setUnclaiming] = useState(false)
   const [showUnclaimConfirm, setShowUnclaimConfirm] = useState(false)
+  const [unclaimError, setUnclaimError] = useState<string | null>(null)
 
   // Connected families
   const [linkedData, setLinkedData] = useState<{
@@ -347,15 +348,21 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
   const handleSelfUnclaim = useCallback(async () => {
     if (!selfMember?.id) return
     setUnclaiming(true)
+    setUnclaimError(null)
     try {
       const res = await fetch(`/api/nodes/${selfMember.id}/unclaim`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.message ?? data.error ?? 'Unclaim failed')
+      if (!res.ok) {
+        const msg = data.message ?? data.error ?? `Error ${res.status}`
+        setUnclaimError(msg)
+        return
+      }
       toast.success('Profile unlinked. Your account is no longer tied to this node.')
       setShowUnclaimConfirm(false)
+      setUnclaimError(null)
       onUnclaim?.()
     } catch (err: any) {
-      toast.error(err?.message ?? 'Could not unlink profile')
+      setUnclaimError(err?.message ?? 'Network error — could not reach server')
     } finally {
       setUnclaiming(false)
     }
@@ -1026,12 +1033,17 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                 ) : (
                   <div className="space-y-2">
                     <p className="text-xs text-destructive font-medium">Are you sure? This cannot be undone without re-claiming.</p>
+                    {unclaimError && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        <span className="font-semibold">Error: </span>{unclaimError}
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         variant="ghost"
                         size="sm"
                         className="flex-1"
-                        onClick={() => setShowUnclaimConfirm(false)}
+                        onClick={() => { setShowUnclaimConfirm(false); setUnclaimError(null) }}
                         disabled={unclaiming}
                       >
                         Cancel

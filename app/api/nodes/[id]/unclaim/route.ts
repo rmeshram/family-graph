@@ -74,6 +74,11 @@ export async function POST(
 
   await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', id)
 
+  // Reset the user's profile member_id so the app stops treating this node as theirs
+  await admin.from('profiles')
+    .update({ member_id: null } as any)
+    .eq('id', user.id)
+
   await admin.from('claim_audit_log').insert({
     node_id: id,
     family_id: (node as any).family_id,
