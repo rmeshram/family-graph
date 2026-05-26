@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect, memo } from 'react'
 import { FamilyMember } from '@/lib/types'
+import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { ZoomIn, ZoomOut, Maximize2, Grid3X3, ChevronDown, ChevronRight, Lock, ShieldCheck, ChevronLeft, EyeOff } from 'lucide-react'
@@ -32,6 +33,7 @@ function getRelBadgeStyle(rel: string | undefined, networkGroup?: string) {
 
 interface FamilyTreeProps {
   members: FamilyMember[]
+  selfMemberId?: string | null
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
   onDoubleClickMember?: (id: string) => void
@@ -46,7 +48,7 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, isAdmin = false }: FamilyTreeProps) {
+export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, isAdmin = false }: FamilyTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -304,7 +306,18 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     const lines: { from: NodePosition; to: NodePosition; type: 'parent' | 'spouse'; fromId: string; toId: string }[] = []
     const posMap = new Map(nodePositions.map((p) => [p.id, p]))
 
-    members.forEach((member) => {
+    // Use enriched members so relationship-label-derived virtual edges produce
+    // real connecting lines between nodes (handles families where parent_ids /
+    // spouse_ids aren't set but the `relationship` label encodes the connection).
+    // Virtual structural nodes (no position) are skipped automatically.
+    const effectiveSelf = selfMemberId
+      ? members.find(m => m.id === selfMemberId)
+      : members.find(m => m.relationship === 'self')
+    const enrichedForLines = effectiveSelf
+      ? enrichMembersWithDerivedEdges(members, effectiveSelf.id)
+      : members
+
+    enrichedForLines.forEach((member) => {
       const memberPos = posMap.get(member.id)
       if (!memberPos) return
 
@@ -326,7 +339,7 @@ export function FamilyTree({ members, selectedMemberId, onSelectMember, onDouble
     })
 
     return lines
-  }, [members, nodePositions])
+  }, [members, selfMemberId, nodePositions])
 
   //  Graph index — O(1) relationship lookups, replaces O(n) searches 
   const graphIndex = useGraphIndex(members)

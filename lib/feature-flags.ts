@@ -17,9 +17,9 @@ export const FEATURE_FLAGS = {
   /** Live Activity widget on the graph canvas. Off by default for MVP — noise > signal until graph has scale. */
   enableLiveActivityWidget: false,
   /** Presence avatars (who's online) on the dashboard header. Off until realtime presence is wired. */
-  enablePresenceAvatars: false,
+  enablePresenceAvatars: true,
   /** Advanced analytics / missing-data intelligence panels beyond the basic overview. */
-  enableAdvancedAnalytics: false,
+  enableAdvancedAnalytics: true,
   /** Editable milestone CRUD on member-detail. ON — migration 017 adds the milestones table. */
   enableMilestoneEditor: true,
   /** Google Places autocomplete for location fields. Off until GOOGLE_MAPS_API_KEY is configured. */
@@ -28,7 +28,7 @@ export const FEATURE_FLAGS = {
   enableFullGraphPdfExport: false,
   /** Asks "how are you related to the inviter?" during the /join flow. */
   /** Per DECISION 1 (claim = join) this step is removed; relationship is set during node creation. */
-  enableInviteRelationshipStep: false,
+  enableInviteRelationshipStep: true,
   /** Admin review queue for low-confidence claims. ON — already shipped in settings dialog. */
   enableClaimReviewQueue: true,
   /** Moderator role: dedicated claim review + conflict resolution UI (/admin/moderation). */

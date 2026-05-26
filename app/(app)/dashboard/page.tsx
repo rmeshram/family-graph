@@ -1264,6 +1264,7 @@ export default function FamilyGraphApp() {
             {viewMode === 'graph' && (
               <FamilyTree
                 members={filteredMembers}
+                selfMemberId={selfMember?.id ?? null}
                 selectedMemberId={isMobile ? (mobileMenuMemberId ?? selectedMemberId) : selectedMemberId}
                 onSelectMember={isMobile ? handleSelectMemberMobile : handleSelectMember}
                 onDoubleClickMember={(id) => {
