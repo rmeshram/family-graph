@@ -573,39 +573,6 @@ export default function FamilyGraphApp() {
   const [pfPathEdges, setPfPathEdges] = useState<Set<string>>(new Set())
   const [pfPathSequence, setPfPathSequence] = useState<string[]>([])
 
-  // ── Path Finder — canonical graph engine ─────────────────────────────────────
-  // Single useMemo delegates to getRelationshipBetweenPeople (the one source of
-  // truth). No custom adjacency map, no duplicate BFS implementation.
-  const pfResult = useMemo<RelationshipResult | null>(() => {
-    if (!pfFrom || !pfTo || pfFrom === pfTo) return null
-    const base = isDemoMode ? sampleFamilyMembers : dbMembers
-    const selfMemberForEnrich = base.find(m => m.relationship === 'self')
-    const enriched = selfMemberForEnrich
-      ? enrichMembersWithDerivedEdges(base, selfMemberForEnrich.id)
-      : base
-    const fromM = enriched.find(m => m.id === pfFrom)
-    const fromLabel = pfFrom === selfMemberForEnrich?.id
-      ? 'your'
-      : `${fromM?.name?.split(' ')[0] ?? ''}'s`
-    return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
-  }, [pfFrom, pfTo, isDemoMode, dbMembers])
-
-  useEffect(() => {
-    if (pfResult?.found && pfResult.people.length > 0) {
-      // Filter virtual structural anchors — only real member IDs reach the UI
-      const seq = pfResult.people.filter(id => !id.startsWith('__virt_'))
-      setPfPathSequence(seq)
-      setPfPathNodes(new Set(seq))
-      const edgeKeys = new Set<string>()
-      for (let i = 0; i < seq.length - 1; i++) {
-        edgeKeys.add([seq[i], seq[i + 1]].sort().join('|'))
-      }
-      setPfPathEdges(edgeKeys)
-    } else {
-      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
-    }
-  }, [pfResult])
-
   const handleOpenPathFinder = useCallback((fromMemberId?: string) => {
     if (!fromMemberId && pathFinderOpen) {
       setPathFinderOpen(false); return
@@ -673,6 +640,41 @@ export default function FamilyGraphApp() {
     ?? members.find(m => m.claimedByUserId === user?.id)
     ?? (isDemoMode ? members.find(m => m.relationship === 'self') : null)
     ?? null
+
+  // ── Path Finder — canonical graph engine ─────────────────────────────────────
+  // Single useMemo delegates to getRelationshipBetweenPeople (the one source of
+  // truth). No custom adjacency map, no duplicate BFS implementation.
+  // Placed after selfMember so we can use the authoritatively-resolved identity
+  // (profile.member_id / claimedByUserId) for enrichment — not relationship === 'self',
+  // which is only set in demo data, not in real user records.
+  const pfResult = useMemo<RelationshipResult | null>(() => {
+    if (!pfFrom || !pfTo || pfFrom === pfTo) return null
+    const base = isDemoMode ? sampleFamilyMembers : dbMembers
+    const enriched = selfMember
+      ? enrichMembersWithDerivedEdges(base, selfMember.id)
+      : base
+    const fromM = enriched.find(m => m.id === pfFrom)
+    const fromLabel = pfFrom === selfMember?.id
+      ? 'your'
+      : `${fromM?.name?.split(' ')[0] ?? ''}'s`
+    return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
+  }, [pfFrom, pfTo, isDemoMode, dbMembers, selfMember])
+
+  useEffect(() => {
+    if (pfResult?.found && pfResult.people.length > 0) {
+      // Filter virtual structural anchors — only real member IDs reach the UI
+      const seq = pfResult.people.filter(id => !id.startsWith('__virt_'))
+      setPfPathSequence(seq)
+      setPfPathNodes(new Set(seq))
+      const edgeKeys = new Set<string>()
+      for (let i = 0; i < seq.length - 1; i++) {
+        edgeKeys.add([seq[i], seq[i + 1]].sort().join('|'))
+      }
+      setPfPathEdges(edgeKeys)
+    } else {
+      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+    }
+  }, [pfResult])
 
   const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
   const isViewer = !isDemoMode && (profile as any)?.role === 'viewer'
