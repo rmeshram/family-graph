@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { FamilyMember } from '@/lib/types'
-import { computeRelationLabel } from '@/lib/relation-engine'
+import { computeRelationLabel, enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { cn } from '@/lib/utils'
 import { NodeActionRing } from '@/components/node-action-ring'
 
@@ -88,15 +88,15 @@ const HUE: Record<UCategory, number> = {
 
 const SECTOR_ARC: Record<UCategory, [number, number]> = {
   self: [0, 0],
-  paternal: [Math.PI * 0.52, Math.PI * 1.38],   // ~94° → ~248°  (left / upper-left)
-  maternal: [-Math.PI * 0.48, Math.PI * 0.38],    // ~-86° → ~68°  (upper-right / right)
-  marriage: [-Math.PI * 0.32, Math.PI * 0.22],    // right side
+  paternal: [Math.PI * 0.42, Math.PI * 1.48],   // ~76° → ~266°  (wider left arc)
+  maternal: [-Math.PI * 0.42, Math.PI * 0.42],   // ~-76° → ~76°  (wider right arc)
+  marriage: [-Math.PI * 0.38, Math.PI * 0.38],    // right side (wider)
   community: [Math.PI * 0.60, Math.PI * 1.60],    // outer left cluster
 }
 
 const BASE_RING_RADIUS = 190   // depth-1 ring radius (px in graph space)
-const RING_STEP = 155   // extra radius per depth level
-const MIN_ANG_GAP = 0.22  // min radians between nodes in same ring (~12.6°)
+const RING_STEP = 145   // extra radius per depth level
+const MIN_ANG_GAP = 0.15  // min radians between nodes in same ring (~8.6°) — allows more nodes per ring
 const JITTER_SCALE = 28    // px of deterministic position jitter
 
 // ─── Layout engine ─────────────────────────────────────────────────────────
@@ -145,6 +145,15 @@ export function buildUniverse(
   const self = memberMap.get(selfId)
   if (!self) return { people: [], edges: [] }
 
+  // ── Enrich with relationship-label-derived edges ───────────────────────────
+  // Isolated members (no parent_ids/spouse_ids) carry a `relationship` label
+  // relative to selfId (e.g. "father", "mother", "spouse"). The enrichment
+  // function derives virtual parentIds/spouseIds so the BFS can reach them.
+  // Virtual intermediate nodes (id starts with "__virt_") are used for BFS
+  // traversal only — they are filtered out before rendering.
+  const enrichedMembers = enrichMembersWithDerivedEdges(members, selfId)
+  const enrichedMap = new Map(enrichedMembers.map(m => [m.id, m]))
+
   // ── 1. BFS to find depth of each reachable core/extended member ──────────
   const depth = new Map<string, number>([[selfId, 0]])
   const visited = new Set<string>([selfId])
@@ -153,22 +162,37 @@ export function buildUniverse(
 
   while (head < queue.length) {
     const id = queue[head++]
-    const m = memberMap.get(id)
+    const m = enrichedMap.get(id)   // use enriched edges for traversal
     if (!m) continue
     const d = depth.get(id)!
 
     const neighbors: string[] = [
       ...m.parentIds,
       ...m.spouseIds,
-      ...members.filter(x => x.parentIds.includes(id)).map(x => x.id),
+      ...enrichedMembers.filter(x => x.parentIds.includes(id)).map(x => x.id),
     ]
     for (const nid of neighbors) {
-      if (!visited.has(nid) && memberMap.has(nid)) {
+      if (!visited.has(nid) && enrichedMap.has(nid)) {
         visited.add(nid)
         depth.set(nid, d + 1)
         queue.push(nid)
       }
     }
+  }
+
+  // ── Generation-based depth fallback ───────────────────────────────────────
+  // Members that BFS couldn't reach (disconnected sub-clusters or members
+  // whose relationship labels weren't recognised) get a depth derived from
+  // their `generation` integer. This guarantees every real family member
+  // appears in a ring instead of being silently pushed to the community sink.
+  const selfGen = self.generation ?? 3
+  for (const m of members) {
+    if (m.id === selfId || m.id.startsWith('__virt_') || depth.has(m.id)) continue
+    // networkGroup === 'affiliated' members intentionally live in the community cluster
+    if (m.networkGroup === 'affiliated') continue
+    const memberGen = m.generation ?? selfGen
+    const genDiff = Math.abs(memberGen - selfGen)
+    depth.set(m.id, Math.max(1, genDiff === 0 ? 1 : genDiff))
   }
 
   // ── 2. Assign categories ──────────────────────────────────────────────────
@@ -196,8 +220,15 @@ export function buildUniverse(
         cat = 'maternal'
       } else if (rel.includes('in-law') || rel === 'spouse' || rel === 'husband' || rel === 'wife') {
         cat = 'marriage'
+      } else if (['son', 'daughter', 'child', 'grandson', 'granddaughter', 'grandchild',
+        'nephew', 'niece', 'son-in-law', 'daughter-in-law'].includes(rel)) {
+        // Descendants go in paternal sector but at deeper positive ring
+        cat = 'paternal'
       } else {
-        cat = 'paternal'   // default for untagged blood relatives
+        // For members with no usable label, spread across paternal/maternal by generation parity
+        // to avoid all unknowns piling into one sector.
+        const memberGen = m.generation ?? selfGen
+        cat = memberGen % 2 === 0 ? 'paternal' : 'maternal'
       }
     }
     category.set(m.id, cat)
@@ -266,6 +297,7 @@ export function buildUniverse(
 
   const affiliated = members.filter(m => {
     if (m.id === selfId) return false
+    if (m.id.startsWith('__virt_')) return false   // never render virtual nodes as community
     return category.get(m.id) === 'community' || !depth.has(m.id)
   })
 
@@ -315,6 +347,8 @@ export function buildUniverse(
   const people: UPerson[] = []
 
   for (const m of members) {
+    // Skip virtual structural nodes — they participate in BFS but are never rendered
+    if (m.id.startsWith('__virt_')) continue
     const pos = positions.get(m.id)
     if (!pos) continue
 
@@ -336,7 +370,8 @@ export function buildUniverse(
       // the admin who created the tree, not the current viewer.
       relation: m.id === selfId
         ? 'You'
-        : (computeRelationLabel(selfId, m.id, members) ?? ''),
+        // Use enriched member list so label-derived virtual edges are traversable
+        : (computeRelationLabel(selfId, m.id, enrichedMembers) ?? m.relationship ?? ''),
       photoUrl: m.photoUrl || undefined,
       city: m.currentPlace ?? m.birthPlace ?? m.hometown ?? '',
       gotra: m.gotra ?? m.caste ?? '',
@@ -447,6 +482,17 @@ export function RelationshipUniverse({
   const membersById = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
   const maxDepth = useMemo(() => Math.max(0, ...people.map(p => p.depth)), [people])
 
+  // ── Structural isolation nudge ──────────────────────────────────────────
+  // True when the logged-in user's own node has no parentIds and no spouseIds
+  // in the database. We show a prompt encouraging them to add connections so
+  // the tree has a real structural backbone (not just label-derived edges).
+  const isSelfIsolated = useMemo(() => {
+    if (!effectiveSelfId) return false
+    const selfMember = members.find(m => m.id === effectiveSelfId)
+    if (!selfMember) return false
+    return selfMember.parentIds.length === 0 && selfMember.spouseIds.length === 0
+  }, [members, effectiveSelfId])
+
   // Adjacency map — used for focus-mode opacity
   const adjacencyMap = useMemo(() => {
     const map = new Map<string, Set<string>>()
@@ -464,9 +510,10 @@ export function RelationshipUniverse({
   useEffect(() => {
     setVisibleDepth(1)
     const timers: ReturnType<typeof setTimeout>[] = []
-    // Auto-reveal up to depth 3 (self + 2 rings ≈ immediate family).
-    // Beyond that the user expands via the Network button — avoids first-load overwhelm.
-    for (let i = 2; i <= Math.min(maxDepth, 3); i++) timers.push(setTimeout(() => setVisibleDepth(i), (i - 1) * 520))
+    // Auto-reveal the full family — generation-based fallback may place members
+    // at depth 3-5, so we expand to maxDepth to ensure everyone is visible.
+    // Each ring is staggered 480ms to keep the cinematic entrance effect.
+    for (let i = 2; i <= maxDepth; i++) timers.push(setTimeout(() => setVisibleDepth(i), (i - 1) * 480))
     return () => timers.forEach(clearTimeout)
   }, [people.length, maxDepth])
 
@@ -1512,6 +1559,43 @@ export function RelationshipUniverse({
                       className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap font-bold tracking-widest uppercase pointer-events-none"
                       style={{ top: r * 2 + 3, fontSize: 8, color: '#22d3ee', textShadow: '0 0 6px #22d3ee88', letterSpacing: '0.2em' }}
                     >You</span>
+                  )}
+                  {/* ── Isolation nudge — shown when user has no structural connections ── */}
+                  {p.category === 'self' && isSelfIsolated && (
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 pointer-events-auto"
+                      style={{ top: r * 2 + (showName ? 52 : 22), zIndex: 60, minWidth: 186 }}
+                      onClick={e => { e.stopPropagation(); onAddRelative?.(p.id, 'father') }}
+                    >
+                      <div
+                        className="flex items-start gap-2 rounded-xl px-3 py-2.5 cursor-pointer group"
+                        style={{
+                          background: 'oklch(0.16 0.04 250 / 0.92)',
+                          border: '1px solid oklch(0.55 0.18 196 / 0.55)',
+                          boxShadow: '0 0 18px #22d3ee18, 0 4px 16px #00000088',
+                          backdropFilter: 'blur(8px)',
+                        }}
+                      >
+                        <span className="text-base mt-0.5 shrink-0">🌱</span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold leading-snug"
+                            style={{ color: '#67e8f9' }}>
+                            Connect your branch
+                          </p>
+                          <p className="text-[10px] leading-snug mt-0.5"
+                            style={{ color: 'oklch(0.72 0.04 250)' }}>
+                            Add your parents, spouse or siblings to build the real tree structure.
+                          </p>
+                          <p className="text-[10px] font-semibold mt-1.5 group-hover:underline"
+                            style={{ color: '#22d3ee' }}>
+                            + Add relationship →
+                          </p>
+                        </div>
+                      </div>
+                      {/* Connector dot to the node */}
+                      <div className="absolute left-1/2 -translate-x-px -top-1.5 w-px h-2"
+                        style={{ background: 'oklch(0.55 0.18 196 / 0.5)' }} />
+                    </div>
                   )}
                 </button>
                 {/* Inline add-relative actions — rendered outside <button>, dismisses after idle */}

@@ -185,20 +185,14 @@ export default function JoinPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push(`/auth/signin?next=/join/${code}`); return }
 
-      // Load unclaimed members of this family for identity resolution
-      const { data: invite } = await supabase
-        .from('invite_links').select('family_id').eq('code', code.toUpperCase()).single()
+      // Load unclaimed members via server API (bypasses RLS — new users have no family_id yet)
+      const apiRes = await fetch(`/api/invite/${code.toUpperCase()}/unclaimed`)
+      const apiData = apiRes.ok ? await apiRes.json() : null
 
-      if (invite?.family_id) {
-        const { data: nodes } = await supabase
-          .from('family_members')
-          .select('id, name, relationship, generation, birth_year, phone, email')
-          .eq('family_id', invite.family_id)
-          .eq('is_claimed', false)
-          .order('generation', { ascending: true })
-          .limit(30)
+      const familyId: string | null = apiData?.familyId ?? null
 
-        const candidates = (nodes ?? []) as {
+      if (familyId && Array.isArray(apiData?.nodes) && apiData.nodes.length > 0) {
+        const candidates = apiData.nodes as {
           id: string; name: string; relationship: string; generation: number;
           birth_year: number | null; phone: string | null; email: string | null
         }[]
@@ -226,7 +220,7 @@ export default function JoinPage() {
               {
                 nodeId: n.id,
                 nodeName: n.name,
-                familyId: invite.family_id,
+                familyId: familyId,
                 familyName,
                 addedByName: null,
                 relationship: n.relationship ?? null,
@@ -580,8 +574,8 @@ export default function JoinPage() {
                           <div className={cn(
                             'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
                             idx === 0 ? 'bg-amber-500/20 text-amber-400' :
-                            idx === 1 ? 'bg-muted text-muted-foreground' :
-                            'bg-muted/50 text-muted-foreground/60'
+                              idx === 1 ? 'bg-muted text-muted-foreground' :
+                                'bg-muted/50 text-muted-foreground/60'
                           )}>
                             {idx + 1}
                           </div>
@@ -589,8 +583,8 @@ export default function JoinPage() {
                           <div className={cn(
                             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white',
                             idx === 0 ? 'bg-gradient-to-br from-indigo-500 to-violet-600' :
-                            idx === 1 ? 'bg-gradient-to-br from-slate-500 to-slate-700' :
-                            'bg-gradient-to-br from-slate-600 to-slate-800'
+                              idx === 1 ? 'bg-gradient-to-br from-slate-500 to-slate-700' :
+                                'bg-gradient-to-br from-slate-600 to-slate-800'
                           )}>
                             {node.name.slice(0, 2).toUpperCase()}
                           </div>

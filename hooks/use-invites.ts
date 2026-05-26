@@ -300,6 +300,93 @@ export function useJoinFamily() {
         display_name: opts.displayName || undefined,
       }).eq('id', userId)
 
+      // ── Apply relationship connections to the claimed node ───────────────────
+      // When the joiner said "I am X's child/spouse/sibling", wire the
+      // parent_ids / spouse_ids on the claimed node to match that declaration.
+      // Without this, the claimed node remains isolated in the tree even after
+      // the claim succeeds (user sees members in sidebar but no connected tree).
+      const relToInviter = opts.relationshipToInviter ?? 'skip'
+      if (relToInviter !== 'skip' && invite.created_by) {
+        const { data: inviterProfile } = await supabase
+          .from('profiles').select('member_id').eq('id', invite.created_by).single()
+        const inviterMemberId = (inviterProfile as any)?.member_id as string | null
+
+        if (inviterMemberId) {
+          const { data: inviterMember } = await supabase
+            .from('family_members')
+            .select('generation, parent_ids, spouse_ids')
+            .eq('id', inviterMemberId).single()
+          const { data: claimedNode } = await supabase
+            .from('family_members')
+            .select('generation, parent_ids, spouse_ids')
+            .eq('id', opts.claimMemberId).single()
+
+          if (inviterMember && claimedNode) {
+            const invGen = (inviterMember as any).generation as number
+            const existingPIds = ((claimedNode as any).parent_ids ?? []) as string[]
+            const existingSIds = ((claimedNode as any).spouse_ids ?? []) as string[]
+            let newParentIds = [...existingPIds]
+            let newSpouseIds = [...existingSIds]
+            let newGeneration = (claimedNode as any).generation as number
+
+            switch (relToInviter) {
+              case 'spouse':
+                if (!newSpouseIds.includes(inviterMemberId)) newSpouseIds.push(inviterMemberId)
+                newGeneration = invGen
+                break
+              case 'child':
+                if (!newParentIds.includes(inviterMemberId)) newParentIds.push(inviterMemberId)
+                newGeneration = invGen + 1
+                break
+              case 'parent':
+                newGeneration = invGen - 1
+                break
+              case 'sibling': {
+                const invPIds = ((inviterMember as any).parent_ids ?? []) as string[]
+                invPIds.forEach(pid => { if (!newParentIds.includes(pid)) newParentIds.push(pid) })
+                newGeneration = invGen
+                break
+              }
+              case 'relative':
+                newGeneration = invGen
+                break
+            }
+
+            const changed =
+              newParentIds.length !== existingPIds.length ||
+              newSpouseIds.length !== existingSIds.length ||
+              newGeneration !== (claimedNode as any).generation ||
+              newParentIds.some(id => !existingPIds.includes(id)) ||
+              newSpouseIds.some(id => !existingSIds.includes(id))
+
+            if (changed) {
+              await (supabase.from('family_members') as any)
+                .update({ parent_ids: newParentIds, spouse_ids: newSpouseIds, generation: newGeneration })
+                .eq('id', opts.claimMemberId)
+
+              // Bidirectional: inviter's spouse_ids when joiner is their spouse
+              if (relToInviter === 'spouse') {
+                const invSIds = ((inviterMember as any).spouse_ids ?? []) as string[]
+                if (!invSIds.includes(opts.claimMemberId)) {
+                  await (supabase.from('family_members') as any)
+                    .update({ spouse_ids: [...invSIds, opts.claimMemberId] })
+                    .eq('id', inviterMemberId)
+                }
+              }
+              // Bidirectional: inviter's parent_ids when joiner is their parent
+              if (relToInviter === 'parent') {
+                const invPIds2 = ((inviterMember as any).parent_ids ?? []) as string[]
+                if (!invPIds2.includes(opts.claimMemberId)) {
+                  await (supabase.from('family_members') as any)
+                    .update({ parent_ids: [...invPIds2, opts.claimMemberId] })
+                    .eq('id', inviterMemberId)
+                }
+              }
+            }
+          }
+        }
+      }
+
       // Emit audit event so realtime notifications fire for admins
       await (supabase.from('claim_audit_log') as any).insert({
         node_id: opts.claimMemberId,
