@@ -27,7 +27,7 @@ import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
-import { computePostAddSuggestions, type RelationshipSuggestion, type RelationshipAction } from '@/lib/relationship-engine'
+import { computePostAddSuggestions, getRelationshipBetweenPeople, type RelationshipSuggestion, type RelationshipAction, type RelationshipResult } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -54,7 +54,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
-import { normalizeStoredName } from '@/lib/match-detection'
+import { normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
 function FamilyTreeSkeleton() {
@@ -573,60 +573,6 @@ export default function FamilyGraphApp() {
   const [pfPathEdges, setPfPathEdges] = useState<Set<string>>(new Set())
   const [pfPathSequence, setPfPathSequence] = useState<string[]>([])
 
-  // ── Path Finder BFS helpers ──────────────────────────────────────────────
-  const dashboardAdjacencyMap = useMemo(() => {
-    const map = new Map<string, Set<string>>()
-    const add = (a: string, b: string) => {
-      if (!map.has(a)) map.set(a, new Set())
-      if (!map.has(b)) map.set(b, new Set())
-      map.get(a)!.add(b); map.get(b)!.add(a)
-    }
-    // Use enriched members: derives edges from relationship labels for isolated nodes
-    const base = isDemoMode ? sampleFamilyMembers : dbMembers
-    const selfMemberForEnrich = base.find(m => m.relationship === 'self')
-    const enriched = selfMemberForEnrich ? enrichMembersWithDerivedEdges(base, selfMemberForEnrich.id) : base
-    enriched.forEach(m => {
-      m.parentIds.forEach(pid => add(m.id, pid))
-      m.spouseIds.forEach(sid => add(m.id, sid))
-    })
-    return map
-  }, [isDemoMode, dbMembers])
-
-  const findExternalPath = useCallback((fromId: string, toId: string) => {
-    if (!fromId || !toId || fromId === toId) {
-      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
-      return
-    }
-    const parent = new Map<string, string>([[fromId, '']])
-    const queue = [fromId]
-    let found = false
-    outer: while (queue.length > 0) {
-      const cur = queue.shift()!
-      for (const nid of (dashboardAdjacencyMap.get(cur) ?? new Set())) {
-        if (!parent.has(nid)) {
-          parent.set(nid, cur)
-          if (nid === toId) { found = true; break outer }
-          queue.push(nid)
-        }
-      }
-    }
-    if (!found) { setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([]); return }
-    const nodes: string[] = []; const edgeKeys = new Set<string>()
-    let cur = toId
-    while (cur) {
-      nodes.unshift(cur)
-      const prev = parent.get(cur)!
-      if (prev) edgeKeys.add([prev, cur].sort().join('|'))
-      cur = prev
-    }
-    setPfPathNodes(new Set(nodes)); setPfPathEdges(edgeKeys); setPfPathSequence(nodes)
-  }, [dashboardAdjacencyMap])
-
-  useEffect(() => {
-    if (pfFrom && pfTo && pfFrom !== pfTo) findExternalPath(pfFrom, pfTo)
-    else { setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([]) }
-  }, [pfFrom, pfTo, findExternalPath])
-
   const handleOpenPathFinder = useCallback((fromMemberId?: string) => {
     if (!fromMemberId && pathFinderOpen) {
       setPathFinderOpen(false); return
@@ -694,6 +640,41 @@ export default function FamilyGraphApp() {
     ?? members.find(m => m.claimedByUserId === user?.id)
     ?? (isDemoMode ? members.find(m => m.relationship === 'self') : null)
     ?? null
+
+  // ── Path Finder — canonical graph engine ─────────────────────────────────────
+  // Single useMemo delegates to getRelationshipBetweenPeople (the one source of
+  // truth). No custom adjacency map, no duplicate BFS implementation.
+  // Placed after selfMember so we can use the authoritatively-resolved identity
+  // (profile.member_id / claimedByUserId) for enrichment — not relationship === 'self',
+  // which is only set in demo data, not in real user records.
+  const pfResult = useMemo<RelationshipResult | null>(() => {
+    if (!pfFrom || !pfTo || pfFrom === pfTo) return null
+    const base = isDemoMode ? sampleFamilyMembers : dbMembers
+    const enriched = selfMember
+      ? enrichMembersWithDerivedEdges(base, selfMember.id)
+      : base
+    const fromM = enriched.find(m => m.id === pfFrom)
+    const fromLabel = pfFrom === selfMember?.id
+      ? 'your'
+      : `${fromM?.name?.split(' ')[0] ?? ''}'s`
+    return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
+  }, [pfFrom, pfTo, isDemoMode, dbMembers, selfMember])
+
+  useEffect(() => {
+    if (pfResult?.found && pfResult.people.length > 0) {
+      // Filter virtual structural anchors — only real member IDs reach the UI
+      const seq = pfResult.people.filter(id => !id.startsWith('__virt_'))
+      setPfPathSequence(seq)
+      setPfPathNodes(new Set(seq))
+      const edgeKeys = new Set<string>()
+      for (let i = 0; i < seq.length - 1; i++) {
+        edgeKeys.add([seq[i], seq[i + 1]].sort().join('|'))
+      }
+      setPfPathEdges(edgeKeys)
+    } else {
+      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+    }
+  }, [pfResult])
 
   const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
   const isViewer = !isDemoMode && (profile as any)?.role === 'viewer'
@@ -805,6 +786,16 @@ export default function FamilyGraphApp() {
       return
     }
     try {
+      // Safety net: reject exact-name duplicates that somehow bypassed dialog-level checks.
+      const duplicate = findExactNameMatch(members, memberData.name)
+      if (duplicate) {
+        toast({
+          title: 'Duplicate name',
+          description: `${normalizeStoredName(memberData.name)} is already in this tree. Please use the existing member or choose a different name.`,
+          variant: 'destructive',
+        })
+        return
+      }
       const newMember = await dbAddMember(memberData, user.id)
       toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
       // Run relationship intelligence: surface actionable suggestions to the user
@@ -1397,15 +1388,15 @@ export default function FamilyGraphApp() {
             {/* Mobile member list FAB — hidden when node popup is open (avoids bottom overlap) */}
             {isMobile && (viewMode === 'graph' || viewMode === 'universe')
               && !(viewMode === 'universe' && selectedMemberId && !detailMemberId) && (
-              <button
-                onClick={() => setMemberListOpen(true)}
-                className="absolute bottom-[3.75rem] left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
-                style={{ background: 'var(--surface-header)' }}
-              >
-                <Users2 className="h-4 w-4" />
-                <span>Members</span>
-              </button>
-            )}
+                <button
+                  onClick={() => setMemberListOpen(true)}
+                  className="absolute bottom-[3.75rem] left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
+                  style={{ background: 'var(--surface-header)' }}
+                >
+                  <Users2 className="h-4 w-4" />
+                  <span>Members</span>
+                </button>
+              )}
 
             {/* Mobile member list bottom sheet */}
             {isMobile && (
@@ -1473,6 +1464,7 @@ export default function FamilyGraphApp() {
                     pfFromSearch={pfFromSearch}
                     pfToSearch={pfToSearch}
                     pathSequence={pfPathSequence}
+                    relationshipResult={pfResult}
                     onPfFromChange={setPfFrom}
                     onPfToChange={setPfTo}
                     onPfFromSearchChange={setPfFromSearch}
@@ -1496,6 +1488,7 @@ export default function FamilyGraphApp() {
                   pfFromSearch={pfFromSearch}
                   pfToSearch={pfToSearch}
                   pathSequence={pfPathSequence}
+                  relationshipResult={pfResult}
                   onPfFromChange={setPfFrom}
                   onPfToChange={setPfTo}
                   onPfFromSearchChange={setPfFromSearch}
@@ -1676,6 +1669,33 @@ export default function FamilyGraphApp() {
             anchorMember={anchor}
             existingMembers={members}
             onFocusExisting={(id) => { setSelectedMemberId(id); setQuickAdd(null) }}
+            onLinkExisting={async (existingId) => {
+              if (!quickAdd || !user) return
+              const { relType, anchorId } = quickAdd
+              const anc = members.find(m => m.id === anchorId)
+              const existing = members.find(m => m.id === existingId)
+              if (!anc || !existing) return
+              try {
+                if (relType === 'father' || relType === 'mother') {
+                  await dbUpdateMember(anchorId, { parentIds: [...new Set([...(anc.parentIds ?? []), existingId])] })
+                } else if (relType === 'spouse') {
+                  await dbUpdateMember(anchorId, { spouseIds: [...new Set([...(anc.spouseIds ?? []), existingId])] })
+                  await dbUpdateMember(existingId, { spouseIds: [...new Set([...(existing.spouseIds ?? []), anchorId])] })
+                } else if (relType === 'child') {
+                  await dbUpdateMember(existingId, { parentIds: [...new Set([...(existing.parentIds ?? []), anchorId])] })
+                } else if (relType === 'sibling') {
+                  const sharedParentId = anc.parentIds[0]
+                  if (sharedParentId) {
+                    await dbUpdateMember(existingId, { parentIds: [...new Set([...(existing.parentIds ?? []), sharedParentId])] })
+                  }
+                }
+                toast({ title: 'Family link created', description: `${existing.name} linked as ${QUICK_REL_LABELS[relType]}.` })
+                setQuickAdd(null)
+              } catch (err) {
+                console.error('[link-existing]', err)
+                toast({ title: 'Could not link', description: 'Please try again.', variant: 'destructive' })
+              }
+            }}
             onAdd={handleQuickAddSubmit}
           />
         ) : null
