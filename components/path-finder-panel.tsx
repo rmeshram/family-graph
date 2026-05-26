@@ -20,6 +20,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown, ChevronUp, ArrowRight, Share2, Check } from 'lucide-react'
 import { FamilyMember } from '@/lib/types'
 import { computeSemanticRelationship } from '@/lib/relation-engine'
+import { type RelationshipResult } from '@/lib/relationship-engine'
 import { lookupIndianTerm } from '@/lib/cultural-terms'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -41,9 +42,10 @@ function genLabel(delta: number): string {
 }
 
 function edgeArrow(edgeType: string): string {
-  if (edgeType === 'UP') return '↑'
-  if (edgeType === 'DOWN') return '↓'
+  if (edgeType === 'PARENT' || edgeType === 'UP') return '↑'
+  if (edgeType === 'CHILD' || edgeType === 'DOWN') return '↓'
   if (edgeType === 'SPOUSE') return '↔'
+  if (edgeType === 'SIBLING' || edgeType === 'SIB') return '↔'
   return '·'
 }
 
@@ -67,6 +69,12 @@ export interface PathFinderPanelProps {
   pfFromSearch: string
   pfToSearch: string
   pathSequence: string[]
+  /**
+   * Pre-computed canonical result from getRelationshipBetweenPeople().
+   * When provided the panel uses it directly instead of recomputing internally,
+   * eliminating duplicate BFS work. The dashboard always provides this.
+   */
+  relationshipResult?: RelationshipResult | null
   onPfFromChange: (id: string) => void
   onPfToChange: (id: string) => void
   onPfFromSearchChange: (s: string) => void
@@ -86,6 +94,7 @@ export function PathFinderPanel({
   pfFromSearch,
   pfToSearch,
   pathSequence,
+  relationshipResult,
   onPfFromChange,
   onPfToChange,
   onPfFromSearchChange,
@@ -103,11 +112,48 @@ export function PathFinderPanel({
   const toMember = members.find((m) => m.id === pfTo)
 
   // ── Semantic intelligence ──────────────────────────────────────────────
+  // When the dashboard provides a pre-computed RelationshipResult, map it into
+  // the SemanticRelationship display shape used by the rendering below.
+  // This eliminates duplicate BFS computation while keeping the panel
+  // self-sufficient (falls back to internal computation for standalone usage).
   const semanticResult = useMemo(() => {
-    if (!pfFrom || !pfTo || pfFrom === pfTo || pathSequence.length < 2) return null
+    if (!pfFrom || !pfTo || pfFrom === pfTo) return null
     const fromLabel = pfFrom === selfMemberId ? 'your' : `${fromMember?.name?.split(' ')[0] ?? ''}'s`
+
+    if (relationshipResult) {
+      if (!relationshipResult.found) return null
+      const memberMap = new Map(members.map(m => [m.id, m]))
+      // Build pathWithLabels from pathSequence (already filtered, no virtual nodes)
+      const pathWithLabels = pathSequence.map((id, idx) => {
+        const member = memberMap.get(id)
+        if (!member) return null
+        if (idx === 0) {
+          return { member, stepLabel: fromLabel === 'your' ? 'You' : member.name.split(' ')[0], edgeType: 'START' as const }
+        }
+        const stepLabel = idx - 1 < relationshipResult.semanticChain.length
+          ? relationshipResult.semanticChain[idx - 1]
+          : member.name.split(' ')[0]
+        const edgeType = idx - 1 < relationshipResult.path.length
+          ? relationshipResult.path[idx - 1]
+          : 'CHILD' as const
+        return { member, stepLabel, edgeType }
+      }).filter((n): n is NonNullable<typeof n> => n !== null)
+
+      return {
+        found: true as const,
+        canonicalLabel: relationshipResult.relationship,
+        chain: relationshipResult.semanticChain,
+        semanticChain: relationshipResult.semanticChain,
+        chainSentence: relationshipResult.chainSentence,
+        pathWithLabels,
+        metadata: relationshipResult.metadata,
+        confidence: relationshipResult.confidence,
+      }
+    }
+
+    // Fallback: compute via canonical engine (shim delegates to getRelationshipBetweenPeople)
     return computeSemanticRelationship(pfFrom, pfTo, members, fromLabel, selfMemberId)
-  }, [pfFrom, pfTo, members, pathSequence.length, selfMemberId, fromMember])
+  }, [pfFrom, pfTo, members, selfMemberId, fromMember, relationshipResult, pathSequence])
 
   const indianTerm = useMemo(() => {
     if (!semanticResult?.found || !toMember) return null

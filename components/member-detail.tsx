@@ -42,7 +42,7 @@ import {
 } from 'lucide-react'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { cn, computeProfileCompleteness } from '@/lib/utils'
-import { findRelationshipPath, computeRelationLabel } from '@/lib/relation-engine'
+import { findRelationshipPath, computeRelationLabel, enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { useMilestones } from '@/hooks/use-milestones'
 import { useState as useLocalState } from 'react'
@@ -192,11 +192,16 @@ export function MemberDetail({
       selfMemberId && member.id === selfMemberId
     ))
   const completeness = computeProfileCompleteness(member)
+  // Enrich with virtual parent/sibling edges so BFS can traverse cousin,
+  // uncle, and other multi-hop paths that depend on shared virtual parents.
+  const enrichedMembers = selfMember
+    ? enrichMembersWithDerivedEdges(allMembers, selfMember.id)
+    : allMembers
   const relationPath = selfMember && !isYourNode
-    ? findRelationshipPath(selfMember.id, member.id, allMembers)
+    ? findRelationshipPath(selfMember.id, member.id, enrichedMembers)
     : null
   const relationLabel = selfMember && !isYourNode
-    ? computeRelationLabel(selfMember.id, member.id, allMembers)
+    ? computeRelationLabel(selfMember.id, member.id, enrichedMembers)
     : null
 
   // Contact info is masked for non-admins when the member's claimer has enabled hideContactInfo
