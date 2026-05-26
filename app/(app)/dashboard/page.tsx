@@ -1046,7 +1046,8 @@ export default function FamilyGraphApp() {
         )}
 
         {/* ── Top Bar ──────────────────────────────────────────────── */}
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
+        {/* pl-14 on mobile clears the AppSidebar fixed hamburger (left-3 w-9 = 12+36=48px); lg:px-4 restores normal desktop padding */}
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 pl-14 pr-4 lg:px-4 backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
           <div className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
             <Home className="h-3.5 w-3.5" />
             <span className="text-foreground font-medium">Family Tree</span>
@@ -1393,8 +1394,9 @@ export default function FamilyGraphApp() {
               </div>
             )}
 
-            {/* Mobile member list FAB — only on small screens in graph/universe modes */}
-            {isMobile && (viewMode === 'graph' || viewMode === 'universe') && (
+            {/* Mobile member list FAB — hidden when node popup is open (avoids bottom overlap) */}
+            {isMobile && (viewMode === 'graph' || viewMode === 'universe')
+              && !(viewMode === 'universe' && selectedMemberId && !detailMemberId) && (
               <button
                 onClick={() => setMemberListOpen(true)}
                 className="absolute bottom-[3.75rem] left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
@@ -1453,29 +1455,61 @@ export default function FamilyGraphApp() {
             </aside>
           )}
 
-          {/* Path Finder Panel */}
+          {/* Path Finder Panel — side panel on desktop, bottom sheet on mobile */}
           {pathFinderOpen && viewMode === 'universe' && !showAIWidget && !showInviteWidget && (
-            <aside className="w-80 shrink-0 xl:w-96 h-full min-h-0 overflow-hidden border-l border-border/40">
-              <PathFinderPanel
-                members={filteredMembers}
-                pfFrom={pfFrom}
-                pfTo={pfTo}
-                pfFromSearch={pfFromSearch}
-                pfToSearch={pfToSearch}
-                pathSequence={pfPathSequence}
-                onPfFromChange={setPfFrom}
-                onPfToChange={setPfTo}
-                onPfFromSearchChange={setPfFromSearch}
-                onPfToSearchChange={setPfToSearch}
-                onSelectMember={handleSelectMember}
-                onClose={() => {
+            isMobile ? (
+              <Drawer open={pathFinderOpen} onOpenChange={(open) => {
+                if (!open) {
                   setPathFinderOpen(false)
                   setPfFrom(''); setPfTo(''); setPfFromSearch(''); setPfToSearch('')
                   setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
-                }}
-                selfMemberId={selfMember?.id ?? null}
-              />
-            </aside>
+                }
+              }} direction="bottom">
+                <DrawerContent className="max-h-[75vh] overflow-y-auto">
+                  <PathFinderPanel
+                    members={filteredMembers}
+                    pfFrom={pfFrom}
+                    pfTo={pfTo}
+                    pfFromSearch={pfFromSearch}
+                    pfToSearch={pfToSearch}
+                    pathSequence={pfPathSequence}
+                    onPfFromChange={setPfFrom}
+                    onPfToChange={setPfTo}
+                    onPfFromSearchChange={setPfFromSearch}
+                    onPfToSearchChange={setPfToSearch}
+                    onSelectMember={handleSelectMember}
+                    onClose={() => {
+                      setPathFinderOpen(false)
+                      setPfFrom(''); setPfTo(''); setPfFromSearch(''); setPfToSearch('')
+                      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+                    }}
+                    selfMemberId={selfMember?.id ?? null}
+                  />
+                </DrawerContent>
+              </Drawer>
+            ) : (
+              <aside className="w-80 shrink-0 xl:w-96 h-full min-h-0 overflow-hidden border-l border-border/40">
+                <PathFinderPanel
+                  members={filteredMembers}
+                  pfFrom={pfFrom}
+                  pfTo={pfTo}
+                  pfFromSearch={pfFromSearch}
+                  pfToSearch={pfToSearch}
+                  pathSequence={pfPathSequence}
+                  onPfFromChange={setPfFrom}
+                  onPfToChange={setPfTo}
+                  onPfFromSearchChange={setPfFromSearch}
+                  onPfToSearchChange={setPfToSearch}
+                  onSelectMember={handleSelectMember}
+                  onClose={() => {
+                    setPathFinderOpen(false)
+                    setPfFrom(''); setPfTo(''); setPfFromSearch(''); setPfToSearch('')
+                    setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+                  }}
+                  selfMemberId={selfMember?.id ?? null}
+                />
+              </aside>
+            )
           )}
 
           {/* Member Detail — aside on desktop, bottom sheet on mobile */}
