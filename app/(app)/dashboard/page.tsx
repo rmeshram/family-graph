@@ -589,6 +589,23 @@ export default function FamilyGraphApp() {
       m.parentIds.forEach(pid => add(m.id, pid))
       m.spouseIds.forEach(sid => add(m.id, sid))
     })
+    // Add sibling edges: any two members sharing a parentId get a direct edge so
+    // cousin paths (and shorter sibling paths) are traversable without going through
+    // the parent node twice.
+    const parentToChildren = new Map<string, string[]>()
+    enriched.forEach(m => {
+      m.parentIds.forEach(pid => {
+        if (!parentToChildren.has(pid)) parentToChildren.set(pid, [])
+        parentToChildren.get(pid)!.push(m.id)
+      })
+    })
+    for (const siblings of parentToChildren.values()) {
+      for (let i = 0; i < siblings.length; i++) {
+        for (let j = i + 1; j < siblings.length; j++) {
+          add(siblings[i], siblings[j])
+        }
+      }
+    }
     return map
   }, [isDemoMode, dbMembers])
 
@@ -1397,15 +1414,15 @@ export default function FamilyGraphApp() {
             {/* Mobile member list FAB — hidden when node popup is open (avoids bottom overlap) */}
             {isMobile && (viewMode === 'graph' || viewMode === 'universe')
               && !(viewMode === 'universe' && selectedMemberId && !detailMemberId) && (
-              <button
-                onClick={() => setMemberListOpen(true)}
-                className="absolute bottom-[3.75rem] left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
-                style={{ background: 'var(--surface-header)' }}
-              >
-                <Users2 className="h-4 w-4" />
-                <span>Members</span>
-              </button>
-            )}
+                <button
+                  onClick={() => setMemberListOpen(true)}
+                  className="absolute bottom-[3.75rem] left-4 z-30 flex items-center gap-2 rounded-full border border-border/40 px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-md transition-all active:scale-95"
+                  style={{ background: 'var(--surface-header)' }}
+                >
+                  <Users2 className="h-4 w-4" />
+                  <span>Members</span>
+                </button>
+              )}
 
             {/* Mobile member list bottom sheet */}
             {isMobile && (
@@ -1676,6 +1693,33 @@ export default function FamilyGraphApp() {
             anchorMember={anchor}
             existingMembers={members}
             onFocusExisting={(id) => { setSelectedMemberId(id); setQuickAdd(null) }}
+            onLinkExisting={async (existingId) => {
+              if (!quickAdd || !user) return
+              const { relType, anchorId } = quickAdd
+              const anc = members.find(m => m.id === anchorId)
+              const existing = members.find(m => m.id === existingId)
+              if (!anc || !existing) return
+              try {
+                if (relType === 'father' || relType === 'mother') {
+                  await dbUpdateMember(anchorId, { parentIds: [...new Set([...(anc.parentIds ?? []), existingId])] })
+                } else if (relType === 'spouse') {
+                  await dbUpdateMember(anchorId, { spouseIds: [...new Set([...(anc.spouseIds ?? []), existingId])] })
+                  await dbUpdateMember(existingId, { spouseIds: [...new Set([...(existing.spouseIds ?? []), anchorId])] })
+                } else if (relType === 'child') {
+                  await dbUpdateMember(existingId, { parentIds: [...new Set([...(existing.parentIds ?? []), anchorId])] })
+                } else if (relType === 'sibling') {
+                  const sharedParentId = anc.parentIds[0]
+                  if (sharedParentId) {
+                    await dbUpdateMember(existingId, { parentIds: [...new Set([...(existing.parentIds ?? []), sharedParentId])] })
+                  }
+                }
+                toast({ title: 'Family link created', description: `${existing.name} linked as ${QUICK_REL_LABELS[relType]}.` })
+                setQuickAdd(null)
+              } catch (err) {
+                console.error('[link-existing]', err)
+                toast({ title: 'Could not link', description: 'Please try again.', variant: 'destructive' })
+              }
+            }}
             onAdd={handleQuickAddSubmit}
           />
         ) : null

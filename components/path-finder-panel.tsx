@@ -104,10 +104,10 @@ export function PathFinderPanel({
 
   // ── Semantic intelligence ──────────────────────────────────────────────
   const semanticResult = useMemo(() => {
-    if (!pfFrom || !pfTo || pfFrom === pfTo || pathSequence.length < 2) return null
+    if (!pfFrom || !pfTo || pfFrom === pfTo) return null
     const fromLabel = pfFrom === selfMemberId ? 'your' : `${fromMember?.name?.split(' ')[0] ?? ''}'s`
     return computeSemanticRelationship(pfFrom, pfTo, members, fromLabel, selfMemberId)
-  }, [pfFrom, pfTo, members, pathSequence.length, selfMemberId, fromMember])
+  }, [pfFrom, pfTo, members, selfMemberId, fromMember])
 
   const indianTerm = useMemo(() => {
     if (!semanticResult?.found || !toMember) return null

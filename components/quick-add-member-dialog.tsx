@@ -39,6 +39,13 @@ interface QuickAddMemberDialogProps {
   existingMembers?: FamilyMember[]
   /** Called when user picks an existing node instead of creating a duplicate. */
   onFocusExisting?: (id: string) => void
+  /**
+   * When provided, the duplicate-warning UI shows a "Use as [RelType]" button
+   * that links the anchor to the existing node (patches parentIds / spouseIds)
+   * instead of creating a second node. The handler is responsible for persisting
+   * the change; the dialog will close itself afterwards.
+   */
+  onLinkExisting?: (existingId: string) => Promise<void>
   onAdd: (
     name: string,
     gender: 'male' | 'female' | 'other' | '',
@@ -55,6 +62,7 @@ export function QuickAddMemberDialog({
   anchorMember,
   existingMembers,
   onFocusExisting,
+  onLinkExisting,
   onAdd,
 }: QuickAddMemberDialogProps) {
   const [name, setName] = useState('')
@@ -63,6 +71,7 @@ export function QuickAddMemberDialog({
   const [nameError, setNameError] = useState('')
   const [birthYearError, setBirthYearError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isLinking, setIsLinking] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
 
   const reset = () => {
@@ -236,15 +245,29 @@ export function QuickAddMemberDialog({
               <div className="flex gap-2">
                 <Button
                   type="button" variant="outline" size="sm" className="flex-1 h-7 text-xs"
-                  onClick={() => { onFocusExisting?.(duplicateWarning.member.id); handleOpenChange(false) }}
+                  disabled={isLinking}
+                  onClick={async () => {
+                    if (onLinkExisting) {
+                      setIsLinking(true)
+                      try {
+                        await onLinkExisting(duplicateWarning.member.id)
+                      } finally {
+                        setIsLinking(false)
+                      }
+                      handleOpenChange(false)
+                    } else {
+                      onFocusExisting?.(duplicateWarning.member.id)
+                      handleOpenChange(false)
+                    }
+                  }}
                 >
-                  <UserCheck className="h-3 w-3 mr-1" />
-                  Open Existing
+                  {isLinking ? <Spinner className="h-3 w-3 mr-1" /> : <UserCheck className="h-3 w-3 mr-1" />}
+                  {onLinkExisting ? `Use as ${label}` : 'Open Existing'}
                 </Button>
                 {duplicateWarning.tier === 'medium' && (
                   <Button
                     type="button" variant="ghost" size="sm" className="flex-1 h-7 text-xs"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isLinking}
                     onClick={() => { setDuplicateWarning(null); doAdd(normalizeStoredName(name)) }}
                   >
                     {isSubmitting ? <Spinner className="h-3 w-3" /> : 'Add Anyway'}
