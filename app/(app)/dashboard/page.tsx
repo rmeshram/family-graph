@@ -27,7 +27,7 @@ import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
-import { computePostAddSuggestions, type RelationshipSuggestion, type RelationshipAction } from '@/lib/relationship-engine'
+import { computePostAddSuggestions, getRelationshipBetweenPeople, type RelationshipSuggestion, type RelationshipAction, type RelationshipResult } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -573,76 +573,38 @@ export default function FamilyGraphApp() {
   const [pfPathEdges, setPfPathEdges] = useState<Set<string>>(new Set())
   const [pfPathSequence, setPfPathSequence] = useState<string[]>([])
 
-  // ── Path Finder BFS helpers ──────────────────────────────────────────────
-  const dashboardAdjacencyMap = useMemo(() => {
-    const map = new Map<string, Set<string>>()
-    const add = (a: string, b: string) => {
-      if (!map.has(a)) map.set(a, new Set())
-      if (!map.has(b)) map.set(b, new Set())
-      map.get(a)!.add(b); map.get(b)!.add(a)
-    }
-    // Use enriched members: derives edges from relationship labels for isolated nodes
+  // ── Path Finder — canonical graph engine ─────────────────────────────────────
+  // Single useMemo delegates to getRelationshipBetweenPeople (the one source of
+  // truth). No custom adjacency map, no duplicate BFS implementation.
+  const pfResult = useMemo<RelationshipResult | null>(() => {
+    if (!pfFrom || !pfTo || pfFrom === pfTo) return null
     const base = isDemoMode ? sampleFamilyMembers : dbMembers
     const selfMemberForEnrich = base.find(m => m.relationship === 'self')
-    const enriched = selfMemberForEnrich ? enrichMembersWithDerivedEdges(base, selfMemberForEnrich.id) : base
-    enriched.forEach(m => {
-      m.parentIds.forEach(pid => add(m.id, pid))
-      m.spouseIds.forEach(sid => add(m.id, sid))
-    })
-    // Add sibling edges: any two members sharing a parentId get a direct edge so
-    // cousin paths (and shorter sibling paths) are traversable without going through
-    // the parent node twice.
-    const parentToChildren = new Map<string, string[]>()
-    enriched.forEach(m => {
-      m.parentIds.forEach(pid => {
-        if (!parentToChildren.has(pid)) parentToChildren.set(pid, [])
-        parentToChildren.get(pid)!.push(m.id)
-      })
-    })
-    for (const siblings of parentToChildren.values()) {
-      for (let i = 0; i < siblings.length; i++) {
-        for (let j = i + 1; j < siblings.length; j++) {
-          add(siblings[i], siblings[j])
-        }
-      }
-    }
-    return map
-  }, [isDemoMode, dbMembers])
-
-  const findExternalPath = useCallback((fromId: string, toId: string) => {
-    if (!fromId || !toId || fromId === toId) {
-      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
-      return
-    }
-    const parent = new Map<string, string>([[fromId, '']])
-    const queue = [fromId]
-    let found = false
-    outer: while (queue.length > 0) {
-      const cur = queue.shift()!
-      for (const nid of (dashboardAdjacencyMap.get(cur) ?? new Set())) {
-        if (!parent.has(nid)) {
-          parent.set(nid, cur)
-          if (nid === toId) { found = true; break outer }
-          queue.push(nid)
-        }
-      }
-    }
-    if (!found) { setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([]); return }
-    const nodes: string[] = []; const edgeKeys = new Set<string>()
-    let cur = toId
-    while (cur) {
-      nodes.unshift(cur)
-      const prev = parent.get(cur)!
-      if (prev) edgeKeys.add([prev, cur].sort().join('|'))
-      cur = prev
-    }
-    setPfPathNodes(new Set(nodes)); setPfPathEdges(edgeKeys); setPfPathSequence(nodes)
-  }, [dashboardAdjacencyMap])
+    const enriched = selfMemberForEnrich
+      ? enrichMembersWithDerivedEdges(base, selfMemberForEnrich.id)
+      : base
+    const fromM = enriched.find(m => m.id === pfFrom)
+    const fromLabel = pfFrom === selfMemberForEnrich?.id
+      ? 'your'
+      : `${fromM?.name?.split(' ')[0] ?? ''}'s`
+    return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
+  }, [pfFrom, pfTo, isDemoMode, dbMembers])
 
   useEffect(() => {
-    if (pfFrom && pfTo && pfFrom !== pfTo) findExternalPath(pfFrom, pfTo)
-    else { setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([]) }
-  }, [pfFrom, pfTo, findExternalPath])
+    if (pfResult?.found && pfResult.people.length > 0) {
+      // Filter virtual structural anchors — only real member IDs reach the UI
+      const seq = pfResult.people.filter(id => !id.startsWith('__virt_'))
+      setPfPathSequence(seq)
+      setPfPathNodes(new Set(seq))
+      const edgeKeys = new Set<string>()
+      for (let i = 0; i < seq.length - 1; i++) {
+        edgeKeys.add([seq[i], seq[i + 1]].sort().join('|'))
+      }
+      setPfPathEdges(edgeKeys)
+    } else {
+      setPfPathNodes(new Set()); setPfPathEdges(new Set()); setPfPathSequence([])
+    }
+  }, [pfResult])
 
   const handleOpenPathFinder = useCallback((fromMemberId?: string) => {
     if (!fromMemberId && pathFinderOpen) {
@@ -1490,6 +1452,7 @@ export default function FamilyGraphApp() {
                     pfFromSearch={pfFromSearch}
                     pfToSearch={pfToSearch}
                     pathSequence={pfPathSequence}
+                    relationshipResult={pfResult}
                     onPfFromChange={setPfFrom}
                     onPfToChange={setPfTo}
                     onPfFromSearchChange={setPfFromSearch}
@@ -1513,6 +1476,7 @@ export default function FamilyGraphApp() {
                   pfFromSearch={pfFromSearch}
                   pfToSearch={pfToSearch}
                   pathSequence={pfPathSequence}
+                  relationshipResult={pfResult}
                   onPfFromChange={setPfFrom}
                   onPfToChange={setPfTo}
                   onPfFromSearchChange={setPfFromSearch}
