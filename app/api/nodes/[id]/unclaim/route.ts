@@ -34,23 +34,33 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Fail early with a clear message if service role key is not configured
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      { error: 'SERVER_MISCONFIGURED', message: 'Service role key is not set on this server. Add SUPABASE_SERVICE_ROLE_KEY to your environment variables.' },
+      { status: 503 }
+    )
+  }
+
   const { id } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
 
-  const admin = adminClient()
-  const { data: node } = await admin
+  // Use authed client for SELECT so it works under normal RLS (user is a family member)
+  const { data: node, error: nodeError } = await supabase
     .from('family_members')
     .select('id, claim_status, claimed_by_user_id, claimed_at, family_id')
     .eq('id', id)
     .single()
 
-  if (!node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
+  if (nodeError || !node) return NextResponse.json({ error: 'NODE_NOT_FOUND', details: nodeError?.message }, { status: 404 })
   if ((node as any).claimed_by_user_id !== user.id)
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
   if ((node as any).claim_status !== 'claimed')
-    return NextResponse.json({ error: 'NOT_CLAIMED' }, { status: 409 })
+    return NextResponse.json({ error: 'NOT_CLAIMED', message: `Node claim_status is "${(node as any).claim_status}", expected "claimed".` }, { status: 409 })
+
+  const admin = adminClient()
 
   const claimedAt = (node as any).claimed_at ? new Date((node as any).claimed_at) : null
   if (claimedAt && Date.now() - claimedAt.getTime() > GRACE_DAYS * 86_400_000) {
