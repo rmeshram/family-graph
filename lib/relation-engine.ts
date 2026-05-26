@@ -402,7 +402,26 @@ export function enrichMembersWithDerivedEdges(
       // m is self's parent
       addP(sid, m.id)
     } else if (['son', 'daughter', 'child'].includes(rel)) {
-      addP(m.id, sid)
+      // ── Generation-aware placement ────────────────────────────────────────
+      // "son" / "daughter" labels are stored by whoever ADDED the member, which
+      // is usually the family admin — NOT necessarily the current viewer (selfId).
+      // Example: Sukhdeo adds Rahul with relationship="son" meaning "Rahul is MY
+      // son". When Shubham (also Sukhdeo's son) views the tree, naive enrichment
+      // sets Shubham as Rahul's parent → Rahul shows as "Son" instead of "Brother".
+      //
+      // Fix: compare generations. If the member is in a strictly LATER generation
+      // than self → they are genuinely self's descendant (child). If same generation
+      // → they are a sibling (both are children of the same parent). If earlier
+      // generation → the label is clearly inverted; treat conservatively as sibling.
+      const mGen = typeof m.generation === 'number' ? m.generation : null
+      const sGen = typeof self.generation === 'number' ? self.generation : null
+      if (mGen !== null && sGen !== null && mGen > sGen) {
+        addP(m.id, sid)  // strictly younger generation → genuine child of self
+      } else {
+        // Same or older generation: the label was set by a different family member.
+        // Treat as a sibling of self (both share the same parent).
+        addP(m.id, getSelfParentId())
+      }
     } else if (['husband', 'wife', 'spouse'].includes(rel)) {
       addSp(sid, m.id)
     } else if (['brother', 'sister', 'sibling'].includes(rel)) {
@@ -412,7 +431,18 @@ export function enrichMembersWithDerivedEdges(
     } else if (['great-grandfather', 'great-grandmother', 'great-grandparent'].some(r => rel.includes(r.split('-')[1]!) && rel.includes('great'))) {
       addP(getSelfGrandparentId(), m.id)
     } else if (['grandson', 'granddaughter', 'grandchild'].includes(rel)) {
-      addP(m.id, getSelfChildId())
+      // Same generation-aware logic: if visibly older or same generation as self,
+      // the label was set by an ancestor — treat as a child of self's sibling
+      // (which is what grandchild-of-admin looks like from a sibling's perspective).
+      const mGen2 = typeof m.generation === 'number' ? m.generation : null
+      const sGen2 = typeof self.generation === 'number' ? self.generation : null
+      if (mGen2 !== null && sGen2 !== null && mGen2 > sGen2 + 1) {
+        addP(m.id, getSelfChildId())  // two generations younger → genuine grandchild
+      } else if (mGen2 !== null && sGen2 !== null && mGen2 === sGen2 + 1) {
+        addP(m.id, sid)  // one generation younger → treat as child (mislabeled)
+      } else {
+        addP(m.id, getSelfSiblingId())  // same/older gen → child of sibling (nephew/niece)
+      }
     } else if (rel === 'uncle' || rel === 'aunt' || rel.startsWith('uncle') || rel.startsWith('aunt')
       || rel.includes('paternal-uncle') || rel.includes('maternal-uncle')
       || rel.includes('paternal-aunt') || rel.includes('maternal-aunt')) {
@@ -432,8 +462,21 @@ export function enrichMembersWithDerivedEdges(
       // m is child of self's uncle (parent's sibling)
       addP(m.id, getSelfUncleId())
     } else {
-      // Unknown / complex label: place adjacent to self's parent as a conservative fallback
-      addP(m.id, getSelfParentId())
+      // Unknown / complex label: use generation to infer position when possible.
+      const mGenU = typeof m.generation === 'number' ? m.generation : null
+      const sGenU = typeof self.generation === 'number' ? self.generation : null
+      if (mGenU !== null && sGenU !== null) {
+        if (mGenU > sGenU) {
+          addP(m.id, sid)  // younger generation → likely a child
+        } else if (mGenU === sGenU) {
+          addP(m.id, getSelfParentId())  // same generation → likely a sibling
+        } else {
+          addP(sid, m.id)  // older generation → likely a parent/ancestor
+        }
+      } else {
+        // No generation data — conservative fallback: place as sibling of self
+        addP(m.id, getSelfParentId())
+      }
     }
   }
 

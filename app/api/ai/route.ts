@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { computeRelationLabel, findRelationshipPath } from '@/lib/relation-engine'
+import { computeRelationLabel, findRelationshipPath, enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import type { FamilyMember } from '@/lib/types'
 
 // ─── Compact member shape (no sensitive fields sent to Gemini) ────────────────
@@ -57,10 +57,16 @@ function resolveGetRelationshipPath(
   if (!memberB) return `Could not find a family member named "${nameB}".`
   if (memberA.id === memberB.id) return `${memberA.name} is the same person.`
 
-  // Cast compact members to FamilyMember for the engine (only graph fields are needed)
+  // Cast compact members to FamilyMember for the engine (only graph fields are needed).
+  // Enrich with derived edges so sibling / cousin / uncle relationships inferred
+  // from shared parentIds (or relationship labels) are traversable.
   const asFamilyMembers = members as unknown as FamilyMember[]
-  const label = computeRelationLabel(memberA.id, memberB.id, asFamilyMembers)
-  const path = findRelationshipPath(memberA.id, memberB.id, asFamilyMembers)
+  const adminMember = asFamilyMembers.find(m => m.relationship === 'self')
+  const enrichAnchorId = adminMember?.id ?? memberA.id
+  const enriched = enrichMembersWithDerivedEdges(asFamilyMembers, enrichAnchorId)
+
+  const label = computeRelationLabel(memberA.id, memberB.id, enriched)
+  const path = findRelationshipPath(memberA.id, memberB.id, enriched)
 
   if (!label || !path) {
     return `No relationship path found between ${memberA.name} and ${memberB.name} in the current family tree.`
