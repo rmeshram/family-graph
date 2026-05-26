@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import type { FamilyMember } from '@/lib/types'
-import { scoreCandidate, normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
+import { scoreCandidate, normalizeStoredName } from '@/lib/match-detection'
 
 export type QuickRelType = 'father' | 'mother' | 'spouse' | 'child' | 'sibling'
 
@@ -39,13 +39,6 @@ interface QuickAddMemberDialogProps {
   existingMembers?: FamilyMember[]
   /** Called when user picks an existing node instead of creating a duplicate. */
   onFocusExisting?: (id: string) => void
-  /**
-   * When provided, the duplicate-warning UI shows a "Use as [RelType]" button
-   * that links the anchor to the existing node (patches parentIds / spouseIds)
-   * instead of creating a second node. The handler is responsible for persisting
-   * the change; the dialog will close itself afterwards.
-   */
-  onLinkExisting?: (existingId: string) => Promise<void>
   onAdd: (
     name: string,
     gender: 'male' | 'female' | 'other' | '',
@@ -62,7 +55,6 @@ export function QuickAddMemberDialog({
   anchorMember,
   existingMembers,
   onFocusExisting,
-  onLinkExisting,
   onAdd,
 }: QuickAddMemberDialogProps) {
   const [name, setName] = useState('')
@@ -71,7 +63,6 @@ export function QuickAddMemberDialog({
   const [nameError, setNameError] = useState('')
   const [birthYearError, setBirthYearError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isLinking, setIsLinking] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
 
   const reset = () => {
@@ -129,38 +120,29 @@ export function QuickAddMemberDialog({
 
     const storedName = normalizeStoredName(name)
 
-    if (existingMembers?.length) {
-      // 1. Hard block: exact name match — no bypass.
-      const exactMatch = findExactNameMatch(existingMembers, storedName, anchorMember.id)
-      if (exactMatch) {
-        setDuplicateWarning({ member: exactMatch as FamilyMember, score: 100, tier: 'high' })
-        return
-      }
-
-      // 2. Soft warning: fuzzy / contact-info match — user may bypass.
-      if (!duplicateWarning) {
-        let bestMatch: DuplicateWarning | null = null
-        for (const m of existingMembers) {
-          if (m.id === anchorMember.id) continue
-          const result = scoreCandidate(
-            {
-              nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
-              addedByName: null, relationship: m.relationship ?? null,
-              birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
-            },
-            { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null }
-          )
-          if (result && result.confidenceScore >= 40) {
-            const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
-            if (!bestMatch || result.confidenceScore > bestMatch.score) {
-              bestMatch = { member: m, score: result.confidenceScore, tier }
-            }
+    // Duplicate detection — pause on first attempt if a likely match exists
+    if (existingMembers?.length && !duplicateWarning) {
+      let bestMatch: DuplicateWarning | null = null
+      for (const m of existingMembers) {
+        if (m.id === anchorMember.id) continue
+        const result = scoreCandidate(
+          {
+            nodeId: m.id, nodeName: m.name, familyId: '', familyName: '',
+            addedByName: null, relationship: m.relationship ?? null,
+            birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
+          },
+          { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null }
+        )
+        if (result && result.confidenceScore >= 40) {
+          const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
+          if (!bestMatch || result.confidenceScore > bestMatch.score) {
+            bestMatch = { member: m, score: result.confidenceScore, tier }
           }
         }
-        if (bestMatch) {
-          setDuplicateWarning(bestMatch)
-          return
-        }
+      }
+      if (bestMatch) {
+        setDuplicateWarning(bestMatch)
+        return // pause — user must choose
       }
     }
 
@@ -254,33 +236,18 @@ export function QuickAddMemberDialog({
               <div className="flex gap-2">
                 <Button
                   type="button" variant="outline" size="sm" className="flex-1 h-7 text-xs"
-                  disabled={isLinking}
-                  onClick={async () => {
-                    if (onLinkExisting) {
-                      setIsLinking(true)
-                      try {
-                        await onLinkExisting(duplicateWarning.member.id)
-                      } finally {
-                        setIsLinking(false)
-                      }
-                      handleOpenChange(false)
-                    } else {
-                      onFocusExisting?.(duplicateWarning.member.id)
-                      handleOpenChange(false)
-                    }
-                  }}
+                  onClick={() => { onFocusExisting?.(duplicateWarning.member.id); handleOpenChange(false) }}
                 >
-                  {isLinking ? <Spinner className="h-3 w-3 mr-1" /> : <UserCheck className="h-3 w-3 mr-1" />}
-                  {onLinkExisting ? `Use as ${label}` : 'Open Existing'}
+                  <UserCheck className="h-3 w-3 mr-1" />
+                  Open Existing
                 </Button>
-                {/* 'Add as Different Person' only for fuzzy warnings, never for exact-name hard-blocks. */}
-                {duplicateWarning.tier === 'medium' && duplicateWarning.score < 100 && (
+                {duplicateWarning.tier === 'medium' && (
                   <Button
                     type="button" variant="ghost" size="sm" className="flex-1 h-7 text-xs"
-                    disabled={isSubmitting || isLinking}
+                    disabled={isSubmitting}
                     onClick={() => { setDuplicateWarning(null); doAdd(normalizeStoredName(name)) }}
                   >
-                    {isSubmitting ? <Spinner className="h-3 w-3" /> : 'Add as Different Person'}
+                    {isSubmitting ? <Spinner className="h-3 w-3" /> : 'Add Anyway'}
                   </Button>
                 )}
               </div>
@@ -291,7 +258,7 @@ export function QuickAddMemberDialog({
             <Button type="button" variant="outline" className="flex-1" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1" disabled={isSubmitting || !!duplicateWarning}>
+            <Button type="submit" className="flex-1" disabled={isSubmitting || duplicateWarning?.tier === 'high'}>
               {isSubmitting ? <Spinner className="h-4 w-4" /> : `Add ${label}`}
             </Button>
           </div>

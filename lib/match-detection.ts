@@ -172,24 +172,3 @@ export function tierColor(tier: ConfidenceTier): string {
       ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
       : 'text-slate-400 bg-slate-500/10 border-slate-500/30'
 }
-
-/**
- * Returns the first existing member whose stored name exactly matches
- * `newName` (case-insensitive, whitespace-normalized).
- *
- * Used for hard-block duplicate prevention in Add/QuickAdd dialogs.
- * Pass `excludeId` when editing so the member being edited is skipped.
- */
-export function findExactNameMatch(
-  existingMembers: { id: string; name: string; relationship?: string | null; birthYear?: number | null }[],
-  newName: string,
-  excludeId?: string,
-): { id: string; name: string; relationship?: string | null; birthYear?: number | null } | null {
-  const normalized = normalizeStoredName(newName).toLowerCase()
-  if (!normalized) return null
-  return (
-    existingMembers.find(
-      (m) => m.id !== excludeId && normalizeStoredName(m.name).toLowerCase() === normalized,
-    ) ?? null
-  )
-}
