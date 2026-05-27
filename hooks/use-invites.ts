@@ -537,9 +537,67 @@ export function useJoinFamily() {
       const normNew = normalizeNameForDup(opts.displayName)
       const { data: existingMembers } = await supabase
         .from('family_members')
-        .select('id, name')
+        .select('id, name, phone, email, is_claimed, claimed_by_user_id')
         .eq('family_id', invite.family_id)
         .limit(500)
+
+      // If a strong exact signal exists, ALWAYS reuse the existing node.
+      // This prevents accidental duplicate nodes during invite onboarding.
+      const normalizedPhone = profile?.phone?.trim() || null
+      const normalizedEmail = userEmail?.trim().toLowerCase() || null
+      const reusableStrongMatch = (existingMembers ?? []).find((m: any) => {
+        if ((m as any).is_claimed) return false
+        const samePhone = normalizedPhone && (m.phone?.trim() === normalizedPhone)
+        const sameEmail = normalizedEmail && (m.email?.trim().toLowerCase() === normalizedEmail)
+        return !!(samePhone || sameEmail)
+      }) as any
+
+      if (reusableStrongMatch?.id) {
+        await (supabase.from('family_members') as any)
+          .update({ claimed_by_user_id: userId, is_claimed: true })
+          .eq('id', reusableStrongMatch.id)
+          .eq('is_claimed', false)
+
+        await supabase.from('profiles').update({
+          member_id: reusableStrongMatch.id,
+          display_name: opts.displayName,
+        }).eq('id', userId)
+
+        // Consume invite atomically
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const incrReuseQ = supabase.from('invite_links') as any
+        let reuseChain = incrReuseQ
+          .update({ used_count: invite.used_count + 1 })
+          .eq('id', invite.id)
+          .eq('used_count', invite.used_count)
+        if (invite.max_uses) reuseChain = reuseChain.lt('used_count', invite.max_uses)
+        reuseChain = reuseChain.select('id')
+        const { data: reuseIncrData, error: reuseIncrErr } = await reuseChain
+        if (reuseIncrErr || !(reuseIncrData as any[])?.length) {
+          throw new Error('This invite was just used by someone else. Please request a new one.')
+        }
+        return invite.family_id
+      }
+
+      const exactPhoneDup = normalizedPhone
+        ? (existingMembers ?? []).find((m: any) => m.phone?.trim() === normalizedPhone)
+        : null
+      if (exactPhoneDup) {
+        throw new Error(
+          `A profile with the same phone number already exists (${(exactPhoneDup as any).name}). ` +
+          'Please claim that profile instead of creating a duplicate.'
+        )
+      }
+
+      const exactEmailDup = normalizedEmail
+        ? (existingMembers ?? []).find((m: any) => m.email?.trim().toLowerCase() === normalizedEmail)
+        : null
+      if (exactEmailDup) {
+        throw new Error(
+          `A profile with the same email already exists (${(exactEmailDup as any).name}). ` +
+          'Please claim that profile instead of creating a duplicate.'
+        )
+      }
 
       const exactDup = (existingMembers ?? []).find(
         m => normalizeNameForDup((m as any).name) === normNew

@@ -65,6 +65,7 @@ interface MobileNodeMenuProps {
   onDelete?: (id: string) => void
   allMembers: FamilyMember[]
   selfMemberId?: string | null
+  relationshipIntelligenceEnabled?: boolean
   isViewer?: boolean
   /** When true (opened via long-press), show admin-only destructive actions */
   isAdminLongPress?: boolean
@@ -84,6 +85,7 @@ export function MobileNodeMenu({
   onDelete,
   allMembers,
   selfMemberId,
+  relationshipIntelligenceEnabled = true,
   isViewer = false,
   isAdminLongPress = false,
 }: MobileNodeMenuProps) {
@@ -107,7 +109,7 @@ export function MobileNodeMenu({
   const canEdit = !isViewer && !isSelf && !!onEdit
   const canInvite = !isViewer && !member.isClaimed && !!onInvite
 
-  const canFindRelationship = !!onFindRelationship && !isSelf
+  const canFindRelationship = !!onFindRelationship && relationshipIntelligenceEnabled && !isSelf
   const canDelete = isAdminLongPress && !isViewer && !isSelf && !!onDelete
 
   // Expand to full height when opened via long-press (admin mode)
@@ -145,7 +147,7 @@ export function MobileNodeMenu({
               <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                 {isSelf ? (
                   <Badge variant="secondary" className="text-[10px] px-1.5 h-4">You</Badge>
-                ) : member.relationship && member.relationship !== 'self' ? (
+                ) : relationshipIntelligenceEnabled && member.relationship && member.relationship !== 'self' ? (
                   <Badge variant="secondary" className="text-[10px] px-1.5 h-4 capitalize">{member.relationship}</Badge>
                 ) : null}
                 {isDeceased && (

@@ -67,6 +67,7 @@ interface MemberDetailProps {
    * profiles point at different nodes within the same tree.
    */
   selfMemberId?: string | null
+  relationshipMode?: 'anonymous_explore' | 'soft_identified' | 'fully_claimed'
   onSetVisibility?: (memberId: string, v: 'public' | 'family' | 'private') => void
   /** Called to toggle anonymous display mode on this member */
   onSetAnonymous?: (memberId: string, anon: boolean) => void
@@ -122,6 +123,7 @@ export function MemberDetail({
   isAdmin = false,
   currentUserId,
   selfMemberId,
+  relationshipMode = 'fully_claimed',
   onSetVisibility,
   onSetAnonymous,
   memberPrivacySettings,
@@ -205,10 +207,16 @@ export function MemberDetail({
   const enrichedMembers = selfMember
     ? enrichMembersWithDerivedEdges(allMembers, selfMember.id)
     : allMembers
-  const relationPath = selfMember && !isYourNode
+  const canShowRelationshipIntelligence = relationshipMode !== 'anonymous_explore'
+  const canViewTargetNodeRelationship =
+    (member.visibility ?? 'family') !== 'private' ||
+    isAdmin ||
+    (currentUserId && member.claimedByUserId === currentUserId)
+
+  const relationPath = selfMember && !isYourNode && canShowRelationshipIntelligence && canViewTargetNodeRelationship
     ? findRelationshipPath(selfMember.id, member.id, enrichedMembers)
     : null
-  const relationLabel = selfMember && !isYourNode
+  const relationLabel = selfMember && !isYourNode && canShowRelationshipIntelligence && canViewTargetNodeRelationship
     ? computeRelationLabel(selfMember.id, member.id, enrichedMembers)
     : null
 
@@ -240,7 +248,7 @@ export function MemberDetail({
                   <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
                     You
                   </Badge>
-                ) : (relationLabel || (member.relationship && member.relationship !== 'self')) ? (
+                ) : (relationLabel || (canShowRelationshipIntelligence && member.relationship && member.relationship !== 'self')) ? (
                   <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
                     {relationLabel ?? member.relationship}
                   </Badge>

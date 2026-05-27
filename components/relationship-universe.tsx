@@ -467,16 +467,14 @@ export function RelationshipUniverse({
   loading = false,
   isAdmin = false,
 }: Props) {
-  // Use the viewer's own member ID as the universe center.
-  // Fall back to the node with relationship==='self' (the family creator's node)
-  // only if the viewer hasn't claimed a node yet — never fall back to members[0]
-  // which could be any arbitrary member.
-  const effectiveSelfId = selfMemberId
-    ?? members.find(m => m.relationship === 'self')?.id
-    ?? ''
+  // Use only the authenticated viewer's resolved member ID for self labeling.
+  // For anonymous explore mode we still need a stable layout anchor to keep the
+  // graph visible, but that anchor must NOT be treated as "You".
+  const effectiveSelfId = selfMemberId ?? ''
+  const layoutAnchorId = selfMemberId ?? selectedMemberId ?? members[0]?.id ?? ''
 
   // ── Graph data ───────────────────────────────────────────────────────────
-  const { people, edges } = useMemo(() => buildUniverse(members, effectiveSelfId), [members, effectiveSelfId])
+  const { people, edges } = useMemo(() => buildUniverse(members, layoutAnchorId), [members, layoutAnchorId])
   const peopleById = useMemo(() => new Map(people.map(p => [p.id, p])), [people])
   // Full FamilyMember lookup — used for anonymous display + NodeActionRing
   const membersById = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
@@ -1070,6 +1068,7 @@ export function RelationshipUniverse({
 
   // ── Relation labels — lazy, visible nodes only ───────────────────────────
   const relationLabels = useMemo(() => {
+    if (!effectiveSelfId) return new Map<string, string>()
     if (zoomLevel === 'cluster') return new Map<string, string>()
     const map = new Map<string, string>()
     for (const id of visibleIds) {

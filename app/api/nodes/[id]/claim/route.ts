@@ -260,18 +260,38 @@ export async function POST(
       )
     }
 
-    // B4: Prevent multiple node claims per family. If this user already has a
-    // user_node_link in this family, reject (one-person-per-node-per-family).
+    // B4: One account can be linked to only one active primary node globally.
+    // Check profile.member_id and active user_node_links.
+    const { data: profileLink } = await admin
+      .from('profiles')
+      .select('member_id')
+      .eq('id', user.id)
+      .maybeSingle()
+    const profileMemberId = (profileLink as any)?.member_id as string | null
+    if (profileMemberId && profileMemberId !== nodeId) {
+      return NextResponse.json(
+        {
+          error: 'ALREADY_LINKED_ACCOUNT',
+          claimedNodeId: profileMemberId,
+          message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
+        },
+        { status: 409 }
+      )
+    }
+
     const { data: existingLink } = await admin
       .from('user_node_links')
       .select('node_id')
       .eq('user_id', user.id)
-      .eq('family_id', (node as any).family_id)
       .neq('node_id', nodeId)
       .maybeSingle()
     if (existingLink) {
       return NextResponse.json(
-        { error: 'ALREADY_LINKED_IN_FAMILY', claimedNodeId: existingLink.node_id, message: 'You are already linked to a different profile in this family.' },
+        {
+          error: 'ALREADY_LINKED_ACCOUNT',
+          claimedNodeId: (existingLink as any).node_id,
+          message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
+        },
         { status: 409 }
       )
     }

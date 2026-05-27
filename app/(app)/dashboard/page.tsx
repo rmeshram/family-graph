@@ -51,7 +51,7 @@ import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
-  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck,
+  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -639,13 +639,61 @@ export default function FamilyGraphApp() {
       .slice(0, 30)
   }, [isDemoMode, members, storiesByMember])
 
-  // The "self" member — use profile.member_id (authoritative), then claimedByUserId
-  // (catches the case where profile.member_id is stale immediately after join),
-  // then fall back to relationship === 'self' ONLY in demo mode (no real user profile).
-  const selfMember = members.find(m => m.id === (profile as any)?.member_id)
-    ?? members.find(m => m.claimedByUserId === user?.id)
-    ?? (isDemoMode ? members.find(m => m.relationship === 'self') : null)
-    ?? null
+  // Canonical self resolver: exactly one source of truth at a time.
+  // Priority: profiles.member_id -> unique claimed_by_user_id mapping.
+  // We never infer self from static relationship labels in production data.
+  const selfResolution = useMemo(() => {
+    const profileMemberId = (profile as any)?.member_id as string | null | undefined
+    const claimedMatches = user?.id
+      ? members.filter((m) => m.claimedByUserId === user.id)
+      : []
+
+    if (isDemoMode) {
+      const demoSelf = members.find((m) => m.relationship === 'self')?.id ?? null
+      return { id: demoSelf, warning: null as string | null }
+    }
+
+    if (profileMemberId) {
+      const profileNodeExists = members.some((m) => m.id === profileMemberId)
+      if (profileNodeExists) {
+        return { id: profileMemberId, warning: null as string | null }
+      }
+      if (claimedMatches.length === 1) {
+        return {
+          id: claimedMatches[0].id,
+          warning: 'Your profile mapping was stale, so we recovered your self node from claim ownership.',
+        }
+      }
+      return {
+        id: null,
+        warning: 'Your linked profile node could not be found. Ask an admin to re-link your account.',
+      }
+    }
+
+    if (claimedMatches.length === 1) {
+      return { id: claimedMatches[0].id, warning: null as string | null }
+    }
+    if (claimedMatches.length > 1) {
+      return {
+        id: null,
+        warning: 'Multiple nodes are linked to this account. Ask an admin to resolve duplicate claims.',
+      }
+    }
+
+    return { id: null, warning: null as string | null }
+  }, [isDemoMode, members, profile, user?.id])
+
+  const selfMember = selfResolution.id
+    ? (members.find((m) => m.id === selfResolution.id) ?? null)
+    : null
+
+  const identityMode = useMemo<'anonymous_explore' | 'soft_identified' | 'fully_claimed'>(() => {
+    if (isDemoMode) return 'fully_claimed'
+    if (!selfMember) return 'anonymous_explore'
+    return (selfMember.isClaimed && selfMember.claimedByUserId === user?.id)
+      ? 'fully_claimed'
+      : 'soft_identified'
+  }, [isDemoMode, selfMember, user?.id])
 
   // Detect if the user's previously claimed node was deleted from the tree.
   // profile.member_id is set but no matching node exists → node was removed by admin.
@@ -660,7 +708,9 @@ export default function FamilyGraphApp() {
   // Relationship perspective should only be enabled when the viewer has a
   // claimed self node. In unclaimed mode we deliberately hide personalized
   // labels (uncle/cousin/etc.) and show a neutral tree.
-  const relationshipPerspectiveEnabled = isDemoMode || !!selfMember
+  const relationshipPerspectiveEnabled = isDemoMode || identityMode !== 'anonymous_explore'
+  const relationshipIntelligenceEnabled = isDemoMode || identityMode !== 'anonymous_explore'
+  const fullRelationshipActivation = isDemoMode || identityMode === 'fully_claimed'
 
   const displayMembers = useMemo(() => {
     if (relationshipPerspectiveEnabled) return members
@@ -1116,6 +1166,20 @@ export default function FamilyGraphApp() {
           </div>
         )}
 
+        {!isDemoMode && selfResolution.warning && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/25 bg-amber-500/8 px-3 py-1.5 text-[11px] text-amber-300">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            <span>{selfResolution.warning}</span>
+          </div>
+        )}
+
+        {!isDemoMode && identityMode === 'anonymous_explore' && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/20 bg-sky-500/5 px-3 py-1.5 text-[11px] text-sky-300">
+            <Shield className="h-3 w-3 shrink-0" />
+            <span>Explore mode: relationship intelligence is hidden until your identity is verified.</span>
+          </div>
+        )}
+
         {/* DB load error banner */}
         {dbError && !isDemoMode && (
           <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive">
@@ -1321,6 +1385,7 @@ export default function FamilyGraphApp() {
                 selectedMemberId={selectedMemberId}
                 onSelectMember={handleSelectMember}
                 selfMemberId={selfMember?.id ?? null}
+                relationshipIntelligenceEnabled={relationshipIntelligenceEnabled}
                 maxDegree={maxDegree}
                 onMaxDegreeChange={setMaxDegree}
                 totalCount={isDemoMode ? members.length : dbTotalCount}
@@ -1354,7 +1419,7 @@ export default function FamilyGraphApp() {
                 }}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                 onOpenProfile={!isMobile ? handleOpenProfileFromRing : undefined}
-                onFindRelationship={!isMobile ? handleOpenPathFinder : undefined}
+                onFindRelationship={!isMobile && relationshipIntelligenceEnabled ? handleOpenPathFinder : undefined}
                 onInviteNode={!isDemoMode && !isViewer && !isMobile
                   ? () => { setShowInviteWidget(true); setShowAIWidget(false) }
                   : undefined}
@@ -1375,7 +1440,7 @@ export default function FamilyGraphApp() {
                 selectedMemberId={selectedMemberId}
                 onSelectMember={handleSelectUniverseMember}
                 pathHighlight={pfPathSequence.length > 0 ? { nodes: pfPathNodes, edges: pfPathEdges, sequence: pfPathSequence } : undefined}
-                onOpenPathFinder={handleOpenPathFinder}
+                onOpenPathFinder={relationshipIntelligenceEnabled ? handleOpenPathFinder : undefined}
                 onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 pathFinderOpen={pathFinderOpen}
                 detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
@@ -1387,7 +1452,7 @@ export default function FamilyGraphApp() {
             )}
 
             {/* ── Relationship Intelligence suggestions banner ──────── */}
-            {(viewMode === 'universe' || viewMode === 'graph') && pendingSuggestions.length > 0 && (
+            {(viewMode === 'universe' || viewMode === 'graph') && fullRelationshipActivation && pendingSuggestions.length > 0 && (
               <RelationshipSuggestionsBanner
                 suggestions={pendingSuggestions}
                 onAccept={async (actions: RelationshipAction[]) => {
@@ -1423,7 +1488,7 @@ export default function FamilyGraphApp() {
                     className="text-[11px] font-medium whitespace-nowrap opacity-70 hover:opacity-100 transition-opacity px-1"
                     title="Clear exploration trail"
                   >
-                    You
+                    {identityMode === 'anonymous_explore' ? 'Explore' : 'You'}
                   </button>
                   {explorationTrail.map((id, idx) => {
                     const m = members.find((mm) => mm.id === id)
@@ -1502,6 +1567,7 @@ export default function FamilyGraphApp() {
                     selectedMemberId={selectedMemberId}
                     onSelectMember={(id) => { handleSelectMember(id); setMemberListOpen(false) }}
                     selfMemberId={selfMember?.id ?? null}
+                    relationshipIntelligenceEnabled={relationshipIntelligenceEnabled}
                     maxDegree={maxDegree}
                     onMaxDegreeChange={setMaxDegree}
                     totalCount={isDemoMode ? members.length : dbTotalCount}
@@ -1620,6 +1686,7 @@ export default function FamilyGraphApp() {
                 isAdmin={isAdmin}
                 currentUserId={user?.id}
                 selfMemberId={selfMember?.id ?? null}
+                relationshipMode={identityMode}
                 familyId={isDemoMode ? null : familyId}
                 userId={user?.id ?? null}
                 memberPrivacySettings={selectedMemberDisplay?.claimedByUserId === user?.id ? myPrivacySettings : undefined}
@@ -1662,7 +1729,7 @@ export default function FamilyGraphApp() {
                 if (m && !m.isClaimed) { setMobileMenuMemberId(null); setInviteToClaimTarget(m) }
               } : undefined}
               onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
-              onFindRelationship={!isDemoMode ? (id) => {
+              onFindRelationship={!isDemoMode && relationshipIntelligenceEnabled ? (id) => {
                 setMobileMenuMemberId(null)
                 setLongPressMemberId(null)
                 handleOpenPathFinder(id)
@@ -1675,6 +1742,7 @@ export default function FamilyGraphApp() {
               } : undefined}
               allMembers={displayMembers}
               selfMemberId={selfMember?.id ?? null}
+              relationshipIntelligenceEnabled={relationshipIntelligenceEnabled}
               isViewer={isViewer}
               isAdminLongPress={!!longPressMemberId && longPressMemberId === mobileMenuMemberId}
             />
@@ -1722,6 +1790,7 @@ export default function FamilyGraphApp() {
                       isAdmin={isAdmin}
                       currentUserId={user?.id}
                       selfMemberId={selfMember?.id ?? null}
+                      relationshipMode={identityMode}
                       familyId={isDemoMode ? null : familyId}
                       userId={user?.id ?? null}
                       memberPrivacySettings={selectedMember?.claimedByUserId === user?.id ? myPrivacySettings : undefined}

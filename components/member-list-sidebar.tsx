@@ -15,6 +15,7 @@ interface MemberListSidebarProps {
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
   selfMemberId?: string | null
+  relationshipIntelligenceEnabled?: boolean
   maxDegree?: number
   onMaxDegreeChange?: (d: number) => void
   totalCount?: number
@@ -27,6 +28,7 @@ export function MemberListSidebar({
   selectedMemberId,
   onSelectMember,
   selfMemberId,
+  relationshipIntelligenceEnabled = true,
   maxDegree = 10,
   onMaxDegreeChange,
   totalCount,
@@ -73,7 +75,7 @@ export function MemberListSidebar({
   // logged-in user's node. Falls back to the raw DB relationship field when no
   // selfMemberId is available (demo mode / unauthenticated).
   const relationLabels = useMemo<Record<string, string | null>>(() => {
-    if (!selfMemberId) return {}
+    if (!selfMemberId || !relationshipIntelligenceEnabled) return {}
     const map: Record<string, string | null> = {}
     for (const m of members) {
       map[m.id] = m.id === selfMemberId
@@ -81,10 +83,10 @@ export function MemberListSidebar({
         : computeRelationLabel(selfMemberId, m.id, members)
     }
     return map
-  }, [selfMemberId, members])
+  }, [selfMemberId, members, relationshipIntelligenceEnabled])
 
   const degreesMap = useMemo<Record<string, number | null>>(() => {
-    if (!selfMemberId) return {}
+    if (!selfMemberId || !relationshipIntelligenceEnabled) return {}
     const map: Record<string, number | null> = {}
     for (const m of members) {
       map[m.id] = m.id === selfMemberId
@@ -92,7 +94,7 @@ export function MemberListSidebar({
         : computeDegreesOfSeparation(selfMemberId, m.id, members)
     }
     return map
-  }, [selfMemberId, members])
+  }, [selfMemberId, members, relationshipIntelligenceEnabled])
 
   const generationLabels: Record<number, string> = {
     0: 'Great Grandparents',
