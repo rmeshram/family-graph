@@ -28,8 +28,14 @@ export async function GET(request: Request) {
           .select('family_id')
           .eq('id', user.id)
           .single()
-        // New user (no family yet) → onboarding (preserve ?next so invite flow resumes)
+        // New user (no family yet) → onboarding.
+        // EXCEPTION: if the user came from an invite link, skip onboarding entirely.
+        // The join page handles family assignment + member creation / node claim.
+        // Running onboarding first would create an orphan family + duplicate member nodes.
         if (!profile?.family_id) {
+          if (next.startsWith('/join/')) {
+            return NextResponse.redirect(`${origin}${next}`)
+          }
           const onboardingUrl = next !== '/dashboard'
             ? `${origin}/onboarding?next=${encodeURIComponent(next)}`
             : `${origin}/onboarding`

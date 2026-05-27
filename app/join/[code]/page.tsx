@@ -319,10 +319,15 @@ export default function JoinPage() {
       }
 
       // On success the claim API has updated user_node_links + profiles.member_id.
-      // Also bind this user's profile to the family + role so RLS lets them in.
+      // Also bind this user's profile to the family + role + display_name so the
+      // dashboard renders correctly (particularly for users who skipped onboarding).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const profUpdate = supabase.from('profiles') as any
-      await profUpdate.update({ family_id: nodeClaim.familyId, role: 'contributor' }).eq('id', user.id)
+      await profUpdate.update({
+        family_id: nodeClaim.familyId,
+        role: 'contributor',
+        display_name: ncName.trim() || undefined,
+      }).eq('id', user.id)
 
       // Consume the single-use node_claim invite
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

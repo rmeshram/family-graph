@@ -267,6 +267,31 @@ export function useJoinFamily() {
         }
         return invite.family_id
       }
+
+      // Guard: user already has a member node in a DIFFERENT family.
+      // This can happen when onboarding ran before the invite flow (a bug we patched,
+      // but guard defensively). Do NOT create another member — just update the profile
+      // to point to the invited family so the user can see this tree.
+      // They will appear as a viewer without a claimed node until they claim one.
+      if (existingMember && existingMember.family_id !== invite.family_id) {
+        await supabase.from('profiles').update({
+          family_id: invite.family_id,
+          role: invite.role,
+          ...(opts?.displayName ? { display_name: opts.displayName } : {}),
+        }).eq('id', userId)
+        const incrQ = supabase.from('invite_links') as any
+        let chain = incrQ
+          .update({ used_count: invite.used_count + 1 })
+          .eq('id', invite.id)
+          .eq('used_count', invite.used_count)
+        if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
+        chain = chain.select('id')
+        const { data: incD, error: incE } = await chain
+        if (incE || !(incD as any[])?.length) {
+          throw new Error('This invite was just used by someone else. Please request a new one.')
+        }
+        return invite.family_id
+      }
     }
 
     // 2. Update profile with family_id + role

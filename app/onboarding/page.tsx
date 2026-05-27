@@ -141,6 +141,17 @@ function OnboardingContent() {
     setIsLoading(true)
     setErrorMsg(null)
     try {
+      // Belt-and-suspenders: if the user arrived here from an invite link,
+      // redirect immediately WITHOUT creating a family or member nodes.
+      // The auth/callback should have skipped onboarding for /join/ destinations,
+      // but a browser back-button or stale session can still land here.
+      // The join page handles all family + node assignment for invite flows.
+      const inviteNext = searchParams.get('next')
+      if (inviteNext && inviteNext.startsWith('/join/')) {
+        window.location.href = inviteNext
+        return
+      }
+
       const supabase = createClient()
 
       // Refresh session first — ensures JWT is valid before any DB writes
