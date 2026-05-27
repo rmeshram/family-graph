@@ -147,8 +147,14 @@ function OnboardingContent() {
       // but a browser back-button or stale session can still land here.
       // The join page handles all family + node assignment for invite flows.
       const inviteNext = searchParams.get('next')
-      if (inviteNext && inviteNext.startsWith('/join/')) {
-        window.location.href = inviteNext
+      // Also check sessionStorage backup set by the join page before auth redirect
+      const inviteCodeBackup = typeof window !== 'undefined'
+        ? sessionStorage.getItem('fg_invite_return')
+        : null
+      const invitePath = (inviteNext?.startsWith('/join/') ? inviteNext : null)
+        ?? (inviteCodeBackup ? `/join/${inviteCodeBackup}` : null)
+      if (invitePath) {
+        window.location.href = invitePath
         return
       }
 

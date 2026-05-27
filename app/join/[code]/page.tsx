@@ -258,6 +258,13 @@ export default function JoinPage() {
 
   const handleJoin = async (claimId?: string | null) => {
     if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
+    // A3: Block creating a new node when a high-confidence unclaimed match exists.
+    // Allowing "None of these are me" in that case would silently create a duplicate
+    // node and break tree integrity. The user must claim the matched node or contact admin.
+    if (claimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0])) {
+      setMessage('Please select the profile above that matches you. If you believe none are correct, contact the family admin to add you separately.')
+      return
+    }
     setStatus('joining')
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -282,7 +289,12 @@ export default function JoinPage() {
   // then sets profile.family_id so the user lands in the family.
   const handleNodeClaim = async () => {
     if (!nodeClaim) return
-    if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
+    if (!isAuthed) {
+      // Save code as backup in case ?next is lost during signin→signup navigation
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('fg_invite_return', code)
+      router.push(`/auth/signin?next=/join/${code}`)
+      return
+    }
     if (!ncName.trim()) return
     if (nodeClaimSubmittingRef.current) return
     nodeClaimSubmittingRef.current = true
@@ -610,27 +622,39 @@ export default function JoinPage() {
                     })}
                   </div>
 
-                  {/* "That's not me" option */}
-                  <button
-                    onClick={() => setSelectedClaimId(null)}
-                    className={cn(
-                      'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                      selectedClaimId === null
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border/30 bg-muted/10 hover:border-border/50'
-                    )}
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserPlus className="h-4 w-4" />
+                  {/* "That's not me" option — blocked when a high-confidence match exists.
+                      Allowing "create new" for high-confidence matches would produce a
+                      duplicate node. Users must claim the matched node or contact admin. */}
+                  {isRecommendedClaimMatch(scoredMatches[0]) ? (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center space-y-1">
+                      <Shield className="h-4 w-4 mx-auto text-amber-400 opacity-80" />
+                      <p className="text-xs text-amber-400 leading-relaxed">
+                        Based on your details, one of the profiles above likely represents you in this tree.
+                        If none are correct, contact the family admin to add you separately.
+                      </p>
                     </div>
-                    <p className="flex-1 text-sm font-medium text-muted-foreground">
-                      None of these are me — create a new profile
-                    </p>
-                    {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
-                  </button>
+                  ) : (
+                    <button
+                      onClick={() => setSelectedClaimId(null)}
+                      className={cn(
+                        'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                        selectedClaimId === null
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border/30 bg-muted/10 hover:border-border/50'
+                      )}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                        <UserPlus className="h-4 w-4" />
+                      </div>
+                      <p className="flex-1 text-sm font-medium text-muted-foreground">
+                        None of these are me — create a new profile
+                      </p>
+                      {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                    </button>
+                  )}
 
-                  {/* Name + gender when creating new */}
-                  {!FEATURE_FLAGS.enableInviteRelationshipStep && selectedClaimId === null && (
+                  {/* Name + gender when creating new — only relevant for low-confidence matches */}
+                  {!FEATURE_FLAGS.enableInviteRelationshipStep && selectedClaimId === null && !isRecommendedClaimMatch(scoredMatches[0]) && (
                     <div className="space-y-3 rounded-xl border border-border/40 bg-muted/10 p-3">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-muted-foreground">Your name</label>
@@ -657,7 +681,9 @@ export default function JoinPage() {
 
                   {selectedClaimId === undefined && (
                     <p className="text-center text-xs text-muted-foreground">
-                      Select your profile above, or choose "None of these are me".
+                      {isRecommendedClaimMatch(scoredMatches[0])
+                        ? 'Tap the profile above that represents you in the family tree.'
+                        : 'Select your profile above, or choose "None of these are me".'}
                     </p>
                   )}
 
@@ -669,7 +695,8 @@ export default function JoinPage() {
                       onClick={() => handleJoin(selectedClaimId ?? null)}
                       disabled={
                         selectedClaimId === undefined ||
-                        (selectedClaimId === null && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim())
+                        (selectedClaimId === null && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim()) ||
+                        (selectedClaimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0]))
                       }
                       className="flex-1 h-11 bg-primary hover:bg-primary/90"
                     >

@@ -49,7 +49,7 @@ import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
   Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
-  Link2, TreePine, Eye, Crown,
+  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -641,6 +641,16 @@ export default function FamilyGraphApp() {
     ?? (isDemoMode ? members.find(m => m.relationship === 'self') : null)
     ?? null
 
+  // Detect if the user's previously claimed node was deleted from the tree.
+  // profile.member_id is set but no matching node exists → node was removed by admin.
+  const selfNodeDeleted = !isDemoMode && !authLoading && !dbLoading && members.length > 0 &&
+    !!(profile as any)?.member_id && selfMember === null
+
+  // Detect if the user is in a family but hasn't linked their profile to any node yet.
+  // Common for users who joined via a general invite and got routed incorrectly.
+  const hasUnclaimedProfile = !isDemoMode && !authLoading && !dbLoading && members.length > 0 &&
+    !!(profile as any)?.family_id && !(profile as any)?.member_id && selfMember === null
+
   // ── Path Finder — canonical graph engine ─────────────────────────────────────
   // Single useMemo delegates to getRelationshipBetweenPeople (the one source of
   // truth). No custom adjacency map, no duplicate BFS implementation.
@@ -1024,6 +1034,24 @@ export default function FamilyGraphApp() {
           <div className="flex shrink-0 items-center gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-[11px] text-blue-400">
             <Eye className="h-3 w-3 shrink-0" />
             <span>You have <strong>view-only access</strong> — contact the family admin to request contributor or admin access</span>
+          </div>
+        )}
+
+        {/* Orphaned node banner — the node this user claimed was deleted by an admin */}
+        {selfNodeDeleted && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            <span>Your profile node was removed from the family tree. Ask the family admin to re-add you, then claim your new profile.</span>
+          </div>
+        )}
+
+        {/* Unclaimed profile banner — user is in a family but has no linked node yet */}
+        {hasUnclaimedProfile && (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-[11px] text-blue-400">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-3 w-3 shrink-0" />
+              <span>You haven't linked your profile to a node yet — click your name in the tree to claim it.</span>
+            </div>
           </div>
         )}
 

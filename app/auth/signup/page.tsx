@@ -296,6 +296,12 @@ function SignUpContent() {
   const showEmail = FEATURE_FLAGS.enableEmailPasswordAuth
   const showTabs = showPhone && showEmail
   const [tab, setTab] = useState<'phone' | 'email'>(showPhone ? 'phone' : 'email')
+  const searchParams = useSearchParams()
+  const nextParam = searchParams.get('next')
+  // Forward ?next so signin can also return to the same destination (e.g. invite link)
+  const signinHref = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    ? `/auth/signin?next=${encodeURIComponent(nextParam)}`
+    : '/auth/signin'
 
   return (
     <div>
@@ -324,7 +330,7 @@ function SignUpContent() {
 
       <p className="text-center text-sm text-muted-foreground mt-6">
         Already have an account?{" "}
-        <Link href="/auth/signin" className="text-primary hover:underline font-medium">Sign in</Link>
+        <Link href={signinHref} className="text-primary hover:underline font-medium">Sign in</Link>
       </p>
 
       <div className="relative mt-6">

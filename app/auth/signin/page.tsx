@@ -292,6 +292,12 @@ function SignInContent() {
   const showEmail = FEATURE_FLAGS.enableEmailPasswordAuth
   const showTabs = showPhone && showEmail
   const [tab, setTab] = useState<'phone' | 'email'>(showPhone ? 'phone' : 'email')
+  const searchParams = useSearchParams()
+  const nextParam = searchParams.get('next')
+  // Forward ?next so signup can return to the same destination (e.g. invite link)
+  const signupHref = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    ? `/auth/signup?next=${encodeURIComponent(nextParam)}`
+    : '/auth/signup'
 
   return (
     <div>
@@ -320,7 +326,7 @@ function SignInContent() {
 
       <p className="text-center text-sm text-muted-foreground mt-6">
         New to Family Graph?{" "}
-        <Link href="/auth/signup" className="text-primary hover:underline font-medium">Create account</Link>
+        <Link href={signupHref} className="text-primary hover:underline font-medium">Create account</Link>
       </p>
 
       <div className="relative mt-6">
