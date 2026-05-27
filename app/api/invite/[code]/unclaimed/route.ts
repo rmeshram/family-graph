@@ -25,7 +25,7 @@ export async function GET(
   // Validate the invite code
   const { data: invite, error: inviteErr } = await supabase
     .from('invite_links')
-    .select('id, family_id, expires_at, consumed_at, max_uses, used_count, created_by, invite_type, node_id')
+    .select('id, family_id, expires_at, consumed_at, max_uses, used_count, created_by, invite_type, node_id, birth_year_hint')
     .eq('code', code.toUpperCase())
     .single()
 
@@ -77,6 +77,7 @@ export async function GET(
     inviterMemberId,
     nodes: nodes ?? [],
     nodePreview,
+    inviteBirthYearHint: (invite as any).birth_year_hint ?? null,
   })
 }
 

@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS public.invite_links (
   expires_at TIMESTAMPTZ,
   used_count INTEGER NOT NULL DEFAULT 0,
   max_uses   INTEGER,
+  birth_year_hint INTEGER CHECK (birth_year_hint IS NULL OR (birth_year_hint >= 1800 AND birth_year_hint <= 2200)),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

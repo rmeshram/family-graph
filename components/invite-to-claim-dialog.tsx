@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { UserPlus, Send, RefreshCw, Copy, Check, Shield } from 'lucide-react'
 import {
   Dialog,
@@ -38,12 +38,25 @@ export function InviteToClaimDialog({
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [dobHint, setDobHint] = useState('')
   const supabase = createClient()
+
+  useEffect(() => {
+    if (!open || !member) return
+    setDobHint(member.birthYear ? String(member.birthYear) : '')
+  }, [open, member])
 
   if (!member) return null
 
   const generateInvite = async () => {
     if (!familyId || !userId || !member) return
+    const trimmedDob = dobHint.trim()
+    const parsedDob = trimmedDob ? parseInt(trimmedDob, 10) : null
+    const currentYear = new Date().getFullYear() + 1
+    if (trimmedDob && (parsedDob === null || Number.isNaN(parsedDob) || parsedDob < 1800 || parsedDob > currentYear)) {
+      toast.error('Please enter a valid birth year')
+      return
+    }
     setGenerating(true)
     try {
       const code = Math.random().toString(36).substring(2, 10).toUpperCase()
@@ -59,6 +72,7 @@ export function InviteToClaimDialog({
         node_id: member.id,
         invite_type: 'node_claim',
         identity_hint: member.name,
+        birth_year_hint: parsedDob,
       } as any).select('code, expires_at').single()
 
       if (error) throw new Error(error.message)
@@ -150,8 +164,27 @@ export function InviteToClaimDialog({
           <div className="flex items-start gap-2 rounded-lg bg-blue-500/8 border border-blue-500/20 p-3 text-xs text-blue-300">
             <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0" />
             <span>
-              The recipient must enter their name and birth year to verify their identity before claiming.
+              The recipient will be asked to enter birth year to verify this invite.
             </span>
+          </div>
+
+          {/* Optional DOB hint */}
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-dob-hint" className="text-xs text-muted-foreground">
+              Birth year for verification (optional)
+            </Label>
+            <Input
+              id="invite-dob-hint"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder={member.birthYear ? String(member.birthYear) : 'e.g. 1985'}
+              value={dobHint}
+              onChange={(e) => setDobHint(e.target.value.replace(/\D/g, ''))}
+              className="h-10"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              If provided, the claimer must enter this exact year to continue.
+            </p>
           </div>
 
           {!inviteLink ? (

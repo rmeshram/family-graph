@@ -98,278 +98,388 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-  const { id: nodeId } = await params
-  const supabase = await authedClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
-  let body: {
-    submittedName?: string
-    submittedBirthYear?: number
-    intentToken?: string
-    isGuardianClaim?: boolean
-  }
-  try { body = await req.json() } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
-
-  const { submittedName, submittedBirthYear, intentToken, isGuardianClaim } = body
-  if (!submittedName?.trim()) {
-    return NextResponse.json({ error: 'MISSING_NAME' }, { status: 400 })
-  }
-  // Bounds-check to prevent O(m*n) Levenshtein DoS
-  if (submittedName.length > 200) {
-    return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
-  }
-  // Allow null (means «not provided»); only validate when an actual value is sent
-  if (submittedBirthYear !== undefined && submittedBirthYear !== null &&
-    (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
-    return NextResponse.json({ error: 'INVALID_BIRTH_YEAR' }, { status: 400 })
-  }
-
-  const admin = adminClient()
-
-  // Fetch node
-  const { data: node, error: nodeErr } = await admin
-    .from('family_members')
-    .select('id, name, birth_year, claim_status, is_deceased, family_id, normalized_phone')
-    .eq('id', nodeId)
-    .single()
-
-  if (nodeErr || !node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
-
-  // B1: Family boundary check. A user may only claim a node if EITHER (a) they
-  // already belong to the same family, OR (b) an active, unconsumed, non-expired
-  // node_claim invite exists for this specific node, OR (c) the node's
-  // normalized_phone exactly matches the caller's verified phone number
-  // (allows phone-onboarding users to claim their profile without an invite).
-  // Otherwise reject.
-  const { data: callerProfile } = await admin
-    .from('profiles')
-    .select('family_id')
-    .eq('id', user.id)
-    .maybeSingle()
-  const callerFamilyId = (callerProfile as any)?.family_id as string | null
-
-  let authorized = callerFamilyId && callerFamilyId === (node as any).family_id
-  // Track whether auth came from a node_claim invite — used below to skip
-  // identity scoring (admin's explicit invitation is sufficient verification).
-  let authorizedViaNodeClaimInvite = false
-  if (!authorized) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const inviteQ = admin.from('invite_links') as any
-    const { data: claimInvite } = await inviteQ
-      .select('id, consumed_at, expires_at, family_id, invite_type, node_id')
-      .eq('node_id', nodeId)
-      .eq('invite_type', 'node_claim')
-      .is('consumed_at', null)
-      .gt('expires_at', new Date().toISOString())
-      .eq('family_id', (node as any).family_id)
-      .maybeSingle()
-    if (claimInvite) {
-      authorized = true
-      authorizedViaNodeClaimInvite = true
+    const { id: nodeId } = await params
+    const supabase = await authedClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
+    let body: {
+      submittedName?: string
+      submittedBirthYear?: number | null
+      intentToken?: string
+      isGuardianClaim?: boolean
+      inviteCode?: string
     }
-  }
-  // (c) Phone-number match bypass: node.normalized_phone === user.phone
-  // user.phone is the E.164 number verified by Supabase OTP — high confidence.
-  if (!authorized && user.phone) {
-    const nodePhone = (node as any).normalized_phone as string | null
-    if (nodePhone && nodePhone === user.phone) authorized = true
-  }
-  if (!authorized) {
-    return NextResponse.json(
-      { error: 'FORBIDDEN', message: 'You are not authorized to claim this profile.' },
-      { status: 403 }
-    )
-  }
+    try { body = await req.json() } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
 
-  // B4: Prevent multiple node claims per family. If this user already has a
-  // user_node_link in this family, reject (one-person-per-node-per-family).
-  const { data: existingLink } = await admin
-    .from('user_node_links')
-    .select('node_id')
-    .eq('user_id', user.id)
-    .eq('family_id', (node as any).family_id)
-    .neq('node_id', nodeId)
-    .maybeSingle()
-  if (existingLink) {
-    return NextResponse.json(
-      { error: 'ALREADY_LINKED_IN_FAMILY', claimedNodeId: existingLink.node_id, message: 'You are already linked to a different profile in this family.' },
-      { status: 409 }
-    )
-  }
+    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode } = body
+    if (!submittedName?.trim()) {
+      return NextResponse.json({ error: 'MISSING_NAME' }, { status: 400 })
+    }
+    // Bounds-check to prevent O(m*n) Levenshtein DoS
+    if (submittedName.length > 200) {
+      return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
+    }
+    // Allow null (means «not provided»); only validate when an actual value is sent
+    if (submittedBirthYear !== undefined && submittedBirthYear !== null &&
+      (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
+      return NextResponse.json({ error: 'INVALID_BIRTH_YEAR' }, { status: 400 })
+    }
 
-  const ns = node.claim_status as ClaimStatus
-  if ((node as any).is_deceased) {
-    return NextResponse.json(
-      { error: 'NODE_DECEASED', message: 'This profile is marked as deceased. Contact the tree owner.' },
-      { status: 409 }
-    )
-  }
-  if (ns === 'claimed') return NextResponse.json({ error: 'ALREADY_CLAIMED' }, { status: 409 })
+    const admin = adminClient()
 
-  // Check for pending claim by a different user
-  const { data: rivalClaim } = await admin
-    .from('claim_requests')
-    .select('id')
-    .eq('node_id', nodeId)
-    .eq('status', 'pending')
-    .neq('claimant_user_id', user.id)
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle()
-  if (rivalClaim) {
-    return NextResponse.json(
-      { error: 'CLAIM_PENDING_ANOTHER_USER', message: 'This profile has a pending claim from another user.' },
-      { status: 409 }
-    )
-  }
+    // Fetch node
+    const { data: node, error: nodeErr } = await admin
+      .from('family_members')
+      .select('id, name, birth_year, claim_status, is_deceased, family_id, normalized_phone')
+      .eq('id', nodeId)
+      .single()
 
-  // Rate limit: 5 claim attempts per user per hour
-  const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
-  const { count: recentAttempts } = await admin
-    .from('claim_requests')
-    .select('*', { count: 'exact', head: true })
-    .eq('claimant_user_id', user.id)
-    .gt('created_at', oneHourAgo)
-  if ((recentAttempts ?? 0) >= 5) {
-    return NextResponse.json({ error: 'RATE_LIMITED', retryAfter: 3600 }, { status: 429 })
-  }
+    if (nodeErr || !node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
 
-  // Check existing claim request for lockout
-  const { data: myRequest } = await admin
-    .from('claim_requests')
-    .select('attempts, locked_until')
-    .eq('node_id', nodeId)
-    .eq('claimant_user_id', user.id)
-    .maybeSingle()
+    // B1: Family boundary check. A user may only claim a node if EITHER (a) they
+    // already belong to the same family, OR (b) an active, unconsumed, non-expired
+    // node_claim invite exists for this specific node, OR (c) the node's
+    // normalized_phone exactly matches the caller's verified phone number
+    // (allows phone-onboarding users to claim their profile without an invite).
+    // Otherwise reject.
+    const { data: callerProfile } = await admin
+      .from('profiles')
+      .select('family_id')
+      .eq('id', user.id)
+      .maybeSingle()
+    const callerFamilyId = (callerProfile as any)?.family_id as string | null
 
-  if (myRequest?.locked_until && new Date(myRequest.locked_until) > new Date()) {
-    return NextResponse.json(
-      { error: 'LOCKED_OUT', lockedUntil: myRequest.locked_until },
-      { status: 423 }
-    )
-  }
+    let authorized = callerFamilyId && callerFamilyId === (node as any).family_id
+    // Track whether auth came from a node_claim invite — used below to skip
+    // identity scoring (admin's explicit invitation is sufficient verification).
+    let authorizedViaNodeClaimInvite = false
+    let activeNodeClaimInvite: {
+      id: string
+      birth_year_hint?: number | null
+    } | null = null
+    if (!authorized) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const inviteQ = admin.from('invite_links') as any
+      let claimInviteQuery = inviteQ
+        .select('id, consumed_at, expires_at, family_id, invite_type, node_id, birth_year_hint, code')
+        .eq('node_id', nodeId)
+        .eq('invite_type', 'node_claim')
+        .is('consumed_at', null)
+        .eq('family_id', (node as any).family_id)
+      if (inviteCode?.trim()) {
+        claimInviteQuery = claimInviteQuery.eq('code', inviteCode.trim().toUpperCase())
+      }
+      const { data: inviteRows, error: claimInviteErr } = await claimInviteQuery
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (claimInviteErr) {
+        return NextResponse.json(
+          { error: 'INVITE_LOOKUP_FAILED', message: 'Could not verify this invite right now. Please try again in a minute.' },
+          { status: 500 }
+        )
+      }
+      const now = Date.now()
+      const claimInvite = (inviteRows ?? []).find((row: any) => {
+        if (!row.expires_at) return true
+        return new Date(row.expires_at).getTime() > now
+      })
+      if (claimInvite) {
+        authorized = true
+        authorizedViaNodeClaimInvite = true
+        activeNodeClaimInvite = claimInvite
+      } else if (inviteCode?.trim()) {
+        const { data: suppliedInvite } = await inviteQ
+          .select('id, consumed_at, expires_at, node_id, family_id, invite_type')
+          .eq('code', inviteCode.trim().toUpperCase())
+          .maybeSingle()
+        if (suppliedInvite) {
+          if ((suppliedInvite as any).invite_type !== 'node_claim') {
+            return NextResponse.json(
+              { error: 'INVALID_INVITE_TYPE', message: 'This invite cannot be used to claim a profile.' },
+              { status: 422 }
+            )
+          }
+          if ((suppliedInvite as any).node_id !== nodeId || (suppliedInvite as any).family_id !== (node as any).family_id) {
+            return NextResponse.json(
+              { error: 'INVITE_NODE_MISMATCH', message: 'This invite is for a different profile. Please open the exact invite link shared with you.' },
+              { status: 422 }
+            )
+          }
+          if ((suppliedInvite as any).consumed_at) {
+            return NextResponse.json(
+              { error: 'INVITE_ALREADY_USED', message: 'This invite has already been used. Ask the family admin to send a fresh invite.' },
+              { status: 410 }
+            )
+          }
+          if ((suppliedInvite as any).expires_at && new Date((suppliedInvite as any).expires_at).getTime() <= now) {
+            return NextResponse.json(
+              { error: 'INVITE_EXPIRED', message: 'This invite has expired. Ask the family admin to refresh it.' },
+              { status: 410 }
+            )
+          }
+        }
+      }
+    }
+    // (c) Phone-number match bypass: node.normalized_phone === user.phone
+    // user.phone is the E.164 number verified by Supabase OTP — high confidence.
+    if (!authorized && user.phone) {
+      const nodePhone = (node as any).normalized_phone as string | null
+      if (nodePhone && nodePhone === user.phone) authorized = true
+    }
+    if (!authorized) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'You are not authorized to claim this profile.' },
+        { status: 403 }
+      )
+    }
 
-  // Score identity. node_claim invites skip scoring entirely — the admin
-  // explicitly identified this person when creating the invite. Scoring only
-  // applies to self-service claims initiated from within the family tree.
-  const nodeBY = (node as any).birth_year ?? null
-  const { score, reasons, mismatches } = authorizedViaNodeClaimInvite
-    ? { score: 100, reasons: ['node_claim_invite'], mismatches: [] as string[] }
-    : scoreIdentity(node.name, nodeBY, submittedName, submittedBirthYear ?? null)
+    // B4: Prevent multiple node claims per family. If this user already has a
+    // user_node_link in this family, reject (one-person-per-node-per-family).
+    const { data: existingLink } = await admin
+      .from('user_node_links')
+      .select('node_id')
+      .eq('user_id', user.id)
+      .eq('family_id', (node as any).family_id)
+      .neq('node_id', nodeId)
+      .maybeSingle()
+    if (existingLink) {
+      return NextResponse.json(
+        { error: 'ALREADY_LINKED_IN_FAMILY', claimedNodeId: existingLink.node_id, message: 'You are already linked to a different profile in this family.' },
+        { status: 409 }
+      )
+    }
 
-  const attempts = (myRequest?.attempts ?? 0) + 1
-  const MAX_ATTEMPTS = 3
-  const lockedUntil =
-    attempts >= MAX_ATTEMPTS ? new Date(Date.now() + 86_400_000).toISOString() : null
+    const ns = node.claim_status as ClaimStatus
+    if ((node as any).is_deceased) {
+      return NextResponse.json(
+        { error: 'NODE_DECEASED', message: 'This profile is marked as deceased. Contact the tree owner.' },
+        { status: 409 }
+      )
+    }
+    if (ns === 'claimed') return NextResponse.json({ error: 'ALREADY_CLAIMED' }, { status: 409 })
 
-  // Identity check — only enforced for self-service (non-invite) claims.
-  if (!authorizedViaNodeClaimInvite && (mismatches.includes('name') || score < 40)) {
-    await admin.from('claim_requests').upsert(
+    // Check for pending claim by a different user
+    const { data: rivalClaim } = await admin
+      .from('claim_requests')
+      .select('id')
+      .eq('node_id', nodeId)
+      .eq('status', 'pending')
+      .neq('claimant_user_id', user.id)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+    if (rivalClaim) {
+      return NextResponse.json(
+        { error: 'CLAIM_PENDING_ANOTHER_USER', message: 'This profile has a pending claim from another user.' },
+        { status: 409 }
+      )
+    }
+
+    // Rate limit: 5 claim attempts per user per hour
+    const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
+    const { count: recentAttempts } = await admin
+      .from('claim_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('claimant_user_id', user.id)
+      .gt('created_at', oneHourAgo)
+    if ((recentAttempts ?? 0) >= 5) {
+      return NextResponse.json({ error: 'RATE_LIMITED', retryAfter: 3600 }, { status: 429 })
+    }
+
+    // Check existing claim request for lockout
+    const { data: myRequest } = await admin
+      .from('claim_requests')
+      .select('attempts, locked_until')
+      .eq('node_id', nodeId)
+      .eq('claimant_user_id', user.id)
+      .maybeSingle()
+
+    if (myRequest?.locked_until && new Date(myRequest.locked_until) > new Date()) {
+      return NextResponse.json(
+        { error: 'LOCKED_OUT', lockedUntil: myRequest.locked_until },
+        { status: 423 }
+      )
+    }
+
+    // Score identity. node_claim invites skip scoring entirely — the admin
+    // explicitly identified this person when creating the invite. Scoring only
+    // applies to self-service claims initiated from within the family tree.
+    const nodeBY = (node as any).birth_year ?? null
+    // Invite-based claims require an exact DOB match when the tree already has
+    // a DOB (or an inviter provided DOB hint). This gives a clear explanation
+    // instead of falling back to a generic error.
+    const inviteExpectedBirthYear = nodeBY ?? (activeNodeClaimInvite?.birth_year_hint ?? null)
+    if (authorizedViaNodeClaimInvite && inviteExpectedBirthYear !== null) {
+      if (submittedBirthYear === undefined || submittedBirthYear === null) {
+        return NextResponse.json(
+          {
+            error: 'MISSING_BIRTH_YEAR',
+            message: 'Please enter your birth year to verify this invite.',
+          },
+          { status: 422 }
+        )
+      }
+      if (submittedBirthYear !== inviteExpectedBirthYear) {
+        return NextResponse.json(
+          {
+            error: 'DOB_MISMATCH_INVITE',
+            message: 'Birth year does not match this invited profile. Please check with the family admin.',
+          },
+          { status: 422 }
+        )
+      }
+    }
+    const { score, reasons, mismatches } = authorizedViaNodeClaimInvite
+      ? { score: 100, reasons: ['node_claim_invite'], mismatches: [] as string[] }
+      : scoreIdentity(node.name, nodeBY, submittedName, submittedBirthYear ?? null)
+
+    const attempts = (myRequest?.attempts ?? 0) + 1
+    const MAX_ATTEMPTS = 3
+    const lockedUntil =
+      attempts >= MAX_ATTEMPTS ? new Date(Date.now() + 86_400_000).toISOString() : null
+
+    // Identity check — only enforced for self-service (non-invite) claims.
+    if (!authorizedViaNodeClaimInvite && (mismatches.includes('name') || score < 40)) {
+      await admin.from('claim_requests').upsert(
+        {
+          node_id: nodeId,
+          claimant_user_id: user.id,
+          status: 'pending',
+          submitted_name: submittedName,
+          submitted_birth_year: submittedBirthYear ?? null,
+          confidence_score: score,
+          attempts,
+          locked_until: lockedUntil,
+          updated_at: new Date().toISOString(),
+          ...(intentToken ? { intent_token: intentToken } : {}),
+        },
+        { onConflict: 'node_id,claimant_user_id' }
+      )
+      return NextResponse.json(
+        {
+          error: 'IDENTITY_MISMATCH',
+          mismatchFields: mismatches,
+          attemptsLeft: Math.max(0, MAX_ATTEMPTS - attempts),
+          lockedUntil,
+          message: [
+            mismatches.includes('name') ? 'Name does not match.' : '',
+            mismatches.includes('birth_year') ? 'Birth year does not match.' : '',
+          ].filter(Boolean).join(' ') || 'Identity verification failed.',
+        },
+        { status: 422 }
+      )
+    }
+
+    // Success path — for MVP, auto-approve all identity-verified claims.
+    // The claim review queue (admin approval) is reserved for edge cases flagged
+    // by external signals. requiresReview=false means instant claim.
+    const requiresReview = false
+    const newStatus = 'claimed'
+
+    const { data: upsertedReq, error: upsertReqErr } = await admin.from('claim_requests').upsert(
       {
         node_id: nodeId,
         claimant_user_id: user.id,
-        status: 'pending',
+        status: 'verified',
         submitted_name: submittedName,
         submitted_birth_year: submittedBirthYear ?? null,
         confidence_score: score,
         attempts,
-        locked_until: lockedUntil,
+        locked_until: null,
         updated_at: new Date().toISOString(),
-        ...(intentToken ? { intent_token: intentToken } : {}),
       },
       { onConflict: 'node_id,claimant_user_id' }
-    )
-    return NextResponse.json(
-      {
-        error: 'IDENTITY_MISMATCH',
-        mismatchFields: mismatches,
-        attemptsLeft: Math.max(0, MAX_ATTEMPTS - attempts),
-        lockedUntil,
-        message: [
-          mismatches.includes('name') ? 'Name does not match.' : '',
-          mismatches.includes('birth_year') ? 'Birth year does not match.' : '',
-        ].filter(Boolean).join(' ') || 'Identity verification failed.',
-      },
-      { status: 422 }
-    )
-  }
+    ).select('id').single()
+    if (upsertReqErr) {
+      return NextResponse.json(
+        { error: 'CLAIM_REQUEST_WRITE_FAILED', message: 'Could not record your claim request. Please try again.' },
+        { status: 500 }
+      )
+    }
 
-  // Success path — for MVP, auto-approve all identity-verified claims.
-  // The claim review queue (admin approval) is reserved for edge cases flagged
-  // by external signals. requiresReview=false means instant claim.
-  const requiresReview = false
-  const newStatus = 'claimed'
+    // Update node state — optimistic lock ensures only one simultaneous claimant wins.
+    // Two concurrent requests may both pass the identity-scoring check above, but only
+    // the one that atomically flips is_claimed from false→true gets a returned row.
+    // The second writer finds is_claimed=true and receives ALREADY_CLAIMED (409).
+    const memberUpdate: Record<string, unknown> = {
+      claim_status: newStatus,
+      is_claimed: true,
+      claimed_by_user_id: user.id,
+      claimed_at: new Date().toISOString(),
+      identity_state: 'claimed',
+    }
+    if (!nodeBY && submittedBirthYear !== undefined && submittedBirthYear !== null) {
+      memberUpdate.birth_year = submittedBirthYear
+    }
+    if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
 
-  const { data: upsertedReq } = await admin.from('claim_requests').upsert(
-    {
+    const { data: claimUpdate, error: claimUpdateErr } = await admin
+      .from('family_members')
+      .update(memberUpdate as any)
+      .eq('id', nodeId)
+      .eq('is_claimed', false)   // ← race-safe optimistic lock
+      .select('id')
+
+    if (claimUpdateErr) {
+      return NextResponse.json(
+        { error: 'CLAIM_UPDATE_FAILED', message: 'Could not finalize this claim. Please try again.' },
+        { status: 500 }
+      )
+    }
+
+    if (!(claimUpdate as any[])?.length) {
+      return NextResponse.json(
+        { error: 'ALREADY_CLAIMED', message: 'This profile was just claimed by someone else.' },
+        { status: 409 }
+      )
+    }
+
+    // Audit
+    await admin.from('claim_audit_log').insert({
       node_id: nodeId,
-      claimant_user_id: user.id,
-      status: 'verified',
-      submitted_name: submittedName,
-      submitted_birth_year: submittedBirthYear ?? null,
-      confidence_score: score,
-      attempts,
-      locked_until: null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'node_id,claimant_user_id' }
-  ).select('id').single()
+      family_id: (node as any).family_id,
+      actor_id: user.id,
+      action: 'claim_completed',
+      metadata: { score, reasons, requiresReview: false },
+    })
 
-  // Update node state — optimistic lock ensures only one simultaneous claimant wins.
-  // Two concurrent requests may both pass the identity-scoring check above, but only
-  // the one that atomically flips is_claimed from false→true gets a returned row.
-  // The second writer finds is_claimed=true and receives ALREADY_CLAIMED (409).
-  const memberUpdate: Record<string, unknown> = {
-    claim_status: newStatus,
-    is_claimed: true,
-    claimed_by_user_id: user.id,
-    claimed_at: new Date().toISOString(),
-    identity_state: 'claimed',
-  }
-  if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
-
-  const { data: claimUpdate } = await admin
-    .from('family_members')
-    .update(memberUpdate as any)
-    .eq('id', nodeId)
-    .eq('is_claimed', false)   // ← race-safe optimistic lock
-    .select('id')
-
-  if (!(claimUpdate as any[])?.length) {
-    return NextResponse.json(
-      { error: 'ALREADY_CLAIMED', message: 'This profile was just claimed by someone else.' },
-      { status: 409 }
+    // Link user → node (always for MVP auto-approve flow)
+    const { error: linkErr } = await admin.from('user_node_links').upsert(
+      { user_id: user.id, node_id: nodeId, family_id: (node as any).family_id, is_primary: true },
+      { onConflict: 'user_id,node_id' }
     )
-  }
+    if (linkErr) {
+      return NextResponse.json(
+        { error: 'LINK_WRITE_FAILED', message: 'Your claim was verified but account linking failed. Please contact the family admin.' },
+        { status: 500 }
+      )
+    }
 
-  // Audit
-  await admin.from('claim_audit_log').insert({
-    node_id: nodeId,
-    family_id: (node as any).family_id,
-    actor_id: user.id,
-    action: 'claim_completed',
-    metadata: { score, reasons, requiresReview: false },
-  })
+    const { error: profileUpdateErr } = await admin.from('profiles').update({ member_id: nodeId } as any).eq('id', user.id)
+    if (profileUpdateErr) {
+      return NextResponse.json(
+        { error: 'PROFILE_UPDATE_FAILED', message: 'Your claim was verified but profile linking failed. Please contact the family admin.' },
+        { status: 500 }
+      )
+    }
 
-  // Link user → node (always for MVP auto-approve flow)
-  await admin.from('user_node_links').upsert(
-    { user_id: user.id, node_id: nodeId, family_id: (node as any).family_id, is_primary: true },
-    { onConflict: 'user_id,node_id' }
-  )
-  await admin.from('profiles').update({ member_id: nodeId } as any).eq('id', user.id)
-
-  return NextResponse.json({
-    status: newStatus,
-    confidenceScore: score,
-    requiresReview: false,
-    claimRequestId: (upsertedReq as any)?.id ?? null,
-    message: 'Profile successfully claimed!',
-  })
+    return NextResponse.json({
+      status: newStatus,
+      confidenceScore: score,
+      requiresReview: false,
+      claimRequestId: (upsertedReq as any)?.id ?? null,
+      message: 'Profile successfully claimed!',
+    })
   } catch (err: unknown) {
     console.error('[POST /api/nodes/[id]/claim] unhandled error:', err)
+    const errMsg = err instanceof Error ? err.message : ''
+    const message =
+      /duplicate key|violates|conflict/i.test(errMsg)
+        ? 'This profile was updated by someone else. Please refresh and try again.'
+        : 'An unexpected error occurred. Please try again.'
     return NextResponse.json(
-      { error: 'INTERNAL_ERROR', message: 'An unexpected error occurred. Please try again.' },
+      { error: 'INTERNAL_ERROR', message },
       { status: 500 }
     )
   }

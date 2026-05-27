@@ -66,8 +66,10 @@ export default function JoinPage() {
     identityHint: string | null
     familyId: string
     birthYear: number | null
+    birthYearHint: number | null
     parentNames: string[]
   } | null>(null)
+  const [ncBirthYear, setNcBirthYear] = useState('')
   const nodeClaimSubmittingRef = useRef(false)
   // Post-claim profile completion (birth year prompt when node had none)
   const [pcBirthYear, setPcBirthYear] = useState('')
@@ -113,6 +115,7 @@ export default function JoinPage() {
       // Fetch node preview (name, birth year, parents) via service-role endpoint.
       if (inv.invite_type === 'node_claim' && inv.node_id) {
         let birthYear: number | null = null
+        let birthYearHint: number | null = null
         let parentNames: string[] = []
         try {
           const previewRes = await fetch(`/api/invite/${code.toUpperCase()}/unclaimed`)
@@ -122,6 +125,7 @@ export default function JoinPage() {
               birthYear = previewData.nodePreview.birthYear ?? null
               parentNames = previewData.nodePreview.parentNames ?? []
             }
+            birthYearHint = previewData.inviteBirthYearHint ?? null
           }
         } catch { /* non-fatal — show profile card without parent context */ }
         setNodeClaim({
@@ -129,8 +133,10 @@ export default function JoinPage() {
           identityHint: inv.identity_hint ?? null,
           familyId: inv.family_id,
           birthYear,
+          birthYearHint,
           parentNames,
         })
+        setNcBirthYear(String(birthYear ?? birthYearHint ?? ''))
         setStatus('node_claim')
         return
       }
@@ -329,6 +335,13 @@ export default function JoinPage() {
       setMessage('This invite is missing profile information. Contact the family admin.')
       return
     }
+    const birthYearRaw = ncBirthYear.trim()
+    const submittedBirthYear = parseInt(birthYearRaw, 10)
+    const currentYear = new Date().getFullYear() + 1
+    if (!birthYearRaw || Number.isNaN(submittedBirthYear) || submittedBirthYear < 1800 || submittedBirthYear > currentYear) {
+      setMessage('Please enter a valid birth year to continue.')
+      return
+    }
     if (!isAuthed) {
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('fg_invite_return', code)
       router.push(`/auth/signin?next=/join/${code}`)
@@ -347,13 +360,25 @@ export default function JoinPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           submittedName: nodeClaim.identityHint,
-          submittedBirthYear: nodeClaim.birthYear ?? null,
+          submittedBirthYear,
+          inviteCode: code.toUpperCase(),
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setStatus('node_claim')
-        setMessage(data.message ?? data.error ?? 'Could not claim this profile. Contact the family admin.')
+        const fallback = 'Could not claim this profile. Contact the family admin.'
+        const userMessage =
+          data.error === 'DOB_MISMATCH_INVITE'
+            ? 'Birth year does not match this invited profile. Please check with the family admin.'
+            : data.error === 'MISSING_BIRTH_YEAR'
+              ? 'Please enter your birth year to verify this invite.'
+              : data.error === 'FORBIDDEN'
+                ? 'This invite is no longer valid for claiming this profile. Ask the family admin for a fresh invite.'
+                : data.error === 'ALREADY_CLAIMED'
+                  ? 'This profile has already been claimed. Ask the family admin to help you join.'
+                  : data.message ?? fallback
+        setMessage(userMessage)
         return
       }
 
@@ -378,7 +403,7 @@ export default function JoinPage() {
       if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
       // If the node had no birth year, show a quick completion step before
       // landing in the dashboard — avoids an empty DOB forever.
-      if (!nodeClaim.birthYear) {
+      if (!nodeClaim.birthYear && !submittedBirthYear) {
         setStatus('post_claim')
       } else {
         setStatus('success')
@@ -877,6 +902,21 @@ export default function JoinPage() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Birth year</label>
+                <Input
+                  placeholder={String(nodeClaim.birthYear ?? nodeClaim.birthYearHint ?? 'e.g. 1985')}
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={ncBirthYear}
+                  onChange={e => { setNcBirthYear(e.target.value.replace(/\D/g, '')); setMessage('') }}
+                  className="h-10 bg-muted/50 border-border"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Enter your birth year to verify and claim this profile.
+                </p>
               </div>
 
               {message && (
