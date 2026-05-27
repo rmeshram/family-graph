@@ -14,7 +14,7 @@ import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { scoreCandidate, tierLabel, tierColor, isRecommendedClaimMatch } from '@/lib/match-detection'
 import type { MatchResult } from '@/lib/match-detection'
 
-type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'node_claim' | 'joining' | 'success' | 'error'
+type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'node_claim' | 'post_claim' | 'joining' | 'success' | 'error'
 type RelType = 'spouse' | 'child' | 'parent' | 'sibling' | 'relative' | 'skip'
 
 interface FamilyPreview {
@@ -56,13 +56,23 @@ export default function JoinPage() {
   const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
   const [scoredMatches, setScoredMatches] = useState<MatchResult[]>([])
   const [selectedClaimId, setSelectedClaimId] = useState<string | null | undefined>(undefined) // undefined = no selection yet; null = create new
+  // Explicit confirmation required when user picks "create new" despite a
+  // medium-confidence match being shown (prevents accidental duplicates).
+  const [confirmedCreateNew, setConfirmedCreateNew] = useState(false)
 
   // node_claim invite state (B2)
-  const [nodeClaim, setNodeClaim] = useState<{ nodeId: string; identityHint: string | null; familyId: string } | null>(null)
-  const [ncName, setNcName] = useState('')
+  const [nodeClaim, setNodeClaim] = useState<{
+    nodeId: string
+    identityHint: string | null
+    familyId: string
+    birthYear: number | null
+    birthYearHint: number | null
+    parentNames: string[]
+  } | null>(null)
   const [ncBirthYear, setNcBirthYear] = useState('')
-  const [ncAttempts, setNcAttempts] = useState<number | null>(null)
   const nodeClaimSubmittingRef = useRef(false)
+  // Post-claim profile completion (birth year prompt when node had none)
+  const [pcBirthYear, setPcBirthYear] = useState('')
 
   useEffect(() => {
     const init = async () => {
@@ -77,7 +87,6 @@ export default function JoinPage() {
           .single()
         const prefillName = (myProfile as any)?.display_name || user.email?.split('@')[0] || ''
         setDisplayName(prefillName)
-        setNcName(prefillName)
       }
 
       const { data: invite } = await supabase
@@ -102,10 +111,32 @@ export default function JoinPage() {
         setStatus('error'); setMessage('This invite has reached its user limit.'); return
       }
 
-      // B2: node_claim invites must use the verified-claim flow. Show inline
-      // identity verification (name + birth year) before joining.
+      // B2: node_claim invites use a confirmation flow (no manual name entry).
+      // Fetch node preview (name, birth year, parents) via service-role endpoint.
       if (inv.invite_type === 'node_claim' && inv.node_id) {
-        setNodeClaim({ nodeId: inv.node_id, identityHint: inv.identity_hint ?? null, familyId: inv.family_id })
+        let birthYear: number | null = null
+        let birthYearHint: number | null = null
+        let parentNames: string[] = []
+        try {
+          const previewRes = await fetch(`/api/invite/${code.toUpperCase()}/unclaimed`)
+          if (previewRes.ok) {
+            const previewData = await previewRes.json()
+            if (previewData.nodePreview) {
+              birthYear = previewData.nodePreview.birthYear ?? null
+              parentNames = previewData.nodePreview.parentNames ?? []
+            }
+            birthYearHint = previewData.inviteBirthYearHint ?? null
+          }
+        } catch { /* non-fatal — show profile card without parent context */ }
+        setNodeClaim({
+          nodeId: inv.node_id,
+          identityHint: inv.identity_hint ?? null,
+          familyId: inv.family_id,
+          birthYear,
+          birthYearHint,
+          parentNames,
+        })
+        setNcBirthYear(String(birthYear ?? birthYearHint ?? ''))
         setStatus('node_claim')
         return
       }
@@ -258,6 +289,22 @@ export default function JoinPage() {
 
   const handleJoin = async (claimId?: string | null) => {
     if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
+    // A3: Block creating a new node when a high-confidence unclaimed match exists.
+    // Allowing "None of these are me" in that case would silently create a duplicate
+    // node and break tree integrity. The user must claim the matched node or contact admin.
+    if (claimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0])) {
+      setMessage('Please select the profile above that matches you. If you believe none are correct, contact the family admin to add you separately.')
+      return
+    }
+    // A3b: Medium-confidence block — require explicit acknowledgement before
+    // creating a new node, because a similar profile already exists and
+    // duplicating it breaks the tree.  The UI renders a confirmation checkbox;
+    // we double-check that it was actually ticked here.
+    if (claimId === null && scoredMatches.length > 0 &&
+      scoredMatches[0].confidenceTier === 'medium' && !confirmedCreateNew) {
+      setMessage('Please confirm that none of the profiles shown are you before creating a new one.')
+      return
+    }
     setStatus('joining')
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -278,18 +325,30 @@ export default function JoinPage() {
     }
   }
 
-  // B2: handler for node_claim invites — verifies identity via /api/nodes/[id]/claim,
-  // then sets profile.family_id so the user lands in the family.
+  // B2: handler for node_claim invites — confirms identity and claims the specific node.
+  // No manual name entry: the admin already identified this person by creating
+  // the invite for their specific node. We send the node's own name as the
+  // submitted name (always scores ≥ 60 → passes the identity threshold).
+  // The real security comes from the single-use, admin-created invite itself.
   const handleNodeClaim = async () => {
-    if (!nodeClaim) return
-    if (!isAuthed) { router.push(`/auth/signin?next=/join/${code}`); return }
-    if (!ncName.trim()) return
+    if (!nodeClaim?.identityHint) {
+      setMessage('This invite is missing profile information. Contact the family admin.')
+      return
+    }
+    const birthYearRaw = ncBirthYear.trim()
+    const submittedBirthYear = parseInt(birthYearRaw, 10)
+    const currentYear = new Date().getFullYear() + 1
+    if (!birthYearRaw || Number.isNaN(submittedBirthYear) || submittedBirthYear < 1800 || submittedBirthYear > currentYear) {
+      setMessage('Please enter a valid birth year to continue.')
+      return
+    }
+    if (!isAuthed) {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('fg_invite_return', code)
+      router.push(`/auth/signin?next=/join/${code}`)
+      return
+    }
     if (nodeClaimSubmittingRef.current) return
     nodeClaimSubmittingRef.current = true
-    const by = ncBirthYear.trim() ? parseInt(ncBirthYear.trim(), 10) : undefined
-    if (ncBirthYear.trim() && (Number.isNaN(by!) || by! < 1800 || by! > new Date().getFullYear())) {
-      setMessage('Please enter a valid birth year'); return
-    }
     setStatus('joining')
     setMessage('')
     try {
@@ -299,32 +358,41 @@ export default function JoinPage() {
       const res = await fetch(`/api/nodes/${nodeClaim.nodeId}/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submittedName: ncName.trim(), submittedBirthYear: by ?? null }),
+        body: JSON.stringify({
+          submittedName: nodeClaim.identityHint,
+          submittedBirthYear,
+          inviteCode: code.toUpperCase(),
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        if (res.status === 423) {
-          const lockedUntil = data.lockedUntil
-            ? new Date(data.lockedUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-            : 'tomorrow'
-          setStatus('node_claim')
-          setNcAttempts(0)
-          setMessage(`Too many attempts. Please try again after ${lockedUntil}.`)
-          return
-        }
-        if (typeof data.attemptsLeft === 'number') setNcAttempts(data.attemptsLeft)
         setStatus('node_claim')
-        setMessage(data.message ?? data.error ?? 'Verification failed')
+        const fallback = 'Could not claim this profile. Contact the family admin.'
+        const userMessage =
+          data.error === 'DOB_MISMATCH_INVITE'
+            ? 'Birth year does not match this invited profile. Please check with the family admin.'
+            : data.error === 'MISSING_BIRTH_YEAR'
+              ? 'Please enter your birth year to verify this invite.'
+              : data.error === 'FORBIDDEN'
+                ? 'This invite is no longer valid for claiming this profile. Ask the family admin for a fresh invite.'
+                : data.error === 'ALREADY_CLAIMED'
+                  ? 'This profile has already been claimed. Ask the family admin to help you join.'
+                  : data.message ?? fallback
+        setMessage(userMessage)
         return
       }
 
-      // On success the claim API has updated user_node_links + profiles.member_id.
-      // Also bind this user's profile to the family + role so RLS lets them in.
+      // Bind profile to the family + set display_name to the node's canonical name.
+      // The user can update their display name from settings after joining.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const profUpdate = supabase.from('profiles') as any
-      await profUpdate.update({ family_id: nodeClaim.familyId, role: 'contributor' }).eq('id', user.id)
+      await profUpdate.update({
+        family_id: nodeClaim.familyId,
+        role: 'contributor',
+        display_name: nodeClaim.identityHint,
+      }).eq('id', user.id)
 
-      // Consume the single-use node_claim invite
+      // Consume the single-use invite
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const inviteUpd = supabase.from('invite_links') as any
       await inviteUpd
@@ -333,15 +401,37 @@ export default function JoinPage() {
         .is('consumed_at', null)
 
       if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
-      setStatus('success')
-      // Full page navigation forces AuthProvider to re-fetch updated profile (new member_id)
-      setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+      // If the node had no birth year, show a quick completion step before
+      // landing in the dashboard — avoids an empty DOB forever.
+      if (!nodeClaim.birthYear && !submittedBirthYear) {
+        setStatus('post_claim')
+      } else {
+        setStatus('success')
+        setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+      }
     } catch (e: unknown) {
       setStatus('node_claim')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       nodeClaimSubmittingRef.current = false
     }
+  }
+
+  // Post-claim: user can optionally supply a birth year that was missing from
+  // their node. Updates the node directly (user now has RLS access as claimer).
+  const handlePostClaimSave = async () => {
+    const yr = pcBirthYear.trim()
+    const birthYearNum = yr ? parseInt(yr, 10) : null
+    if (yr && (Number.isNaN(birthYearNum!) || birthYearNum! < 1800 || birthYearNum! > new Date().getFullYear() + 1)) {
+      setMessage('Please enter a valid birth year (e.g. 1985)')
+      return
+    }
+    if (nodeClaim && birthYearNum !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyClient = supabase.from('family_members') as any
+      await anyClient.update({ birth_year: birthYearNum }).eq('id', nodeClaim.nodeId)
+    }
+    window.location.href = '/dashboard'
   }
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
@@ -558,7 +648,7 @@ export default function JoinPage() {
                       return (
                         <button
                           key={node.id}
-                          onClick={() => setSelectedClaimId(selectedClaimId === node.id ? undefined : node.id)}
+                          onClick={() => { setSelectedClaimId(selectedClaimId === node.id ? undefined : node.id); setConfirmedCreateNew(false) }}
                           className={cn(
                             'w-full flex items-center gap-3 rounded-2xl border-2 p-3 text-left transition-all',
                             selectedClaimId === node.id
@@ -605,27 +695,75 @@ export default function JoinPage() {
                     })}
                   </div>
 
-                  {/* "That's not me" option */}
-                  <button
-                    onClick={() => setSelectedClaimId(null)}
-                    className={cn(
-                      'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                      selectedClaimId === null
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border/30 bg-muted/10 hover:border-border/50'
-                    )}
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserPlus className="h-4 w-4" />
+                  {/* "That's not me" option — blocked when a high-confidence match exists.
+                      Allowing "create new" for high-confidence matches would produce a
+                      duplicate node. Users must claim the matched node or contact admin. */}
+                  {isRecommendedClaimMatch(scoredMatches[0]) ? (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center space-y-1">
+                      <Shield className="h-4 w-4 mx-auto text-amber-400 opacity-80" />
+                      <p className="text-xs text-amber-400 leading-relaxed">
+                        Based on your details, one of the profiles above likely represents you in this tree.
+                        If none are correct, contact the family admin to add you separately.
+                      </p>
                     </div>
-                    <p className="flex-1 text-sm font-medium text-muted-foreground">
-                      None of these are me — create a new profile
-                    </p>
-                    {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
-                  </button>
+                  ) : scoredMatches[0]?.confidenceTier === 'medium' ? (
+                    /* Medium-confidence: show "create new" but require explicit confirmation */
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => { setSelectedClaimId(null); setConfirmedCreateNew(false) }}
+                        className={cn(
+                          'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                          selectedClaimId === null
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border/30 bg-muted/10 hover:border-border/50'
+                        )}
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                          <UserPlus className="h-4 w-4" />
+                        </div>
+                        <p className="flex-1 text-sm font-medium text-muted-foreground">
+                          None of these are me — create a new profile
+                        </p>
+                        {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                      </button>
+                      {/* Confirmation required for medium matches to prevent accidental duplicates */}
+                      {selectedClaimId === null && (
+                        <label className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={confirmedCreateNew}
+                            onChange={e => setConfirmedCreateNew(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 accent-amber-500"
+                          />
+                          <p className="text-xs text-amber-400 leading-relaxed">
+                            I confirm that the profiles shown above are not me, and I understand
+                            that creating a duplicate profile may need to be merged later.
+                          </p>
+                        </label>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setSelectedClaimId(null)}
+                      className={cn(
+                        'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                        selectedClaimId === null
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border/30 bg-muted/10 hover:border-border/50'
+                      )}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                        <UserPlus className="h-4 w-4" />
+                      </div>
+                      <p className="flex-1 text-sm font-medium text-muted-foreground">
+                        None of these are me — create a new profile
+                      </p>
+                      {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                    </button>
+                  )}
 
-                  {/* Name + gender when creating new */}
-                  {!FEATURE_FLAGS.enableInviteRelationshipStep && selectedClaimId === null && (
+                  {/* Name + gender when creating new — only relevant for low-confidence matches */}
+                  {!FEATURE_FLAGS.enableInviteRelationshipStep && selectedClaimId === null && !isRecommendedClaimMatch(scoredMatches[0]) && (
                     <div className="space-y-3 rounded-xl border border-border/40 bg-muted/10 p-3">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-muted-foreground">Your name</label>
@@ -652,7 +790,9 @@ export default function JoinPage() {
 
                   {selectedClaimId === undefined && (
                     <p className="text-center text-xs text-muted-foreground">
-                      Select your profile above, or choose "None of these are me".
+                      {isRecommendedClaimMatch(scoredMatches[0])
+                        ? 'Tap the profile above that represents you in the family tree.'
+                        : 'Select your profile above, or choose "None of these are me".'}
                     </p>
                   )}
 
@@ -664,7 +804,9 @@ export default function JoinPage() {
                       onClick={() => handleJoin(selectedClaimId ?? null)}
                       disabled={
                         selectedClaimId === undefined ||
-                        (selectedClaimId === null && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim())
+                        (selectedClaimId === null && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim()) ||
+                        (selectedClaimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0])) ||
+                        (selectedClaimId === null && scoredMatches.length > 0 && scoredMatches[0].confidenceTier === 'medium' && !confirmedCreateNew)
                       }
                       className="flex-1 h-11 bg-primary hover:bg-primary/90"
                     >
@@ -727,67 +869,137 @@ export default function JoinPage() {
             </div>
           )}
 
-          {/* ── Node Claim Verification (B2) ──────────────────── */}
+          {/* ── Node Claim Confirmation (B2) ──────────────────── */}
           {status === 'node_claim' && nodeClaim && (
             <div className="p-6 space-y-5">
               <div className="text-center">
                 <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/30 mb-3">
                   <Shield className="h-5 w-5 text-blue-400" />
                 </div>
-                <h2 className="text-lg font-bold">Claim your profile</h2>
+                <h2 className="text-lg font-bold">Is this you?</h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {nodeClaim.identityHint
-                    ? <>This invite is for <span className="text-foreground font-semibold">{nodeClaim.identityHint}</span>. Confirm your identity to claim this profile.</>
-                    : <>Confirm your identity to claim this profile.</>}
+                  This invite was created specifically for the profile below.
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Your full name (as on the tree)</label>
-                  <Input
-                    placeholder="e.g. Rahul Sharma"
-                    value={ncName}
-                    onChange={e => setNcName(e.target.value)}
-                    className="h-10 bg-muted/50 border-border"
-                    autoFocus
-                  />
+              {/* Profile identity card */}
+              <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-base font-bold">
+                    {(nodeClaim.identityHint ?? '?').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-foreground text-base leading-tight">
+                      {nodeClaim.identityHint ?? 'Unknown'}
+                    </p>
+                    {nodeClaim.parentNames.length > 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        Child of {nodeClaim.parentNames.join(' & ')}
+                      </p>
+                    )}
+                    {nodeClaim.birthYear && (
+                      <p className="text-xs text-muted-foreground">Born {nodeClaim.birthYear}</p>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Birth year (optional but recommended)</label>
-                  <Input
-                    placeholder="e.g. 1985"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={ncBirthYear}
-                    onChange={e => setNcBirthYear(e.target.value.replace(/\D/g, ''))}
-                    className="h-10 bg-muted/50 border-border"
-                  />
-                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Birth year</label>
+                <Input
+                  placeholder={String(nodeClaim.birthYear ?? nodeClaim.birthYearHint ?? 'e.g. 1985')}
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={ncBirthYear}
+                  onChange={e => { setNcBirthYear(e.target.value.replace(/\D/g, '')); setMessage('') }}
+                  className="h-10 bg-muted/50 border-border"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Enter your birth year to verify and claim this profile.
+                </p>
               </div>
 
               {message && (
                 <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-xs text-destructive">
                   {message}
-                  {ncAttempts !== null && (
-                    <span className="ml-1 text-destructive/70">({ncAttempts} attempt{ncAttempts === 1 ? '' : 's'} left)</span>
-                  )}
                 </div>
               )}
 
               <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-muted-foreground">
                 <Shield className="inline h-3.5 w-3.5 mr-1 text-blue-400" />
-                Identity verification protects family members from impersonation. After 3 failed attempts, this claim is locked.
+                Claiming links your account to this profile. You can update your name and details after joining.
               </div>
 
               <Button
                 onClick={handleNodeClaim}
-                disabled={!ncName.trim()}
                 className="w-full h-11 bg-primary hover:bg-primary/90"
               >
-                {isAuthed ? 'Verify & Claim Profile' : 'Sign in & Claim'}
+                {isAuthed ? "Yes, that's me — Claim this profile" : 'Sign in & Claim'}
                 <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
+
+              <p className="text-center text-xs text-muted-foreground">
+                Not you? Contact the person who sent this invite.
+              </p>
+            </div>
+          )}
+
+          {/* ── Post-claim: fill in missing birth year ────────── */}
+          {status === 'post_claim' && nodeClaim && (
+            <div className="p-6 space-y-5">
+              <div className="text-center">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-green-500/10 border border-green-500/30 mb-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-400" />
+                </div>
+                <h2 className="text-lg font-bold">You're in! 🎉</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  One quick thing — your birth year isn't on the tree yet.
+                  Adding it helps family members find and identify you.
+                </p>
+              </div>
+
+              {/* Claimed node mini-card */}
+              <div className="rounded-2xl border border-border/50 bg-muted/30 p-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-sm font-bold">
+                  {(nodeClaim.identityHint ?? '?').slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-semibold text-sm leading-tight">{nodeClaim.identityHint}</p>
+                  <p className="text-xs text-green-500">Profile claimed ✓</p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Your birth year</label>
+                <Input
+                  placeholder="e.g. 1985"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={pcBirthYear}
+                  onChange={e => { setPcBirthYear(e.target.value.replace(/\D/g, '')); setMessage('') }}
+                  className="h-10 bg-muted/50 border-border"
+                  autoFocus
+                />
+                {message && <p className="text-xs text-destructive mt-1">{message}</p>}
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => { window.location.href = '/dashboard' }}
+                  className="flex-1 h-11"
+                >
+                  Skip for now
+                </Button>
+                <Button
+                  onClick={handlePostClaimSave}
+                  disabled={!pcBirthYear.trim()}
+                  className="flex-1 h-11 bg-primary hover:bg-primary/90"
+                >
+                  Save & Continue
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
             </div>
           )}
 

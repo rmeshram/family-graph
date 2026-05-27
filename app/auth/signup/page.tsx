@@ -25,6 +25,7 @@ export default function SignUpPage() {
 // ─── Email + password signup ──────────────────────────────────────────────────
 function EmailSignUp() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [email, setEmail] = useState('')
@@ -50,6 +51,11 @@ function EmailSignUp() {
       setError('An account with this email already exists. Please sign in instead, or use "Forgot Password" to set a new password.')
       return
     }
+    // Forward invite context — join page handles member creation for invite flows
+    const nextPath = searchParams.get('next')
+    if (nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')) {
+      router.push(nextPath); router.refresh(); return
+    }
     const { data: profile } = await supabase.from('profiles').select('family_id').eq('id', data.user.id).single()
     router.push(!profile?.family_id ? '/onboarding' : '/dashboard')
     router.refresh()
@@ -57,9 +63,15 @@ function EmailSignUp() {
 
   const signUpWithGoogle = async () => {
     setIsLoading(true)
+    // Preserve ?next so the auth callback can route back to the invite join page
+    // instead of sending the new user to onboarding (which would create orphan nodes).
+    const nextPath = searchParams.get('next')
+    const callbackUrl = nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')
+      ? `${location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
+      : `${location.origin}/auth/callback`
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${location.origin}/auth/callback` },
+      options: { redirectTo: callbackUrl },
     })
     if (error) { setError(error.message); setIsLoading(false) }
   }
@@ -190,6 +202,11 @@ function PhoneSignUp({ onSwitchToEmail }: { onSwitchToEmail?: () => void }) {
     if (error) { setError(friendlyPhoneError(error.message)); return }
     if (!data.user) { setError('Verification failed — please try again.'); return }
 
+    // Forward invite context — join page handles member creation for invite flows
+    const nextPath = searchParams.get('next')
+    if (nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')) {
+      router.push(nextPath); router.refresh(); return
+    }
     const { data: profile } = await supabase.from('profiles').select('family_id').eq('id', data.user.id).single()
     if (profile?.family_id) {
       router.push('/dashboard')
@@ -279,6 +296,12 @@ function SignUpContent() {
   const showEmail = FEATURE_FLAGS.enableEmailPasswordAuth
   const showTabs = showPhone && showEmail
   const [tab, setTab] = useState<'phone' | 'email'>(showPhone ? 'phone' : 'email')
+  const searchParams = useSearchParams()
+  const nextParam = searchParams.get('next')
+  // Forward ?next so signin can also return to the same destination (e.g. invite link)
+  const signinHref = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    ? `/auth/signin?next=${encodeURIComponent(nextParam)}`
+    : '/auth/signin'
 
   return (
     <div>
@@ -307,7 +330,7 @@ function SignUpContent() {
 
       <p className="text-center text-sm text-muted-foreground mt-6">
         Already have an account?{" "}
-        <Link href="/auth/signin" className="text-primary hover:underline font-medium">Sign in</Link>
+        <Link href={signinHref} className="text-primary hover:underline font-medium">Sign in</Link>
       </p>
 
       <div className="relative mt-6">

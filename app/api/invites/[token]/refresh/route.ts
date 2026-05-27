@@ -65,6 +65,7 @@ export async function POST(
     node_id: (invite as any).node_id ?? null,
     invite_type: (invite as any).invite_type ?? 'family',
     identity_hint: (invite as any).identity_hint ?? null,
+    birth_year_hint: (invite as any).birth_year_hint ?? null,
   } as any).select().single()
 
   // Archive old invite

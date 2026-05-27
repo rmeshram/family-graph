@@ -14,6 +14,25 @@ function randomCode(len = 8) {
   return Array.from(bytes, b => b.toString(36)).join('').replace(/[^a-z0-9]/gi, '').slice(0, len).toUpperCase()
 }
 
+// ─── Duplicate-detection helpers ─────────────────────────────────────────────
+
+function normalizeNameForDup(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ')
+}
+
+function levenshteinDist(a: string, b: string): number {
+  const m = a.length, n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  )
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+  return dp[m][n]
+}
+
 export function useInvites(familyId: string | null) {
   const supabase = createClient()
 
@@ -267,6 +286,31 @@ export function useJoinFamily() {
         }
         return invite.family_id
       }
+
+      // Guard: user already has a member node in a DIFFERENT family.
+      // This can happen when onboarding ran before the invite flow (a bug we patched,
+      // but guard defensively). Do NOT create another member — just update the profile
+      // to point to the invited family so the user can see this tree.
+      // They will appear as a viewer without a claimed node until they claim one.
+      if (existingMember && existingMember.family_id !== invite.family_id) {
+        await supabase.from('profiles').update({
+          family_id: invite.family_id,
+          role: invite.role,
+          ...(opts?.displayName ? { display_name: opts.displayName } : {}),
+        }).eq('id', userId)
+        const incrQ = supabase.from('invite_links') as any
+        let chain = incrQ
+          .update({ used_count: invite.used_count + 1 })
+          .eq('id', invite.id)
+          .eq('used_count', invite.used_count)
+        if (invite.max_uses) chain = chain.lt('used_count', invite.max_uses)
+        chain = chain.select('id')
+        const { data: incD, error: incE } = await chain
+        if (incE || !(incD as any[])?.length) {
+          throw new Error('This invite was just used by someone else. Please request a new one.')
+        }
+        return invite.family_id
+      }
     }
 
     // 2. Update profile with family_id + role
@@ -485,6 +529,99 @@ export function useJoinFamily() {
         spouse: 'spouse', child: 'child', parent: 'parent',
         sibling: 'sibling', relative: 'relative', skip: 'member',
       }
+
+      // ── Server-side duplicate prevention ────────────────────────────────────
+      // The client already blocks HIGH-confidence matches in the UI, but a user
+      // can still bypass a MEDIUM match, and a direct API call bypasses the UI
+      // entirely.  Check for collisions here as a hard server-side guard.
+      const normNew = normalizeNameForDup(opts.displayName)
+      const { data: existingMembers } = await supabase
+        .from('family_members')
+        .select('id, name, phone, email, is_claimed, claimed_by_user_id')
+        .eq('family_id', invite.family_id)
+        .limit(500)
+
+      // If a strong exact signal exists, ALWAYS reuse the existing node.
+      // This prevents accidental duplicate nodes during invite onboarding.
+      const normalizedPhone = profile?.phone?.trim() || null
+      const normalizedEmail = userEmail?.trim().toLowerCase() || null
+      const reusableStrongMatch = (existingMembers ?? []).find((m: any) => {
+        if ((m as any).is_claimed) return false
+        const samePhone = normalizedPhone && (m.phone?.trim() === normalizedPhone)
+        const sameEmail = normalizedEmail && (m.email?.trim().toLowerCase() === normalizedEmail)
+        return !!(samePhone || sameEmail)
+      }) as any
+
+      if (reusableStrongMatch?.id) {
+        await (supabase.from('family_members') as any)
+          .update({ claimed_by_user_id: userId, is_claimed: true })
+          .eq('id', reusableStrongMatch.id)
+          .eq('is_claimed', false)
+
+        await supabase.from('profiles').update({
+          member_id: reusableStrongMatch.id,
+          display_name: opts.displayName,
+        }).eq('id', userId)
+
+        // Consume invite atomically
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const incrReuseQ = supabase.from('invite_links') as any
+        let reuseChain = incrReuseQ
+          .update({ used_count: invite.used_count + 1 })
+          .eq('id', invite.id)
+          .eq('used_count', invite.used_count)
+        if (invite.max_uses) reuseChain = reuseChain.lt('used_count', invite.max_uses)
+        reuseChain = reuseChain.select('id')
+        const { data: reuseIncrData, error: reuseIncrErr } = await reuseChain
+        if (reuseIncrErr || !(reuseIncrData as any[])?.length) {
+          throw new Error('This invite was just used by someone else. Please request a new one.')
+        }
+        return invite.family_id
+      }
+
+      const exactPhoneDup = normalizedPhone
+        ? (existingMembers ?? []).find((m: any) => m.phone?.trim() === normalizedPhone)
+        : null
+      if (exactPhoneDup) {
+        throw new Error(
+          `A profile with the same phone number already exists (${(exactPhoneDup as any).name}). ` +
+          'Please claim that profile instead of creating a duplicate.'
+        )
+      }
+
+      const exactEmailDup = normalizedEmail
+        ? (existingMembers ?? []).find((m: any) => m.email?.trim().toLowerCase() === normalizedEmail)
+        : null
+      if (exactEmailDup) {
+        throw new Error(
+          `A profile with the same email already exists (${(exactEmailDup as any).name}). ` +
+          'Please claim that profile instead of creating a duplicate.'
+        )
+      }
+
+      const exactDup = (existingMembers ?? []).find(
+        m => normalizeNameForDup((m as any).name) === normNew
+      )
+      if (exactDup) {
+        throw new Error(
+          `A profile named "${(exactDup as any).name}" already exists in this family. ` +
+          `Please select that profile above to claim it — creating a duplicate would break the tree.`
+        )
+      }
+
+      if (normNew.length >= 4) {
+        const fuzzyDup = (existingMembers ?? []).find(m => {
+          const norm = normalizeNameForDup((m as any).name)
+          return norm.length >= 4 && levenshteinDist(norm, normNew) <= 2
+        })
+        if (fuzzyDup) {
+          throw new Error(
+            `A profile with a very similar name ("${(fuzzyDup as any).name}") already exists. ` +
+            `If that's you, please claim it from the list above rather than creating a new profile.`
+          )
+        }
+      }
+      // ── End duplicate prevention ─────────────────────────────────────────────
 
       const { data: newMember, error: memberErr } = await supabase.from('family_members').insert({
         family_id: invite.family_id,

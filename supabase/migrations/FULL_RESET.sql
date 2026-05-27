@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS public.invite_links (
   expires_at TIMESTAMPTZ,
   used_count INTEGER NOT NULL DEFAULT 0,
   max_uses   INTEGER,
+  birth_year_hint INTEGER CHECK (birth_year_hint IS NULL OR (birth_year_hint >= 1800 AND birth_year_hint <= 2200)),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -185,6 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_family_id             ON public.memories
 CREATE INDEX IF NOT EXISTS idx_voice_notes_member_id          ON public.voice_notes(member_id);
 CREATE INDEX IF NOT EXISTS idx_events_family_id               ON public.events(family_id);
 CREATE INDEX IF NOT EXISTS idx_invite_links_code              ON public.invite_links(code);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_node_links_one_primary_per_user ON public.user_node_links(user_id) WHERE is_primary = true;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY

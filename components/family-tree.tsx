@@ -38,6 +38,14 @@ interface FamilyTreeProps {
   onSelectMember: (id: string) => void
   onDoubleClickMember?: (id: string) => void
   onAddRelative?: (anchorId: string, relType: QuickRelType) => void
+  /** Open/focus the member detail panel (closes competing panels) */
+  onOpenProfile?: (id: string) => void
+  /** Open path finder with this member pre-filled as the source */
+  onFindRelationship?: (id: string) => void
+  /** Open invite flow for this unclaimed node */
+  onInviteNode?: (id: string) => void
+  /** Mobile: 500ms hold on a node fires this instead of the normal tap */
+  onLongPressMember?: (id: string) => void
   /** When false, anonymous nodes are shown as "? Member" placeholders */
   isAdmin?: boolean
 }
@@ -48,7 +56,7 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, isAdmin = false }: FamilyTreeProps) {
+export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, onOpenProfile, onFindRelationship, onInviteNode, onLongPressMember, isAdmin = false }: FamilyTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -72,6 +80,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
   // Touch state for pinch-zoom
   const touchRef = useRef<{ dist: number; midX: number; midY: number } | null>(null)
   const touchPanRef = useRef<{ x: number; y: number } | null>(null)
+  // Long-press detection
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
   // Track whether we've done the initial auto-fit (only do it once per tree)
   const hasAutoFit = useRef(false)
   // Track whether dimensions have been measured from the actual DOM
@@ -312,7 +323,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     // Virtual structural nodes (no position) are skipped automatically.
     const effectiveSelf = selfMemberId
       ? members.find(m => m.id === selfMemberId)
-      : members.find(m => m.relationship === 'self')
+      : null
     const enrichedForLines = effectiveSelf
       ? enrichMembersWithDerivedEdges(members, effectiveSelf.id)
       : members
@@ -383,7 +394,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       genToY.get(m.generation)!.push(pos.y)
     })
     if (genToY.size === 0) return []
-    const selfMember = members.find(m => m.relationship === 'self')
+    const selfMember = selfMemberId
+      ? members.find(m => m.id === selfMemberId)
+      : null
     const allGens = [...genToY.keys()]
     const selfGen = selfMember?.generation ?? Math.max(...allGens)
     const sortedGens = allGens.sort((a, b) => a - b)
@@ -402,7 +415,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       else name = 'Grandchildren'
       return { gen, y: minY, label: `Generation ${ROMAN[idx] ?? String(idx + 1)}`, name }
     })
-  }, [nodePositions, memberMap, members])
+  }, [nodePositions, memberMap, members, selfMemberId])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
@@ -496,9 +509,12 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     }
   }, [])
 
-  //  Touch handlers (pinch-zoom + single-finger pan) 
+  //  Touch handlers (pinch-zoom + single-finger pan + long-press) 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
+      // Cancel any pending long-press when a second finger is added
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null }
+      longPressStartRef.current = null
       const dx = e.touches[1].clientX - e.touches[0].clientX
       const dy = e.touches[1].clientY - e.touches[0].clientY
       touchRef.current = {
@@ -510,11 +526,35 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     } else if (e.touches.length === 1) {
       touchPanRef.current = { x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y }
       touchRef.current = null
+      // Long-press: arm a 500ms timer when a node button is touched
+      if (onLongPressMember) {
+        const nodeEl = (e.target as HTMLElement).closest('[data-node-id]')
+        const nodeId = nodeEl?.getAttribute('data-node-id')
+        if (nodeId) {
+          longPressStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+          if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+          longPressTimerRef.current = setTimeout(() => {
+            longPressTimerRef.current = null
+            longPressStartRef.current = null
+            onLongPressMember(nodeId)
+          }, 500)
+        }
+      }
     }
-  }, [pan])
+  }, [pan, onLongPressMember])
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     e.preventDefault()
+    // Cancel long-press if the finger moves more than 8px
+    if (longPressStartRef.current && longPressTimerRef.current && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - longPressStartRef.current.x
+      const dy = e.touches[0].clientY - longPressStartRef.current.y
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+        longPressStartRef.current = null
+      }
+    }
     if (e.touches.length === 2 && touchRef.current) {
       const dx = e.touches[1].clientX - e.touches[0].clientX
       const dy = e.touches[1].clientY - e.touches[0].clientY
@@ -545,10 +585,22 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
   const handleTouchEnd = useCallback(() => {
     touchRef.current = null
     touchPanRef.current = null
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null }
+    longPressStartRef.current = null
   }, [])
 
   const toggleCollapse = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    setCollapsedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // Event-free toggle used by the action ring
+  const toggleCollapseById = useCallback((id: string) => {
     setCollapsedIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -1040,8 +1092,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const displayName = isAnonymous ? '? Member' : member.name.split(' ')[0]
             const displayInitials = isAnonymous ? '?' : initials
 
+            const isSelf = !!selfMemberId && member.id === selfMemberId
             const isDeceased = !!member.deathYear
-            const isUnclaimed = !member.isClaimed && member.relationship !== 'self'
+            const isUnclaimed = !member.isClaimed && !isSelf
             const lifespan = member.deathYear
               ? `${member.birthYear}–${member.deathYear}`
               : member.birthYear
@@ -1052,7 +1105,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const hasChildren = graphIndex.parentSet.has(member.id)
             // Don't show 'SELF' as a label on nodes — only the current user's node
             // should display 'You', which is handled by isSelf in member-card/list.
-            const relationshipLabel = member.relationship && member.relationship !== 'self'
+            const relationshipLabel = selfMemberId && member.relationship && member.relationship !== 'self'
               ? member.relationship.toUpperCase()
               : null
             const relBadge = getRelBadgeStyle(member.relationship, networkGroup)
@@ -1073,6 +1126,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   }}
                 >
                   <button
+                    data-node-id={member.id}
                     className={cn(
                       'flex flex-col items-center gap-1.5 px-2 py-2 rounded-xl w-full border backdrop-blur-sm transition-all duration-200',
                       isSelected ? 'shadow-md shadow-amber-500/10' : '',
@@ -1130,6 +1184,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
+                      data-node-id={member.id}
                       className={cn(
                         'flex flex-col items-center rounded-2xl transition-all duration-200 w-full overflow-hidden',
                         'border backdrop-blur-md',
@@ -1164,7 +1219,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     >
                       {/* ── Card header: relationship badge + living status ── */}
                       <div className="flex items-center justify-between px-2 pt-1.5 pb-1 w-full gap-1">
-                        {(relationshipLabel || member.relationship === 'self') ? (
+                        {(relationshipLabel || isSelf) ? (
                           <span
                             className="text-[7px] font-bold tracking-wider px-1.5 py-0.5 rounded-full leading-tight whitespace-nowrap"
                             style={{
@@ -1173,7 +1228,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                               border: `1px solid ${relBadge.border}`,
                             }}
                           >
-                            {member.relationship === 'self' ? 'YOU' : relationshipLabel}
+                            {isSelf ? 'YOU' : relationshipLabel}
                           </span>
                         ) : <span />}
                         <span className="flex items-center gap-0.5 text-[7.5px] flex-shrink-0 ml-auto">
@@ -1311,7 +1366,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       {isUnclaimed && (
                         <p className="text-xs text-orange-400">Not joined yet — tap to invite</p>
                       )}
-                      {!isUnclaimed && member.relationship && member.relationship !== 'self' && (
+                      {selfMemberId && !isUnclaimed && member.relationship && member.relationship !== 'self' && (
                         <p className="text-xs text-amber-600 dark:text-amber-400/80">{member.relationship}</p>
                       )}
                       {member.occupation && (
@@ -1338,20 +1393,36 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     <span className="text-[8px] text-slate-500">+branch</span>
                   </div>
                 )}
-                {/* Inline add-relative actions — shown when this node's ring is active */}
-                {ringNodeId === member.id && onAddRelative && zoom >= 0.65 && (
-                  <div
-                    className="absolute"
-                    style={{
-                      top: 'calc(100% + 10px)',
-                      left: '50%',
-                      zIndex: 20,
-                      animation: 'ringEnter 0.18s ease-out both',
-                    }}
-                  >
-                    <NodeActionRing member={member} allMembers={members} onAddRelative={onAddRelative} />
-                  </div>
-                )}
+                {/* Inline action ring — shown when this node is active, from compact zoom up */}
+                {ringNodeId === member.id && zoom >= 0.30 && (() => {
+                  // Position ring above when the node is in the bottom 60 % of the viewport
+                  const nodeScreenY = pos.y * zoom + pan.y + dimensions.height / 2
+                  const ringGoesUp = nodeScreenY > dimensions.height * 0.60
+                  return (
+                    <div
+                      className="absolute"
+                      style={{
+                        ...(ringGoesUp
+                          ? { bottom: 'calc(100% + 10px)' }
+                          : { top: 'calc(100% + 10px)' }),
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 20,
+                        animation: 'ringEnter 0.18s ease-out both',
+                      }}
+                    >
+                      <NodeActionRing
+                        member={member}
+                        allMembers={members}
+                        onViewProfile={onOpenProfile}
+                        onFindRelationship={onFindRelationship}
+                        onInvite={onInviteNode}
+                        onAddRelative={onAddRelative}
+                        compact={zoom < 0.65}
+                      />
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
