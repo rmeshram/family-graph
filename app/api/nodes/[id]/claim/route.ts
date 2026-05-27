@@ -5,23 +5,48 @@ import type { ClaimStatus } from '@/lib/claim-state-machine'
 
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
+function getSupabaseConfig(kind: 'admin' | 'anon') {
+  const urlCandidate = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const keyCandidate = kind === 'admin'
+    ? (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)
+    : (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY)
+
+  const missing: string[] = []
+  if (!urlCandidate) missing.push('NEXT_PUBLIC_SUPABASE_URL(or SUPABASE_URL)')
+  if (!keyCandidate) {
+    missing.push(
+      kind === 'admin'
+        ? 'SUPABASE_SERVICE_ROLE_KEY(or SUPABASE_SERVICE_KEY)'
+        : 'NEXT_PUBLIC_SUPABASE_ANON_KEY(or SUPABASE_ANON_KEY)'
+    )
+  }
+  if (missing.length > 0) {
+    throw new Error(`CONFIG_ERROR: Missing ${missing.join(', ')}`)
+  }
+  const url = urlCandidate as string
+  const key = keyCandidate as string
+  return { url, key }
+}
+
 function adminClient() {
+  const { url, key } = getSupabaseConfig('admin')
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    url,
+    key,
     { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
   )
 }
 
 async function authedClient() {
+  const { url, key } = getSupabaseConfig('anon')
   const cs = await cookies()
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    key,
     {
       cookies: {
         getAll: () => cs.getAll(),
-        setAll: (c) => {
+        setAll: (c: Array<{ name: string; value: string; options: any }>) => {
           try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
         },
       },
@@ -481,6 +506,8 @@ export async function POST(
     const message =
       /duplicate key|violates|conflict/i.test(errMsg)
         ? 'This profile was updated by someone else. Please refresh and try again.'
+        : /^CONFIG_ERROR:/i.test(errMsg)
+          ? errMsg.replace(/^CONFIG_ERROR:\s*/i, '')
         : /identity_state|birth_year_hint|column .* does not exist/i.test(errMsg)
           ? 'Server schema is out of date. Please ask admin to run latest Supabase migrations.'
           : errMsg
