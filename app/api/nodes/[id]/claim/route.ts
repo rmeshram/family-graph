@@ -508,11 +508,11 @@ export async function POST(
         ? 'This profile was updated by someone else. Please refresh and try again.'
         : /^CONFIG_ERROR:/i.test(errMsg)
           ? errMsg.replace(/^CONFIG_ERROR:\s*/i, '')
-        : /identity_state|birth_year_hint|column .* does not exist/i.test(errMsg)
-          ? 'Server schema is out of date. Please ask admin to run latest Supabase migrations.'
-          : errMsg
-            ? `Unexpected server error: ${errMsg}`
-        : 'An unexpected error occurred. Please try again.'
+          : /identity_state|birth_year_hint|column .* does not exist/i.test(errMsg)
+            ? 'Server schema is out of date. Please ask admin to run latest Supabase migrations.'
+            : errMsg
+              ? `Unexpected server error: ${errMsg}`
+              : 'An unexpected error occurred. Please try again.'
     return NextResponse.json(
       { error: 'INTERNAL_ERROR', message },
       { status: 500 }

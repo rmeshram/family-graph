@@ -1622,7 +1622,7 @@ export default function FamilyGraphApp() {
                 selfMemberId={selfMember?.id ?? null}
                 familyId={isDemoMode ? null : familyId}
                 userId={user?.id ?? null}
-                memberPrivacySettings={selectedMember.claimedByUserId === user?.id ? myPrivacySettings : undefined}
+                memberPrivacySettings={selectedMemberDisplay?.claimedByUserId === user?.id ? myPrivacySettings : undefined}
                 onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 onRevokeClaim={isAdmin ? handleRevokeClaim : undefined}
                 onUnclaimSelf={!isDemoMode ? handleUnclaimSelf : undefined}
