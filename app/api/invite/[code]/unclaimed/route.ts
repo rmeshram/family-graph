@@ -25,7 +25,7 @@ export async function GET(
   // Validate the invite code
   const { data: invite, error: inviteErr } = await supabase
     .from('invite_links')
-    .select('id, family_id, expires_at, consumed_at, max_uses, used_count, created_by')
+    .select('id, family_id, expires_at, consumed_at, max_uses, used_count, created_by, invite_type, node_id')
     .eq('code', code.toUpperCase())
     .single()
 
@@ -66,9 +66,50 @@ export async function GET(
     inviterMemberId = (inviterProfile as any)?.member_id ?? null
   }
 
+  // For node_claim invites: fetch the target node + parents (bypasses RLS;
+  // joining users don't have family access yet so client-side queries fail).
+  const nodePreview = ((invite as any).invite_type === 'node_claim' && (invite as any).node_id)
+    ? await fetchNodePreview(supabase, (invite as any).node_id as string)
+    : null
+
   return NextResponse.json({
     familyId: invite.family_id,
     inviterMemberId,
     nodes: nodes ?? [],
+    nodePreview,
   })
+}
+
+// ── nodePreview: fetch for node_claim invites so the join page can show
+// "Are you [Name], child of [Parents]?" without requiring RLS access.
+async function fetchNodePreview(
+  supabase: ReturnType<typeof adminClient>,
+  nodeId: string
+): Promise<{
+  id: string; name: string; birthYear: number | null
+  relationship: string | null; gender: string | null; parentNames: string[]
+} | null> {
+  const { data: node } = await supabase
+    .from('family_members')
+    .select('id, name, birth_year, relationship, gender, parent_ids')
+    .eq('id', nodeId)
+    .single()
+  if (!node) return null
+  const parentIds: string[] = (node as any).parent_ids ?? []
+  let parentNames: string[] = []
+  if (parentIds.length > 0) {
+    const { data: parents } = await supabase
+      .from('family_members')
+      .select('name')
+      .in('id', parentIds)
+    parentNames = (parents ?? []).map((p: any) => p.name as string)
+  }
+  return {
+    id: (node as any).id,
+    name: (node as any).name,
+    birthYear: (node as any).birth_year ?? null,
+    relationship: (node as any).relationship ?? null,
+    gender: (node as any).gender ?? null,
+    parentNames,
+  }
 }

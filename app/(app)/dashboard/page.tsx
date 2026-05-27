@@ -23,6 +23,7 @@ import { AddStoryDialog } from '@/components/add-story-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-feed'
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
+import { InviteToClaimDialog } from '@/components/invite-to-claim-dialog'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
@@ -552,6 +553,7 @@ export default function FamilyGraphApp() {
   const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
   const [claimTargetId, setClaimTargetId] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [inviteToClaimTarget, setInviteToClaimTarget] = useState<FamilyMember | null>(null)
   // ── Relationship intelligence suggestions ─────────────────────────────────
   const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
@@ -1554,7 +1556,9 @@ export default function FamilyGraphApp() {
                 ) ? () => setEditingMember(selectedMember) : undefined}
                 onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
                 onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
-                onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
+                onInvite={!isDemoMode && !isViewer && !selectedMember.isClaimed
+                  ? () => setInviteToClaimTarget(selectedMember)
+                  : undefined}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                 isAdmin={isAdmin}
                 currentUserId={user?.id}
@@ -1639,7 +1643,9 @@ export default function FamilyGraphApp() {
                       ) ? () => setEditingMember(selectedMember) : undefined}
                       onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
                       onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
-                      onInvite={() => { closeMemberDetail(); setShowInviteWidget(true) }}
+                      onInvite={!isDemoMode && !isViewer && selectedMember && !selectedMember.isClaimed
+                        ? () => setInviteToClaimTarget(selectedMember)
+                        : undefined}
                       onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                       isAdmin={isAdmin}
                       currentUserId={user?.id}
@@ -1785,6 +1791,13 @@ export default function FamilyGraphApp() {
         onSetVisibility={async (memberId, visibility) => {
           await setVisibility(memberId, visibility)
         }}
+      />
+      <InviteToClaimDialog
+        member={inviteToClaimTarget}
+        open={!!inviteToClaimTarget}
+        onOpenChange={(open) => { if (!open) setInviteToClaimTarget(null) }}
+        familyId={familyId ?? null}
+        userId={user?.id ?? null}
       />
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
