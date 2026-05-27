@@ -137,12 +137,13 @@ function daysUntilBirthday(m: FamilyMember): number | null {
  */
 export function buildUniverse(
   members: FamilyMember[],
-  selfId: string,
+  anchorId: string,
+  perspectiveSelfId?: string | null,
 ): { people: UPerson[]; edges: UEdge[] } {
-  if (!selfId || members.length === 0) return { people: [], edges: [] }
+  if (!anchorId || members.length === 0) return { people: [], edges: [] }
 
   const memberMap = new Map(members.map(m => [m.id, m]))
-  const self = memberMap.get(selfId)
+  const self = memberMap.get(anchorId)
   if (!self) return { people: [], edges: [] }
 
   // ── Enrich with relationship-label-derived edges ───────────────────────────
@@ -151,13 +152,13 @@ export function buildUniverse(
   // function derives virtual parentIds/spouseIds so the BFS can reach them.
   // Virtual intermediate nodes (id starts with "__virt_") are used for BFS
   // traversal only — they are filtered out before rendering.
-  const enrichedMembers = enrichMembersWithDerivedEdges(members, selfId)
+  const enrichedMembers = enrichMembersWithDerivedEdges(members, anchorId)
   const enrichedMap = new Map(enrichedMembers.map(m => [m.id, m]))
 
   // ── 1. BFS to find depth of each reachable core/extended member ──────────
-  const depth = new Map<string, number>([[selfId, 0]])
-  const visited = new Set<string>([selfId])
-  const queue = [selfId]
+  const depth = new Map<string, number>([[anchorId, 0]])
+  const visited = new Set<string>([anchorId])
+  const queue = [anchorId]
   let head = 0
 
   while (head < queue.length) {
@@ -187,7 +188,7 @@ export function buildUniverse(
   // appears in a ring instead of being silently pushed to the community sink.
   const selfGen = self.generation ?? 3
   for (const m of members) {
-    if (m.id === selfId || m.id.startsWith('__virt_') || depth.has(m.id)) continue
+    if (m.id === anchorId || m.id.startsWith('__virt_') || depth.has(m.id)) continue
     // networkGroup === 'affiliated' members intentionally live in the community cluster
     if (m.networkGroup === 'affiliated') continue
     const memberGen = m.generation ?? selfGen
@@ -196,10 +197,10 @@ export function buildUniverse(
   }
 
   // ── 2. Assign categories ──────────────────────────────────────────────────
-  const category = new Map<string, UCategory>([[selfId, 'self']])
+  const category = new Map<string, UCategory>([[anchorId, 'self']])
 
   for (const m of members) {
-    if (m.id === selfId) continue
+    if (m.id === anchorId) continue
 
     let cat: UCategory
     if (m.networkGroup === 'affiliated') {
@@ -207,7 +208,7 @@ export function buildUniverse(
     } else if (
       m.side === 'spouse' ||
       self.spouseIds.includes(m.id) ||
-      m.spouseIds.includes(selfId)
+      m.spouseIds.includes(anchorId)
     ) {
       cat = 'marriage'
     } else if (m.side === 'paternal') {
@@ -241,7 +242,7 @@ export function buildUniverse(
   const catDepthGroups = new Map<string, RingSlot[]>()  // key = `${cat}|${depth}`
 
   for (const m of members) {
-    if (m.id === selfId) continue
+    if (m.id === anchorId) continue
     const cat = category.get(m.id) ?? 'paternal'
     const d = depth.get(m.id)    // undefined if affiliated/unreachable
 
@@ -255,7 +256,7 @@ export function buildUniverse(
   }
 
   // ── 4. Radial placement for core + extended members ───────────────────────
-  const positions = new Map<string, { x: number; y: number }>([[selfId, { x: 0, y: 0 }]])
+  const positions = new Map<string, { x: number; y: number }>([[anchorId, { x: 0, y: 0 }]])
 
   for (const [key, slots] of catDepthGroups) {
     const [catStr, depthStr] = key.split('|')
@@ -296,7 +297,7 @@ export function buildUniverse(
   // Place each group as a mini-cluster in the community sector's outer ring.
 
   const affiliated = members.filter(m => {
-    if (m.id === selfId) return false
+    if (m.id === anchorId) return false
     if (m.id.startsWith('__virt_')) return false   // never render virtual nodes as community
     return category.get(m.id) === 'community' || !depth.has(m.id)
   })
@@ -365,13 +366,15 @@ export function buildUniverse(
     people.push({
       id: m.id, name: m.name, initials, category: cat,
       x: pos.x, y: pos.y, size, hue: HUE[cat],
-      // Compute relation label from the viewer's (selfId's) perspective via BFS.
+      // Compute relation label from the verified viewer perspective via BFS.
       // Never show the stored `relationship` field directly — it is relative to
       // the admin who created the tree, not the current viewer.
-      relation: m.id === selfId
+      relation: perspectiveSelfId && m.id === perspectiveSelfId
         ? 'You'
-        // Use enriched member list so label-derived virtual edges are traversable
-        : (computeRelationLabel(selfId, m.id, enrichedMembers) ?? m.relationship ?? ''),
+        // Use enriched member list so label-derived virtual edges are traversable.
+        // In anonymous explore mode there is no verified self perspective, so
+        // relationship labels are intentionally hidden.
+        : (perspectiveSelfId ? (computeRelationLabel(perspectiveSelfId, m.id, enrichedMembers) ?? '') : ''),
       photoUrl: m.photoUrl || undefined,
       city: m.currentPlace ?? m.birthPlace ?? m.hometown ?? '',
       gotra: m.gotra ?? m.caste ?? '',
@@ -413,7 +416,7 @@ export function buildUniverse(
         (m.hometown && cm.hometown === m.hometown)
     })
     if (match) addEdge(m.id, match, 'community')
-    else if (coreMemberIds.length > 0) addEdge(m.id, selfId, 'suggested')
+    else if (coreMemberIds.length > 0) addEdge(m.id, anchorId, 'suggested')
   }
 
   return { people, edges }
@@ -474,7 +477,10 @@ export function RelationshipUniverse({
   const layoutAnchorId = selfMemberId ?? selectedMemberId ?? members[0]?.id ?? ''
 
   // ── Graph data ───────────────────────────────────────────────────────────
-  const { people, edges } = useMemo(() => buildUniverse(members, layoutAnchorId), [members, layoutAnchorId])
+  const { people, edges } = useMemo(
+    () => buildUniverse(members, layoutAnchorId, effectiveSelfId || null),
+    [members, layoutAnchorId, effectiveSelfId]
+  )
   const peopleById = useMemo(() => new Map(people.map(p => [p.id, p])), [people])
   // Full FamilyMember lookup — used for anonymous display + NodeActionRing
   const membersById = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
