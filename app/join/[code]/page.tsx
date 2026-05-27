@@ -14,7 +14,7 @@ import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { scoreCandidate, tierLabel, tierColor, isRecommendedClaimMatch } from '@/lib/match-detection'
 import type { MatchResult } from '@/lib/match-detection'
 
-type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'node_claim' | 'joining' | 'success' | 'error'
+type Status = 'loading' | 'preview' | 'relate' | 'claim' | 'node_claim' | 'post_claim' | 'joining' | 'success' | 'error'
 type RelType = 'spouse' | 'child' | 'parent' | 'sibling' | 'relative' | 'skip'
 
 interface FamilyPreview {
@@ -69,6 +69,8 @@ export default function JoinPage() {
     parentNames: string[]
   } | null>(null)
   const nodeClaimSubmittingRef = useRef(false)
+  // Post-claim profile completion (birth year prompt when node had none)
+  const [pcBirthYear, setPcBirthYear] = useState('')
 
   useEffect(() => {
     const init = async () => {
@@ -374,14 +376,37 @@ export default function JoinPage() {
         .is('consumed_at', null)
 
       if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
-      setStatus('success')
-      setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+      // If the node had no birth year, show a quick completion step before
+      // landing in the dashboard — avoids an empty DOB forever.
+      if (!nodeClaim.birthYear) {
+        setStatus('post_claim')
+      } else {
+        setStatus('success')
+        setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+      }
     } catch (e: unknown) {
       setStatus('node_claim')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       nodeClaimSubmittingRef.current = false
     }
+  }
+
+  // Post-claim: user can optionally supply a birth year that was missing from
+  // their node. Updates the node directly (user now has RLS access as claimer).
+  const handlePostClaimSave = async () => {
+    const yr = pcBirthYear.trim()
+    const birthYearNum = yr ? parseInt(yr, 10) : null
+    if (yr && (Number.isNaN(birthYearNum!) || birthYearNum! < 1800 || birthYearNum! > new Date().getFullYear() + 1)) {
+      setMessage('Please enter a valid birth year (e.g. 1985)')
+      return
+    }
+    if (nodeClaim && birthYearNum !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyClient = supabase.from('family_members') as any
+      await anyClient.update({ birth_year: birthYearNum }).eq('id', nodeClaim.nodeId)
+    }
+    window.location.href = '/dashboard'
   }
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
@@ -876,6 +901,65 @@ export default function JoinPage() {
               <p className="text-center text-xs text-muted-foreground">
                 Not you? Contact the person who sent this invite.
               </p>
+            </div>
+          )}
+
+          {/* ── Post-claim: fill in missing birth year ────────── */}
+          {status === 'post_claim' && nodeClaim && (
+            <div className="p-6 space-y-5">
+              <div className="text-center">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-green-500/10 border border-green-500/30 mb-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-400" />
+                </div>
+                <h2 className="text-lg font-bold">You're in! 🎉</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  One quick thing — your birth year isn't on the tree yet.
+                  Adding it helps family members find and identify you.
+                </p>
+              </div>
+
+              {/* Claimed node mini-card */}
+              <div className="rounded-2xl border border-border/50 bg-muted/30 p-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-sm font-bold">
+                  {(nodeClaim.identityHint ?? '?').slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-semibold text-sm leading-tight">{nodeClaim.identityHint}</p>
+                  <p className="text-xs text-green-500">Profile claimed ✓</p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Your birth year</label>
+                <Input
+                  placeholder="e.g. 1985"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={pcBirthYear}
+                  onChange={e => { setPcBirthYear(e.target.value.replace(/\D/g, '')); setMessage('') }}
+                  className="h-10 bg-muted/50 border-border"
+                  autoFocus
+                />
+                {message && <p className="text-xs text-destructive mt-1">{message}</p>}
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => { window.location.href = '/dashboard' }}
+                  className="flex-1 h-11"
+                >
+                  Skip for now
+                </Button>
+                <Button
+                  onClick={handlePostClaimSave}
+                  disabled={!pcBirthYear.trim()}
+                  className="flex-1 h-11 bg-primary hover:bg-primary/90"
+                >
+                  Save & Continue
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
             </div>
           )}
 

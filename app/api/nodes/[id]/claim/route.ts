@@ -119,7 +119,9 @@ export async function POST(
   if (submittedName.length > 200) {
     return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
   }
-  if (submittedBirthYear !== undefined && (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
+  // Allow null (means «not provided»); only validate when an actual value is sent
+  if (submittedBirthYear !== undefined && submittedBirthYear !== null &&
+    (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
     return NextResponse.json({ error: 'INVALID_BIRTH_YEAR' }, { status: 400 })
   }
 
