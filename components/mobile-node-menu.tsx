@@ -21,7 +21,7 @@ import type { FamilyMember } from '@/lib/types'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import {
   X, User, Pencil, Send, UserPlus, ChevronRight,
-  Calendar, MapPin, Briefcase,
+  Calendar, MapPin, Briefcase, GitBranch, Trash2,
 } from 'lucide-react'
 
 // ─── Quick-rel options ────────────────────────────────────────────────────────
@@ -59,9 +59,15 @@ interface MobileNodeMenuProps {
   onEdit?: () => void
   onInvite?: () => void
   onAddRelative?: (anchorId: string, relType: QuickRelType) => void
+  /** Open path finder with this member as the source */
+  onFindRelationship?: (id: string) => void
+  /** Delete this node (admin only — shown when isAdminLongPress=true) */
+  onDelete?: (id: string) => void
   allMembers: FamilyMember[]
   selfMemberId?: string | null
   isViewer?: boolean
+  /** When true (opened via long-press), show admin-only destructive actions */
+  isAdminLongPress?: boolean
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -74,14 +80,18 @@ export function MobileNodeMenu({
   onEdit,
   onInvite,
   onAddRelative,
+  onFindRelationship,
+  onDelete,
   allMembers,
   selfMemberId,
   isViewer = false,
+  isAdminLongPress = false,
 }: MobileNodeMenuProps) {
   const [relExpanded, setRelExpanded] = useState(false)
+  const [snap, setSnap] = useState<number | string | null>(0.5)
 
   const handleOpenChange = (v: boolean) => {
-    if (!v) { setRelExpanded(false); onClose() }
+    if (!v) { setRelExpanded(false); setSnap(0.5); onClose() }
   }
 
   if (!member) return null
@@ -97,9 +107,22 @@ export function MobileNodeMenu({
   const canEdit = !isViewer && !isSelf && !!onEdit
   const canInvite = !isViewer && !member.isClaimed && !!onInvite
 
+  const canFindRelationship = !!onFindRelationship && !isSelf
+  const canDelete = isAdminLongPress && !isViewer && !isSelf && !!onDelete
+
+  // Expand to full height when opened via long-press (admin mode)
+  const snapPoints: (number | string)[] = [0.5, 0.88]
+
   return (
-    <Drawer open={open} onOpenChange={handleOpenChange} direction="bottom">
-      <DrawerContent className="max-h-[55vh]">
+    <Drawer
+      open={open}
+      onOpenChange={handleOpenChange}
+      direction="bottom"
+      snapPoints={snapPoints}
+      activeSnapPoint={isAdminLongPress ? 0.88 : snap}
+      setActiveSnapPoint={setSnap}
+    >
+      <DrawerContent className="max-h-[88vh]">
         {/* ─── Member header ─────────────────────────────────────── */}
         <div className="px-4 pt-2 pb-5 flex flex-col gap-4">
 
@@ -190,8 +213,27 @@ export function MobileNodeMenu({
           )}
 
           {/* ─── Secondary actions ──────────────────────────────── */}
-          {(canEdit || canInvite || canAddRelative) && (
-            <div className={cn('grid gap-2', (canEdit || canInvite) && canAddRelative ? 'grid-cols-3' : 'grid-cols-2')}>
+          {/* ─── Secondary actions ──────────────────────────────── */}
+          {(canEdit || canInvite || canAddRelative || canFindRelationship) && (
+            <div className={cn(
+              'grid gap-2',
+              [canEdit, canInvite, canAddRelative, canFindRelationship].filter(Boolean).length >= 3
+                ? 'grid-cols-3'
+                : [canEdit, canInvite, canAddRelative, canFindRelationship].filter(Boolean).length === 2
+                  ? 'grid-cols-2'
+                  : 'grid-cols-1'
+            )}>
+              {canFindRelationship && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 flex-col gap-0.5 text-[11px] font-medium border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+                  onClick={() => { onFindRelationship!(member.id); onClose() }}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Relation
+                </Button>
+              )}
               {canEdit && (
                 <Button
                   variant="outline"
@@ -228,6 +270,22 @@ export function MobileNodeMenu({
                   Add Relative
                 </Button>
               )}
+            </div>
+          )}
+
+          {/* ─── Admin long-press actions ────────────────────────── */}
+          {canDelete && (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 space-y-1.5">
+              <p className="text-[10px] font-semibold text-destructive/70 uppercase tracking-wider">Admin Actions</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-9 gap-2 text-xs font-medium text-destructive hover:bg-destructive/10 justify-start"
+                onClick={() => { onDelete!(member.id); onClose() }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete this profile node
+              </Button>
             </div>
           )}
 

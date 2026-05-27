@@ -323,7 +323,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     // Virtual structural nodes (no position) are skipped automatically.
     const effectiveSelf = selfMemberId
       ? members.find(m => m.id === selfMemberId)
-      : members.find(m => m.relationship === 'self')
+      : null
     const enrichedForLines = effectiveSelf
       ? enrichMembersWithDerivedEdges(members, effectiveSelf.id)
       : members
@@ -394,7 +394,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       genToY.get(m.generation)!.push(pos.y)
     })
     if (genToY.size === 0) return []
-    const selfMember = members.find(m => m.relationship === 'self')
+    const selfMember = selfMemberId
+      ? members.find(m => m.id === selfMemberId)
+      : null
     const allGens = [...genToY.keys()]
     const selfGen = selfMember?.generation ?? Math.max(...allGens)
     const sortedGens = allGens.sort((a, b) => a - b)
@@ -413,7 +415,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       else name = 'Grandchildren'
       return { gen, y: minY, label: `Generation ${ROMAN[idx] ?? String(idx + 1)}`, name }
     })
-  }, [nodePositions, memberMap, members])
+  }, [nodePositions, memberMap, members, selfMemberId])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
@@ -1090,8 +1092,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const displayName = isAnonymous ? '? Member' : member.name.split(' ')[0]
             const displayInitials = isAnonymous ? '?' : initials
 
+            const isSelf = !!selfMemberId && member.id === selfMemberId
             const isDeceased = !!member.deathYear
-            const isUnclaimed = !member.isClaimed && member.relationship !== 'self'
+            const isUnclaimed = !member.isClaimed && !isSelf
             const lifespan = member.deathYear
               ? `${member.birthYear}–${member.deathYear}`
               : member.birthYear
@@ -1102,7 +1105,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const hasChildren = graphIndex.parentSet.has(member.id)
             // Don't show 'SELF' as a label on nodes — only the current user's node
             // should display 'You', which is handled by isSelf in member-card/list.
-            const relationshipLabel = member.relationship && member.relationship !== 'self'
+            const relationshipLabel = selfMemberId && member.relationship && member.relationship !== 'self'
               ? member.relationship.toUpperCase()
               : null
             const relBadge = getRelBadgeStyle(member.relationship, networkGroup)
@@ -1216,7 +1219,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     >
                       {/* ── Card header: relationship badge + living status ── */}
                       <div className="flex items-center justify-between px-2 pt-1.5 pb-1 w-full gap-1">
-                        {(relationshipLabel || member.relationship === 'self') ? (
+                        {(relationshipLabel || isSelf) ? (
                           <span
                             className="text-[7px] font-bold tracking-wider px-1.5 py-0.5 rounded-full leading-tight whitespace-nowrap"
                             style={{
@@ -1225,7 +1228,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                               border: `1px solid ${relBadge.border}`,
                             }}
                           >
-                            {member.relationship === 'self' ? 'YOU' : relationshipLabel}
+                            {isSelf ? 'YOU' : relationshipLabel}
                           </span>
                         ) : <span />}
                         <span className="flex items-center gap-0.5 text-[7.5px] flex-shrink-0 ml-auto">
@@ -1363,7 +1366,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       {isUnclaimed && (
                         <p className="text-xs text-orange-400">Not joined yet — tap to invite</p>
                       )}
-                      {!isUnclaimed && member.relationship && member.relationship !== 'self' && (
+                      {selfMemberId && !isUnclaimed && member.relationship && member.relationship !== 'self' && (
                         <p className="text-xs text-amber-600 dark:text-amber-400/80">{member.relationship}</p>
                       )}
                       {member.occupation && (
