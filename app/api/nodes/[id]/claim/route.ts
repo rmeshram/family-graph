@@ -407,7 +407,6 @@ export async function POST(
       is_claimed: true,
       claimed_by_user_id: user.id,
       claimed_at: new Date().toISOString(),
-      identity_state: 'claimed',
     }
     if (!nodeBY && submittedBirthYear !== undefined && submittedBirthYear !== null) {
       memberUpdate.birth_year = submittedBirthYear
@@ -422,8 +421,13 @@ export async function POST(
       .select('id')
 
     if (claimUpdateErr) {
+      const dbMsg = claimUpdateErr.message || ''
+      const message =
+        /identity_state|column .* does not exist/i.test(dbMsg)
+          ? 'Server schema is out of date. Please ask admin to run latest Supabase migrations (including migration 024).'
+          : 'Could not finalize this claim. Please try again.'
       return NextResponse.json(
-        { error: 'CLAIM_UPDATE_FAILED', message: 'Could not finalize this claim. Please try again.' },
+        { error: 'CLAIM_UPDATE_FAILED', message },
         { status: 500 }
       )
     }
@@ -477,6 +481,10 @@ export async function POST(
     const message =
       /duplicate key|violates|conflict/i.test(errMsg)
         ? 'This profile was updated by someone else. Please refresh and try again.'
+        : /identity_state|birth_year_hint|column .* does not exist/i.test(errMsg)
+          ? 'Server schema is out of date. Please ask admin to run latest Supabase migrations.'
+          : errMsg
+            ? `Unexpected server error: ${errMsg}`
         : 'An unexpected error occurred. Please try again.'
     return NextResponse.json(
       { error: 'INTERNAL_ERROR', message },
