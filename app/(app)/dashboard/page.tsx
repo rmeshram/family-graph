@@ -745,6 +745,21 @@ export default function FamilyGraphApp() {
     })
   }, [])
 
+  // Ring: "Profile" button — ensures the member detail panel is visible by closing
+  // competing panels (AI, invite, path finder) before selecting the node.
+  const handleOpenProfileFromRing = useCallback((id: string) => {
+    setShowAIWidget(false)
+    setShowInviteWidget(false)
+    setPathFinderOpen(false)
+    setSelectedMemberId(id)
+    setExplorationTrail((trail) => {
+      if (trail[trail.length - 1] === id) return trail
+      const existingIdx = trail.indexOf(id)
+      if (existingIdx !== -1) return trail.slice(0, existingIdx + 1)
+      return [...trail, id].slice(-8)
+    })
+  }, [])
+
   const handleSelectUniverseMember = useCallback((id: string) => {
     setDetailMemberId(null)
     setSelectedMemberId((prev) => (prev === id ? null : id))
@@ -1302,6 +1317,11 @@ export default function FamilyGraphApp() {
                   setIsClaimDialogOpen(true)
                 }}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+                onOpenProfile={!isMobile ? handleOpenProfileFromRing : undefined}
+                onFindRelationship={!isMobile ? handleOpenPathFinder : undefined}
+                onInviteNode={!isDemoMode && !isViewer && !isMobile
+                  ? () => { setShowInviteWidget(true); setShowAIWidget(false) }
+                  : undefined}
                 isAdmin={isAdmin}
               />
             )}
@@ -1600,7 +1620,10 @@ export default function FamilyGraphApp() {
                 const m = members.find(m => m.id === mobileMenuMemberId)
                 if (m) { setEditingMember(m); setMobileMenuMemberId(null) }
               }}
-              onInvite={() => { setMobileMenuMemberId(null); setShowInviteWidget(true) }}
+              onInvite={!isDemoMode && !isViewer ? () => {
+                const m = members.find(m => m.id === mobileMenuMemberId)
+                if (m && !m.isClaimed) { setMobileMenuMemberId(null); setInviteToClaimTarget(m) }
+              } : undefined}
               onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
               allMembers={members}
               selfMemberId={selfMember?.id ?? null}
