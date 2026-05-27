@@ -25,6 +25,7 @@ import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-fe
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipOnboardingDialog } from '@/components/relationship-onboarding-dialog'
 import { InviteToClaimDialog } from '@/components/invite-to-claim-dialog'
+import { SuggestedNodesBanner } from '@/components/suggested-nodes-banner'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
@@ -1350,6 +1351,13 @@ export default function FamilyGraphApp() {
 
         {/* ── Pending family link requests banner (logged-in only) ── */}
         {!isDemoMode && <FamilyLinkRequestsBanner familyId={familyId ?? null} />}
+
+        {/* People You May Know — only once identity is fully verified */}
+        {!isDemoMode && fullRelationshipActivation && (
+          <div className="px-3 pt-2">
+            <SuggestedNodesBanner onClaimed={() => refetchMembers()} />
+          </div>
+        )}
 
         {/* ── "Their tree just grew" real-time alert ───────────────── */}
         {newMemberAlert && (
