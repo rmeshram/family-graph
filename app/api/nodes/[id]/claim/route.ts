@@ -97,6 +97,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
   const { id: nodeId } = await params
   const supabase = await authedClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -150,6 +151,9 @@ export async function POST(
   const callerFamilyId = (callerProfile as any)?.family_id as string | null
 
   let authorized = callerFamilyId && callerFamilyId === (node as any).family_id
+  // Track whether auth came from a node_claim invite — used below to skip
+  // identity scoring (admin's explicit invitation is sufficient verification).
+  let authorizedViaNodeClaimInvite = false
   if (!authorized) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inviteQ = admin.from('invite_links') as any
@@ -161,7 +165,10 @@ export async function POST(
       .gt('expires_at', new Date().toISOString())
       .eq('family_id', (node as any).family_id)
       .maybeSingle()
-    authorized = !!claimInvite
+    if (claimInvite) {
+      authorized = true
+      authorizedViaNodeClaimInvite = true
+    }
   }
   // (c) Phone-number match bypass: node.normalized_phone === user.phone
   // user.phone is the E.164 number verified by Supabase OTP — high confidence.
@@ -243,21 +250,21 @@ export async function POST(
     )
   }
 
-  // Score identity
+  // Score identity. node_claim invites skip scoring entirely — the admin
+  // explicitly identified this person when creating the invite. Scoring only
+  // applies to self-service claims initiated from within the family tree.
   const nodeBY = (node as any).birth_year ?? null
-  const { score, reasons, mismatches } = scoreIdentity(
-    node.name, nodeBY, submittedName, submittedBirthYear ?? null
-  )
+  const { score, reasons, mismatches } = authorizedViaNodeClaimInvite
+    ? { score: 100, reasons: ['node_claim_invite'], mismatches: [] as string[] }
+    : scoreIdentity(node.name, nodeBY, submittedName, submittedBirthYear ?? null)
 
   const attempts = (myRequest?.attempts ?? 0) + 1
   const MAX_ATTEMPTS = 3
   const lockedUntil =
     attempts >= MAX_ATTEMPTS ? new Date(Date.now() + 86_400_000).toISOString() : null
 
-  // Identity check failed — name must match in some form, and total score must reach 40.
-  // Birth-year mismatch alone (with correct name) does NOT block the claim —
-  // name is the primary identity signal; birth year is supportive.
-  if (mismatches.includes('name') || score < 40) {
+  // Identity check — only enforced for self-service (non-invite) claims.
+  if (!authorizedViaNodeClaimInvite && (mismatches.includes('name') || score < 40)) {
     await admin.from('claim_requests').upsert(
       {
         node_id: nodeId,
@@ -359,4 +366,11 @@ export async function POST(
     claimRequestId: (upsertedReq as any)?.id ?? null,
     message: 'Profile successfully claimed!',
   })
+  } catch (err: unknown) {
+    console.error('[POST /api/nodes/[id]/claim] unhandled error:', err)
+    return NextResponse.json(
+      { error: 'INTERNAL_ERROR', message: 'An unexpected error occurred. Please try again.' },
+      { status: 500 }
+    )
+  }
 }
