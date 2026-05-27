@@ -56,6 +56,9 @@ export default function JoinPage() {
   const [unclaimedNodes, setUnclaimedNodes] = useState<{ id: string; name: string; relationship: string; generation: number }[]>([])
   const [scoredMatches, setScoredMatches] = useState<MatchResult[]>([])
   const [selectedClaimId, setSelectedClaimId] = useState<string | null | undefined>(undefined) // undefined = no selection yet; null = create new
+  // Explicit confirmation required when user picks "create new" despite a
+  // medium-confidence match being shown (prevents accidental duplicates).
+  const [confirmedCreateNew, setConfirmedCreateNew] = useState(false)
 
   // node_claim invite state (B2)
   const [nodeClaim, setNodeClaim] = useState<{ nodeId: string; identityHint: string | null; familyId: string } | null>(null)
@@ -263,6 +266,15 @@ export default function JoinPage() {
     // node and break tree integrity. The user must claim the matched node or contact admin.
     if (claimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0])) {
       setMessage('Please select the profile above that matches you. If you believe none are correct, contact the family admin to add you separately.')
+      return
+    }
+    // A3b: Medium-confidence block — require explicit acknowledgement before
+    // creating a new node, because a similar profile already exists and
+    // duplicating it breaks the tree.  The UI renders a confirmation checkbox;
+    // we double-check that it was actually ticked here.
+    if (claimId === null && scoredMatches.length > 0 &&
+        scoredMatches[0].confidenceTier === 'medium' && !confirmedCreateNew) {
+      setMessage('Please confirm that none of the profiles shown are you before creating a new one.')
       return
     }
     setStatus('joining')
@@ -575,7 +587,7 @@ export default function JoinPage() {
                       return (
                         <button
                           key={node.id}
-                          onClick={() => setSelectedClaimId(selectedClaimId === node.id ? undefined : node.id)}
+                          onClick={() => { setSelectedClaimId(selectedClaimId === node.id ? undefined : node.id); setConfirmedCreateNew(false) }}
                           className={cn(
                             'w-full flex items-center gap-3 rounded-2xl border-2 p-3 text-left transition-all',
                             selectedClaimId === node.id
@@ -632,6 +644,42 @@ export default function JoinPage() {
                         Based on your details, one of the profiles above likely represents you in this tree.
                         If none are correct, contact the family admin to add you separately.
                       </p>
+                    </div>
+                  ) : scoredMatches[0]?.confidenceTier === 'medium' ? (
+                    /* Medium-confidence: show "create new" but require explicit confirmation */
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => { setSelectedClaimId(null); setConfirmedCreateNew(false) }}
+                        className={cn(
+                          'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                          selectedClaimId === null
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border/30 bg-muted/10 hover:border-border/50'
+                        )}
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                          <UserPlus className="h-4 w-4" />
+                        </div>
+                        <p className="flex-1 text-sm font-medium text-muted-foreground">
+                          None of these are me — create a new profile
+                        </p>
+                        {selectedClaimId === null && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                      </button>
+                      {/* Confirmation required for medium matches to prevent accidental duplicates */}
+                      {selectedClaimId === null && (
+                        <label className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={confirmedCreateNew}
+                            onChange={e => setConfirmedCreateNew(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 accent-amber-500"
+                          />
+                          <p className="text-xs text-amber-400 leading-relaxed">
+                            I confirm that the profiles shown above are not me, and I understand
+                            that creating a duplicate profile may need to be merged later.
+                          </p>
+                        </label>
+                      )}
                     </div>
                   ) : (
                     <button
@@ -696,7 +744,8 @@ export default function JoinPage() {
                       disabled={
                         selectedClaimId === undefined ||
                         (selectedClaimId === null && !FEATURE_FLAGS.enableInviteRelationshipStep && !displayName.trim()) ||
-                        (selectedClaimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0]))
+                        (selectedClaimId === null && scoredMatches.length > 0 && isRecommendedClaimMatch(scoredMatches[0])) ||
+                        (selectedClaimId === null && scoredMatches.length > 0 && scoredMatches[0].confidenceTier === 'medium' && !confirmedCreateNew)
                       }
                       className="flex-1 h-11 bg-primary hover:bg-primary/90"
                     >

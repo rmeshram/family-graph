@@ -194,10 +194,19 @@ export async function POST(
     merged['claimed_by_user_id'] = dupClaimedBy
     merged['claim_status'] = (duplicate as any).claim_status ?? 'claimed'
     merged['claimed_at'] = (duplicate as any).claimed_at
+    merged['identity_state'] = 'claimed'
 
     // Update the claimer's profile.member_id to point to the surviving node.
     if (dupClaimedBy) {
       await admin.from('profiles').update({ member_id: primaryId }).eq('id', dupClaimedBy)
+      // Re-point the active user_node_link to the surviving primary node.
+      await admin
+        .from('user_node_links')
+        .update({ node_id: primaryId } as any)
+        .eq('node_id', targetId)
+        .eq('user_id', dupClaimedBy)
+        .eq('is_primary', true)
+        .then(() => { })
     }
 
     // Audit: record claim transfer
@@ -226,12 +235,54 @@ export async function POST(
     }).then(() => { })
   }
 
-  // ── 6. Transfer stories ─────────────────────────────────────────────────────
+  // ── 6. Transfer stories, memories, voice_notes ───────────────────────────
   await admin
     .from('stories')
     .update({ member_id: primaryId })
     .eq('member_id', targetId)
-    .then(() => { }) // best-effort — stories table might not exist
+    .then(() => { }) // best-effort
+
+  // For memories, the duplicate may appear in tagged_member_ids (an array column).
+  // Replace all occurrences of targetId with primaryId across the family's memories.
+  const { data: taggedMemories } = await admin
+    .from('memories')
+    .select('id, tagged_member_ids')
+    .contains('tagged_member_ids', [targetId])
+    .eq('family_id', (primary as any).family_id)
+
+  if (taggedMemories?.length) {
+    await Promise.all(
+      (taggedMemories as any[]).map(mem => {
+        const updatedTags = (mem.tagged_member_ids as string[]).map((mid: string) =>
+          mid === targetId ? primaryId : mid
+        )
+        return admin.from('memories').update({ tagged_member_ids: updatedTags }).eq('id', mem.id)
+      })
+    )
+  }
+
+  await admin
+    .from('voice_notes')
+    .update({ member_id: primaryId })
+    .eq('member_id', targetId)
+    .then(() => { }) // best-effort
+
+  // Transfer any pending claim_requests on the duplicate to point at the primary.
+  await admin
+    .from('claim_requests')
+    .update({ node_id: primaryId, updated_at: new Date().toISOString() } as any)
+    .eq('node_id', targetId)
+    .in('status', ['pending', 'verified'])
+    .then(() => { }) // best-effort
+
+  // Soft-deactivate any user_node_links pointing to the duplicate.
+  // If primary has no active link and duplicate had one, we already transferred
+  // the claim above (step 5); deactivate the old link here.
+  await admin
+    .from('user_node_links')
+    .update({ status: 'inactive' } as any)
+    .eq('node_id', targetId)
+    .then(() => { }) // best-effort
 
   // ── 7. Apply merged update to primary, then delete duplicate ───────────────
   const { error: updateErr } = await admin

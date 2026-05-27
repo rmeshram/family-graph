@@ -41,6 +41,7 @@ import {
   UserCheck,
 } from 'lucide-react'
 import type { QuickRelType } from '@/components/quick-add-member-dialog'
+import { UnclaimDialog } from '@/components/unclaim-dialog'
 import { cn, computeProfileCompleteness } from '@/lib/utils'
 import { findRelationshipPath, computeRelationLabel, enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
@@ -84,6 +85,11 @@ interface MemberDetailProps {
   onClaim?: (memberId: string) => void
   /** Admin-only: revoke an existing claim on this node. */
   onRevokeClaim?: (memberId: string) => void
+  /**
+   * Called after the current user successfully unlinks themselves from their
+   * claimed node. Parent should refresh members + profile state.
+   */
+  onUnclaimSelf?: () => void
 }
 
 const milestoneIcons: Record<string, React.ReactNode> = {
@@ -123,7 +129,9 @@ export function MemberDetail({
   userId,
   onClaim,
   onRevokeClaim,
+  onUnclaimSelf,
 }: MemberDetailProps) {
+  const [showUnclaimDialog, setShowUnclaimDialog] = useLocalState(false)
   const initials = member.name
     .split(' ')
     .map((n) => n[0])
@@ -747,6 +755,25 @@ export function MemberDetail({
               ))}
             </div>
           </div>
+        )}
+        {/* Self-Serve Unclaim — visible only on the user's own claimed node */}
+        {isYourNode && member.isClaimed && onUnclaimSelf && (
+          <>
+            <button
+              onClick={() => setShowUnclaimDialog(true)}
+              className="mb-2 w-full flex items-center gap-2 rounded-lg border border-muted-foreground/20 bg-muted/30 px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
+            >
+              <UserX className="h-4 w-4 shrink-0" />
+              <span>Unlink my account from this profile</span>
+            </button>
+            <UnclaimDialog
+              open={showUnclaimDialog}
+              onOpenChange={setShowUnclaimDialog}
+              memberName={member.name}
+              nodeId={member.id}
+              onUnclaimed={onUnclaimSelf}
+            />
+          </>
         )}
         {/* Claim This Profile — for unclaimed, non-deceased nodes, when viewer has no other claimed node */}
         {!member.isClaimed && !isYourNode && !member.isDeceased && onClaim && currentUserId && !selfMemberId && (

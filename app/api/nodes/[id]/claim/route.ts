@@ -307,15 +307,32 @@ export async function POST(
     { onConflict: 'node_id,claimant_user_id' }
   ).select('id').single()
 
-  // Update node state — always claimed (no pending state for MVP)
+  // Update node state — optimistic lock ensures only one simultaneous claimant wins.
+  // Two concurrent requests may both pass the identity-scoring check above, but only
+  // the one that atomically flips is_claimed from false→true gets a returned row.
+  // The second writer finds is_claimed=true and receives ALREADY_CLAIMED (409).
   const memberUpdate: Record<string, unknown> = {
     claim_status: newStatus,
     is_claimed: true,
     claimed_by_user_id: user.id,
     claimed_at: new Date().toISOString(),
+    identity_state: 'claimed',
   }
   if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
-  await admin.from('family_members').update(memberUpdate as any).eq('id', nodeId)
+
+  const { data: claimUpdate } = await admin
+    .from('family_members')
+    .update(memberUpdate as any)
+    .eq('id', nodeId)
+    .eq('is_claimed', false)   // ← race-safe optimistic lock
+    .select('id')
+
+  if (!(claimUpdate as any[])?.length) {
+    return NextResponse.json(
+      { error: 'ALREADY_CLAIMED', message: 'This profile was just claimed by someone else.' },
+      { status: 409 }
+    )
+  }
 
   // Audit
   await admin.from('claim_audit_log').insert({

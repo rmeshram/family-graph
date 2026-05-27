@@ -926,6 +926,14 @@ export default function FamilyGraphApp() {
     }
   }, [toast, refetchMembers])
 
+  // Called after the user unlinks themselves from their own claimed node.
+  // Refreshes members + profile so the UI reflects the unclaimed state immediately.
+  const handleUnclaimSelf = useCallback(() => {
+    refetchMembers()
+    closeMemberDetail()
+    toast({ title: 'Profile unlinked', description: 'Your account is no longer linked to that profile.' })
+  }, [refetchMembers, toast])
+
   const handleAddStory = useCallback(async (memberId: string, storyData: Omit<Story, 'id' | 'createdAt'>) => {
     if (familyId) {
       try {
@@ -1556,6 +1564,7 @@ export default function FamilyGraphApp() {
                 memberPrivacySettings={selectedMember.claimedByUserId === user?.id ? myPrivacySettings : undefined}
                 onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 onRevokeClaim={isAdmin ? handleRevokeClaim : undefined}
+                onUnclaimSelf={!isDemoMode ? handleUnclaimSelf : undefined}
                 onSetVisibility={!isViewer ? async (memberId, v) => {
                   try {
                     await setVisibility(memberId, v)
@@ -1640,6 +1649,7 @@ export default function FamilyGraphApp() {
                       memberPrivacySettings={selectedMember?.claimedByUserId === user?.id ? myPrivacySettings : undefined}
                       onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                       onRevokeClaim={isAdmin ? handleRevokeClaim : undefined}
+                      onUnclaimSelf={!isDemoMode ? handleUnclaimSelf : undefined}
                       onSetVisibility={!isViewer ? async (memberId, v) => {
                         try {
                           await setVisibility(memberId, v)

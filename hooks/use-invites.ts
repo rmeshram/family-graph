@@ -14,6 +14,25 @@ function randomCode(len = 8) {
   return Array.from(bytes, b => b.toString(36)).join('').replace(/[^a-z0-9]/gi, '').slice(0, len).toUpperCase()
 }
 
+// ─── Duplicate-detection helpers ─────────────────────────────────────────────
+
+function normalizeNameForDup(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ')
+}
+
+function levenshteinDist(a: string, b: string): number {
+  const m = a.length, n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  )
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+  return dp[m][n]
+}
+
 export function useInvites(familyId: string | null) {
   const supabase = createClient()
 
@@ -510,6 +529,41 @@ export function useJoinFamily() {
         spouse: 'spouse', child: 'child', parent: 'parent',
         sibling: 'sibling', relative: 'relative', skip: 'member',
       }
+
+      // ── Server-side duplicate prevention ────────────────────────────────────
+      // The client already blocks HIGH-confidence matches in the UI, but a user
+      // can still bypass a MEDIUM match, and a direct API call bypasses the UI
+      // entirely.  Check for collisions here as a hard server-side guard.
+      const normNew = normalizeNameForDup(opts.displayName)
+      const { data: existingMembers } = await supabase
+        .from('family_members')
+        .select('id, name')
+        .eq('family_id', invite.family_id)
+        .limit(500)
+
+      const exactDup = (existingMembers ?? []).find(
+        m => normalizeNameForDup((m as any).name) === normNew
+      )
+      if (exactDup) {
+        throw new Error(
+          `A profile named "${(exactDup as any).name}" already exists in this family. ` +
+          `Please select that profile above to claim it — creating a duplicate would break the tree.`
+        )
+      }
+
+      if (normNew.length >= 4) {
+        const fuzzyDup = (existingMembers ?? []).find(m => {
+          const norm = normalizeNameForDup((m as any).name)
+          return norm.length >= 4 && levenshteinDist(norm, normNew) <= 2
+        })
+        if (fuzzyDup) {
+          throw new Error(
+            `A profile with a very similar name ("${(fuzzyDup as any).name}") already exists. ` +
+            `If that's you, please claim it from the list above rather than creating a new profile.`
+          )
+        }
+      }
+      // ── End duplicate prevention ─────────────────────────────────────────────
 
       const { data: newMember, error: memberErr } = await supabase.from('family_members').insert({
         family_id: invite.family_id,
