@@ -1814,14 +1814,6 @@ export function RelationshipUniverse({
                   color: 'var(--muted-foreground)',
                   action: () => onAddRelative!(selectedMemberId!, 'child'),
                 }] : []),
-                // For unclaimed nodes: always show a "Profile" secondary action so the
-                // detail panel (with Edit button) is reachable even when the primary CTA
-                // is "Invite to Join" or "Claim as myself".
-                ...((canInvite || canClaim) && onOpenMemberDetail ? [{
-                  key: 'profile', label: 'Profile', icon: '👤',
-                  color: 'var(--primary)',
-                  action: () => onOpenMemberDetail!(selectedMemberId!),
-                }] : []),
               ] as { key: string; label: string; icon: string; color: string; action: () => void }[]
 
               // ── Primary CTA ────────────────────────────────────────────────
@@ -1995,7 +1987,7 @@ export function RelationshipUniverse({
                         }}
                       >
                         <span style={{ fontSize: 12 }}>👤</span>
-                        {isSelf || isUnclaimed ? 'Edit Profile' : 'View Profile'}
+                        {isSelf ? 'Edit Profile' : 'View Profile'}
                       </button>
                     </div>
                   </div>
@@ -2354,7 +2346,7 @@ export function RelationshipUniverse({
                       }}
                     >
                       <span style={{ fontSize: 11 }}>👤</span>
-                      {isSelf || isUnclaimed ? 'Edit Profile' : 'View Profile'}
+                      {isSelf ? 'Edit Profile' : 'View Profile'}
                     </button>
                   </div>
                 </div>
