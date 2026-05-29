@@ -28,6 +28,8 @@ export default function BiodataPage() {
 
   const eligible = allMembers.filter(m => {
     if (m.isAlive === false || !m.birthYear) return false
+    // Exclude married members (has at least one spouse)
+    if ((m.spouseIds ?? []).length > 0) return false
     const age = CURRENT_YEAR - m.birthYear
     return age >= 18 && age <= 45
   })
@@ -446,15 +448,27 @@ export default function BiodataPage() {
                           <dl className="space-y-2.5">
                             {[
                               ["Father", father?.name ?? "–"],
-                              ["Father's Occ.", father?.occupation ?? "–"],
+                              ["Father's Occ.", member.fatherOccupation ?? father?.occupation ?? "–"],
                               ["Mother", mother?.name ?? "–"],
+                              ["Mother's Occ.", member.motherOccupation ?? mother?.occupation ?? "–"],
                               [
-                                "Siblings",
-                                siblings.length > 0
-                                  ? siblings.map(s => s.name.split(" ")[0]).join(", ")
-                                  : "None",
+                                "Brothers",
+                                member.numberOfBrothers !== undefined
+                                  ? `${member.numberOfBrothers} (${member.brothersMarried ?? 0} married)`
+                                  : siblings.filter(s => s.gender === 'male').length > 0
+                                    ? siblings.filter(s => s.gender === 'male').map(s => s.name.split(" ")[0]).join(", ")
+                                    : "None"
                               ],
-                              ["Family Type", "Joint Family"],
+                              [
+                                "Sisters",
+                                member.numberOfSisters !== undefined
+                                  ? `${member.numberOfSisters} (${member.sistersMarried ?? 0} married)`
+                                  : siblings.filter(s => s.gender === 'female').length > 0
+                                    ? siblings.filter(s => s.gender === 'female').map(s => s.name.split(" ")[0]).join(", ")
+                                    : "None"
+                              ],
+                              ["Family Type", member.familyType === 'joint' ? "Joint Family" : member.familyType === 'nuclear' ? "Nuclear Family" : "Joint Family"],
+                              ["Family Income", member.familyIncomeRange ? member.familyIncomeRange.replace(/_/g, ' ').replace('lakh', 'L').toUpperCase() : "Not disclosed"],
                               [
                                 "Native Place",
                                 member.hometown ?? member.birthPlace?.split(",")[0] ?? "–",
@@ -476,6 +490,46 @@ export default function BiodataPage() {
                             About
                           </h3>
                           <p style={{ color: '#374151', fontSize: '13px', lineHeight: 1.65 }}>{member.bio}</p>
+                        </div>
+                      )}
+
+                      {/* Partner Expectations */}
+                      {member.partnerExpectations && (
+                        <div className="sm:col-span-2">
+                          <h3 style={{ color: '#92400E', fontSize: '11px', letterSpacing: '0.18em', fontWeight: 700, borderBottom: '1px solid #FDE68A', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
+                            Partner Expectations
+                          </h3>
+                          <p style={{ color: '#374151', fontSize: '13px', lineHeight: 1.65 }}>{member.partnerExpectations}</p>
+                          {(member.preferredAgeMin || member.preferredAgeMax || member.preferredLocations?.length || member.preferredHeightMinCm) && (
+                            <div style={{ marginTop: '12px', display: 'grid', gap: '8px' }}>
+                              {(member.preferredAgeMin || member.preferredAgeMax) && (
+                                <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                                  <strong style={{ color: '#92400E' }}>Age:</strong> {member.preferredAgeMin ?? '–'} to {member.preferredAgeMax ?? '–'} years
+                                </div>
+                              )}
+                              {(member.preferredHeightMinCm || member.preferredHeightMaxCm) && (
+                                <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                                  <strong style={{ color: '#92400E' }}>Height:</strong> {member.preferredHeightMinCm ?? '–'} to {member.preferredHeightMaxCm ?? '–'} cm
+                                </div>
+                              )}
+                              {member.preferredLocations && member.preferredLocations.length > 0 && (
+                                <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                                  <strong style={{ color: '#92400E' }}>Preferred Locations:</strong> {member.preferredLocations.join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Residency Info (for NRI profiles) */}
+                      {member.residencyStatus && member.residencyStatus !== 'indian_citizen' && (
+                        <div className="sm:col-span-2" style={{ background: '#DBEAFE', borderRadius: '8px', padding: '12px' }}>
+                          <div style={{ fontSize: '12px', color: '#1E40AF', display: 'grid', gap: '4px' }}>
+                            <div><strong>Status:</strong> {member.residencyStatus.replace(/_/g, ' ').toUpperCase()}</div>
+                            <div><strong>Current Country:</strong> {member.currentCountry ?? 'Not specified'}</div>
+                            <div><strong>Willing to relocate:</strong> {member.willingToRelocate ? 'Yes' : 'No'}</div>
+                          </div>
                         </div>
                       )}
 

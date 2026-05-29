@@ -33,10 +33,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
-  const { token } = await params
+  const { token: rawToken } = await params
+  // Normalize to uppercase first so mixed-case tokens from URLs work correctly
+  const token = (rawToken ?? '').toUpperCase()
 
   // Validate token format BEFORE doing anything (prevents cookie poisoning + DB hits with junk)
-  if (!token || !/^[A-Z0-9]{4,16}$/.test(token.toUpperCase())) {
+  if (!token || !/^[A-Z0-9]{4,16}$/.test(token)) {
     return NextResponse.json({ error: 'INVALID_TOKEN' }, { status: 400 })
   }
 
@@ -64,7 +66,7 @@ export async function POST(
   const { data: invite } = await admin
     .from('invite_links')
     .select('*, family_members(id, name, birth_year, claim_status, is_deceased, family_id)')
-    .eq('code', token.toUpperCase())
+    .eq('code', token)
     .single()
 
   if (!invite) return NextResponse.json({ error: 'INVITE_NOT_FOUND' }, { status: 404 })

@@ -157,7 +157,11 @@ export async function POST(
   // 4. Clear profiles.member_id so the app immediately stops treating this node
   //    as the user's identity. Without this step, the UI shows stale claim data
   //    and the "Unlink My Profile" button stays visible even after revoke.
-  if (previousClaimantId) {
+  //
+  // BUG FIX #2: Only clear member_id for self-unclaim within grace period.
+  // If admin is revoking after grace period, DO NOT clear member_id - let the user
+  // keep their family access with claim_status='revoked'. They can re-claim later.
+  if (previousClaimantId && isSelfUnclaim) {
     await admin
       .from('profiles')
       .update({ member_id: null } as any)

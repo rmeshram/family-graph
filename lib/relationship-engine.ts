@@ -954,6 +954,8 @@ export function computePostAddSuggestions(
   newMemberId: string,
   allMembers: FamilyMember[],
 ): RelationshipSuggestion[] {
+  const memberMap = new Map(allMembers.map(m => [m.id, m]))
+
   const raw: RelationshipSuggestion[] = [
     // Actionable first (structural changes)
     ...inferCoParentSpouseSuggestions(allMembers, newMemberId),
@@ -973,8 +975,21 @@ export function computePostAddSuggestions(
     return true
   })
 
+  // Filter out actionable suggestions that target a deceased member.
+  // Informational (actions.length === 0) suggestions about deceased ancestors
+  // are still useful to show (e.g. "X is your grandfather"), but we should
+  // never prompt the user to add a spouse link to a deceased person.
+  const withoutDeceasedActions = deduped.filter(s => {
+    if (s.actions.length === 0) return true // informational — always keep
+    const toMember = memberMap.get(s.toId)
+    const fromMember = memberMap.get(s.fromId)
+    const toDeceased = !!(toMember?.isDeceased || toMember?.deathYear)
+    const fromDeceased = !!(fromMember?.isDeceased || fromMember?.deathYear)
+    return !toDeceased && !fromDeceased
+  })
+
   // Sort: actionable (has actions) > high confidence > medium; alphabetical within tier
-  return deduped.sort((a, b) => {
+  return withoutDeceasedActions.sort((a, b) => {
     const aScore = (a.actions.length > 0 ? 2 : 0) + (a.confidence === 'high' ? 1 : 0)
     const bScore = (b.actions.length > 0 ? 2 : 0) + (b.confidence === 'high' ? 1 : 0)
     if (aScore !== bScore) return bScore - aScore

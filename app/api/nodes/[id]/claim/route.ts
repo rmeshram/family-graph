@@ -147,9 +147,11 @@ export async function POST(
       return NextResponse.json({ error: 'INVALID_NAME', message: 'The name provided is too long.' }, { status: 400 })
     }
     // Allow null (means «not provided»); only validate when an actual value is sent
-    if (submittedBirthYear !== undefined && submittedBirthYear !== null &&
-      (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
-      return NextResponse.json({ error: 'INVALID_BIRTH_YEAR', message: 'Please enter a valid birth year (1800–2200).' }, { status: 400 })
+    if (submittedBirthYear !== undefined && submittedBirthYear !== null) {
+      const currentYear = new Date().getFullYear()
+      if (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > currentYear) {
+        return NextResponse.json({ error: 'INVALID_BIRTH_YEAR', message: `Please enter a valid birth year (1800–${currentYear}).` }, { status: 400 })
+      }
     }
 
     const admin = adminClient()
@@ -475,7 +477,20 @@ export async function POST(
       },
       { onConflict: 'node_id,claimant_user_id' }
     ).select('id').single()
+
+    // Handle race condition where another user's claim triggered the unique constraint
     if (upsertReqErr) {
+      // 23505 = unique_violation: one-pending-per-node constraint fired, meaning
+      // another user already holds a pending/verified claim on this node.
+      if (upsertReqErr.code === '23505') {
+        return NextResponse.json(
+          {
+            error: 'CLAIM_PENDING_ANOTHER_USER',
+            message: 'Another user is already claiming this profile. Please wait for their claim to be reviewed or contact a family admin.',
+          },
+          { status: 409 }
+        )
+      }
       return NextResponse.json(
         { error: 'CLAIM_REQUEST_WRITE_FAILED', message: 'Could not record your claim request. Please try again.' },
         { status: 500 }

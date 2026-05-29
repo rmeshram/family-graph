@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState, useEffect, memo } from 'react'
+import { useRouter } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import { FamilyMember } from '@/lib/types'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -42,12 +44,16 @@ interface FamilyTreeProps {
   onOpenProfile?: (id: string) => void
   /** Open path finder with this member pre-filled as the source */
   onFindRelationship?: (id: string) => void
-  /** Open invite flow for this unclaimed node */
+  /** Open invite-to-claim flow for a specific unclaimed node */
   onInviteNode?: (id: string) => void
+  /** Claim this node as yourself */
+  onClaimNode?: (id: string) => void
   /** Mobile: 500ms hold on a node fires this instead of the normal tap */
   onLongPressMember?: (id: string) => void
   /** When false, anonymous nodes are shown as "? Member" placeholders */
   isAdmin?: boolean
+  /** Open the full detail panel for this member (graph popup → full sidebar) */
+  onOpenMemberDetail?: (memberId: string) => void
 }
 
 interface NodePosition {
@@ -56,7 +62,8 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, onOpenProfile, onFindRelationship, onInviteNode, onLongPressMember, isAdmin = false }: FamilyTreeProps) {
+export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, onOpenProfile, onFindRelationship, onInviteNode, onClaimNode, onLongPressMember, isAdmin = false, onOpenMemberDetail }: FamilyTreeProps) {
+  const router = useRouter()
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -165,8 +172,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
 
     const nodeWidth = 160
     const nodeHeight = 155
-    const horizontalGap = 44
-    const verticalGap = 155
+    const horizontalGap = 64
+    const verticalGap = 170
 
     //  Core + Extended: layout core by generation, extended members in a
     //  separate column grid to the left so they don't widen the core rows.
@@ -659,6 +666,27 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     animateTo(newX, newY, newZoom)
   }, [nodePositions, dimensions, animateTo])
 
+  // defaultView: like fitToView but enforces a minimum zoom of 0.55 so nodes
+  // are always shown in compact mode (avatar + name) rather than as tiny dots.
+  // Used for initial auto-fit. The F key / Fit button still uses fitToView to
+  // show ALL nodes regardless of size.
+  const defaultView = useCallback(() => {
+    if (nodePositions.length === 0) return
+    const minX = Math.min(...nodePositions.map(p => p.x)) - 100
+    const maxX = Math.max(...nodePositions.map(p => p.x)) + 100
+    const minY = Math.min(...nodePositions.map(p => p.y)) - 100
+    const maxY = Math.max(...nodePositions.map(p => p.y)) + 100
+    const contentWidth = maxX - minX
+    const contentHeight = maxY - minY
+    const scaleX = dimensions.width / contentWidth
+    const scaleY = dimensions.height / contentHeight
+    // Enforce minimum 0.55 so compact cards always render (not SVG dots)
+    const newZoom = Math.max(Math.min(scaleX, scaleY, 1) * 0.9, 0.55)
+    const newX = (dimensions.width - contentWidth * newZoom) / 2 - minX * newZoom
+    const newY = (dimensions.height - contentHeight * newZoom) / 2 - minY * newZoom
+    animateTo(newX, newY, newZoom)
+  }, [nodePositions, dimensions, animateTo])
+
   // Focus on a specific node — smoothly center it at a readable zoom
   const focusNode = useCallback((nodeId: string) => {
     const pos = nodePositions.find(p => p.id === nodeId)
@@ -685,9 +713,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       hasAutoFit.current = true
       prevMemberCount.current = nodePositions.length
       prevDimensionsRef.current = { width: dimensions.width, height: dimensions.height }
-      if (dimensions.width > 0 && dimensions.height > 0) fitToView()
+      if (dimensions.width > 0 && dimensions.height > 0) defaultView()
     }
-  }, [nodePositions, dimensions, fitToView])
+  }, [nodePositions, dimensions, defaultView])
 
   // Ring: 4-second idle auto-dismiss
   useEffect(() => {
@@ -1656,6 +1684,287 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
           Scroll to zoom · Drag to pan · Double-click to focus · F to fit
         </div>
       </div>
+
+      {/* ─── Identity card popup ────────────────────────────────────────── */}
+      {/* Appears when a node is selected on desktop/tablet; mobile uses the
+          dashboard's MobileNodeMenu + Drawer flow instead.                   */}
+      <AnimatePresence>
+        {selectedMemberId && dimensions.width >= 600 && (() => {
+          const member = memberMap.get(selectedMemberId)
+          if (!member) return null
+          const initials = member.name.split(' ').filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          const isDeceased = !!(member.deathYear || member.isDeceased)
+          const isSelf = !!selfMemberId && member.id === selfMemberId
+          const isUnclaimed = !(member.isClaimed ?? false)
+          const canClaim = isUnclaimed && !isDeceased && !isSelf && !selfMemberId && !!onClaimNode
+          const canInvite = isUnclaimed && !isDeceased && !isSelf && !!onInviteNode
+          const spouses = (member.spouseIds ?? []).map(id => memberMap.get(id)).filter((m): m is FamilyMember => !!m)
+          const children = members.filter(m => (m.parentIds ?? []).includes(selectedMemberId!))
+          const birthYear = member.birthYear ?? (member.dateOfBirth ? new Date(member.dateOfBirth).getFullYear() : null)
+          const age = birthYear ? new Date().getFullYear() - birthYear : null
+          const catColor = member.networkGroup === 'affiliated' ? '#14B8A6' : member.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
+          const relLabel = isSelf ? 'You' : (member.relationship && member.relationship !== 'self' ? String(member.relationship) : null)
+          const isNarrow = dimensions.width < 560
+          // Context-aware primary CTA — mirrors universe popup logic
+          const primaryBtn = isSelf
+            ? { label: 'Edit My Profile', icon: '✏️', bg: 'var(--primary)', action: () => (onOpenMemberDetail ?? onOpenProfile)?.(selectedMemberId!) }
+            : canClaim
+              ? { label: 'This is me — Claim', icon: '🙋', bg: 'oklch(0.50 0.22 200)', action: () => onClaimNode!(selectedMemberId!) }
+              : canInvite
+                ? { label: 'Invite to Join', icon: '✉️', bg: 'oklch(0.50 0.22 145)', action: () => onInviteNode!(selectedMemberId!) }
+                : { label: 'View Profile', icon: '👤', bg: 'var(--primary)', action: () => (onOpenMemberDetail ?? onOpenProfile)?.(selectedMemberId!) }
+          return (
+            <motion.div
+              key={`popup-${selectedMemberId}`}
+              initial={{ opacity: 0, y: isNarrow ? 56 : 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: isNarrow ? 48 : 12 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+              className="absolute z-[5] overflow-hidden"
+              style={{
+                left: 12, right: 12, bottom: 68,
+                borderRadius: 14,
+                background: 'var(--universe-panel-bg, rgba(15,15,20,0.92))',
+                border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.10))',
+                backdropFilter: 'blur(32px)',
+                WebkitBackdropFilter: 'blur(32px)',
+                boxShadow: '0 -4px 36px rgba(0,0,0,0.28)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Accent stripe */}
+              <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none"
+                style={{ background: `linear-gradient(90deg, ${catColor} 0%, transparent 60%)` }} />
+              {/* Global close button */}
+              <button
+                onClick={e => { e.stopPropagation(); onSelectMember(selectedMemberId!) }}
+                className="absolute top-2.5 right-3 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-all hover:brightness-110 active:scale-90"
+                style={{ background: 'var(--muted)', color: 'var(--muted-foreground)', fontSize: 11 }}
+                aria-label="Close popup"
+              >✕</button>
+
+              <div className={`flex ${isNarrow ? 'flex-col' : 'flex-row'}`} style={{ minHeight: isNarrow ? undefined : 130, maxHeight: isNarrow ? 280 : 170 }}>
+                {/* ── Identity column ── */}
+                <div className="flex items-start gap-3 px-4 pt-4 pb-3 shrink-0"
+                  style={{
+                    width: isNarrow ? '100%' : 240,
+                    borderRight: isNarrow ? 'none' : '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))',
+                    borderBottom: isNarrow ? '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))' : 'none',
+                  }}>
+                  {/* Avatar */}
+                  <div className="relative shrink-0 mt-0.5">
+                    <div className="rounded-full overflow-hidden flex items-center justify-center font-bold text-white"
+                      style={{
+                        width: 50, height: 50, fontSize: 15,
+                        background: `linear-gradient(135deg, ${catColor}bb 0%, ${catColor}44 100%)`,
+                        boxShadow: `0 0 0 2.5px ${catColor}55`,
+                      }}>
+                      {member.photoUrl
+                        ? <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
+                        : initials}
+                    </div>
+                    {member.isClaimed && !isDeceased && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold"
+                        style={{ background: 'oklch(0.62 0.22 145)', borderColor: 'var(--universe-panel-bg, #0f0f14)', color: '#fff' }}>✓</span>
+                    )}
+                  </div>
+                  {/* Name block */}
+                  <div className="min-w-0 flex-1 pt-0.5 pr-8">
+                    <div className="font-bold text-[13px] leading-snug break-words" style={{ color: 'var(--foreground)', wordBreak: 'break-word' }}>
+                      {member.showAsAnonymous && !isAdmin ? '? Member' : member.name}
+                    </div>
+                    {relLabel && (
+                      <div className="text-[11px] font-semibold mt-0.5" style={{ color: catColor }}>{relLabel}</div>
+                    )}
+                    {member.currentPlace && (
+                      <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--muted-foreground)' }}>{member.currentPlace}</div>
+                    )}
+                    <div className="flex gap-1 mt-1.5 flex-wrap">
+                      {age && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))' }}>
+                          {isDeceased && member.deathYear && birthYear ? `Lived ${member.deathYear - birthYear} yrs` : `Age ${age}`}
+                        </span>
+                      )}
+                      {member.occupation && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))' }}>
+                          {member.occupation}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Family column ── */}
+                {!isNarrow && (
+                  <div className="flex-1 min-w-0 flex flex-col px-4 py-3 overflow-hidden"
+                    style={{ borderRight: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', minWidth: 130 }}>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em] mb-2" style={{ color: 'var(--muted-foreground)' }}>Family</div>
+                    <div className="space-y-1.5 overflow-auto flex-1">
+                      {spouses.slice(0, 1).map(sp => (
+                        <button key={sp.id}
+                          onClick={e => { e.stopPropagation(); onSelectMember(sp.id) }}
+                          className="flex items-center gap-1.5 w-full text-left hover:opacity-70 transition-opacity">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-semibold shrink-0"
+                            style={{ background: 'var(--muted)', color: 'var(--foreground)' }}>
+                            {sp.name[0]}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold truncate" style={{ color: 'var(--foreground)' }}>{sp.name}</div>
+                            <div className="text-[9px]" style={{ color: 'var(--muted-foreground)' }}>Spouse</div>
+                          </div>
+                        </button>
+                      ))}
+                      {children.length > 0 && (
+                        <div>
+                          <div className="text-[9px] mb-1" style={{ color: 'var(--muted-foreground)' }}>{children.length} {children.length === 1 ? 'child' : 'children'}</div>
+                          <div className="flex gap-1 flex-wrap">
+                            {children.slice(0, 5).map(ch => (
+                              <button key={ch.id}
+                                onClick={e => { e.stopPropagation(); onSelectMember(ch.id) }}
+                                className="flex items-center gap-1 hover:opacity-70 transition-opacity">
+                                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-semibold shrink-0"
+                                  style={{ background: `${catColor}33`, color: 'var(--foreground)' }}>
+                                  {ch.name[0]}
+                                </div>
+                                <span className="text-[10px]" style={{ color: 'var(--foreground)' }}>{ch.name.split(' ')[0]}</span>
+                              </button>
+                            ))}
+                            {children.length > 5 && <span className="text-[10px] self-center" style={{ color: 'var(--muted-foreground)' }}>+{children.length - 5}</span>}
+                          </div>
+                        </div>
+                      )}
+                      {spouses.length === 0 && children.length === 0 && (
+                        <div className="text-[10px]" style={{ color: 'var(--muted-foreground)' }}>No family linked yet</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── About column (desktop non-narrow only) ── */}
+                {!isNarrow && (
+                  <div className="flex-1 min-w-0 px-4 py-3 overflow-hidden"
+                    style={{ borderRight: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', minWidth: 130 }}>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em] mb-2" style={{ color: 'var(--muted-foreground)' }}>About</div>
+                    {(age || member.occupation || member.hometown || member.gotra || member.caste) ? (
+                      <div className="grid" style={{ gridTemplateColumns: '68px 1fr', rowGap: 5, columnGap: 8 }}>
+                        {age && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Age</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{isDeceased && member.deathYear && birthYear ? `Lived ${member.deathYear - birthYear} yrs` : age}</span>
+                          </>
+                        )}
+                        {member.occupation && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Profession</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{member.occupation}</span>
+                          </>
+                        )}
+                        {member.hometown && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Hometown</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{member.hometown}</span>
+                          </>
+                        )}
+                        {member.caste && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Community</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{member.caste}</span>
+                          </>
+                        )}
+                        {member.gotra && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Gotra</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{member.gotra}</span>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] mt-1" style={{ color: 'var(--muted-foreground)' }}>No details yet</div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Actions column ── */}
+                <div className={`shrink-0 flex flex-col px-3 py-3 gap-2 ${isNarrow ? 'flex-row flex-wrap' : ''}`}
+                  style={{ width: isNarrow ? '100%' : 154 }}>
+                  {!isNarrow && (
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em]" style={{ color: 'var(--muted-foreground)' }}>Actions</div>
+                  )}
+                  {/* Context-aware primary CTA */}
+                  <button
+                    onClick={e => { e.stopPropagation(); primaryBtn.action() }}
+                    className={`flex items-center gap-2 px-2.5 h-8 rounded-lg text-[10.5px] font-semibold transition-all hover:brightness-110 active:scale-[0.97] ${isNarrow ? 'flex-1' : 'w-full'}`}
+                    style={{ background: primaryBtn.bg, color: '#fff' }}
+                  >
+                    <span style={{ fontSize: 12 }}>{primaryBtn.icon}</span>
+                    {primaryBtn.label}
+                  </button>
+                  {/* 2×2 action grid */}
+                  <div className={`grid gap-1.5 ${isNarrow ? 'grid-cols-4 flex-1' : 'grid-cols-2'}`}>
+                    {/* Focus */}
+                    <button
+                      onClick={e => { e.stopPropagation(); focusNode(selectedMemberId!) }}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95"
+                      style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', color: 'var(--muted-foreground)' }}
+                    >
+                      <span style={{ fontSize: 13, lineHeight: 1 }}>⊕</span>
+                      <span style={{ color: 'var(--foreground)' }}>Focus</span>
+                    </button>
+                    {/* In-Laws */}
+                    <button
+                      onClick={e => { e.stopPropagation(); if (spouses[0]) onSelectMember(spouses[0].id) }}
+                      disabled={spouses.length === 0}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', color: 'var(--muted-foreground)' }}
+                    >
+                      <span style={{ fontSize: 13, lineHeight: 1 }}>💍</span>
+                      <span style={{ color: 'var(--foreground)' }}>In-Laws</span>
+                    </button>
+                    {/* Add Relative */}
+                    <button
+                      onClick={e => { e.stopPropagation(); onAddRelative?.(selectedMemberId!, 'child') }}
+                      disabled={!onAddRelative}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', color: 'var(--muted-foreground)' }}
+                    >
+                      <span style={{ fontSize: 13, lineHeight: 1 }}>＋</span>
+                      <span style={{ color: 'var(--foreground)' }}>Add</span>
+                    </button>
+                    {/* Find Relationship */}
+                    <button
+                      onClick={e => { e.stopPropagation(); onFindRelationship?.(selectedMemberId!) }}
+                      disabled={!onFindRelationship || isSelf}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', color: 'var(--muted-foreground)' }}
+                    >
+                      <span style={{ fontSize: 13, lineHeight: 1 }}>⟷</span>
+                      <span style={{ color: 'var(--foreground)' }}>Find Rel</span>
+                    </button>
+                  </div>
+                  {/* View / Edit Profile — always visible, secondary to primary CTA */}
+                  {!isSelf && !canClaim && !canInvite && (
+                    // Already handled by primary CTA for self/claim/invite — skip to avoid duplicate
+                    null
+                  )}
+                  {(isSelf || canClaim || canInvite) && (
+                    <button
+                      onClick={e => { e.stopPropagation(); (onOpenMemberDetail ?? onOpenProfile)?.(selectedMemberId!) }}
+                      className={`flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97] ${isNarrow ? '' : 'w-full'}`}
+                      style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', color: 'var(--muted-foreground)' }}
+                    >
+                      <span style={{ fontSize: 11 }}>👤</span>
+                      {isUnclaimed ? 'Edit Profile' : 'View Profile'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
+
     </div>
   )
 }

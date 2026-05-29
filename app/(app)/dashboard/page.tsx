@@ -48,10 +48,11 @@ import { useToast } from '@/hooks/use-toast'
 import { Toaster } from '@/components/ui/toaster'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Drawer, DrawerContent } from '@/components/ui/drawer'
+import { QRCodeSVG } from 'qrcode.react'
 import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
-  Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
+  Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -481,11 +482,23 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
         <div className="rounded-xl border border-border/50 p-3 text-center space-y-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">QR Code</p>
           <div className="flex justify-center">
-            <div className="inline-flex h-24 w-24 items-center justify-center rounded-xl bg-muted/40 border border-border/50">
-              <QrCode className="h-12 w-12 text-muted-foreground/50" />
-            </div>
+            {displayLink ? (
+              <div className="relative rounded-xl bg-white p-2 shadow-inner">
+                <QRCodeSVG
+                  value={displayLink}
+                  size={96}
+                  bgColor="#ffffff"
+                  fgColor="#111827"
+                  level="M"
+                />
+              </div>
+            ) : (
+              <div className="inline-flex h-24 w-24 items-center justify-center rounded-xl bg-muted/40 border border-border/50 text-[10px] text-muted-foreground">
+                Generate link first
+              </div>
+            )}
           </div>
-          <Link href="/invite"><Button variant="outline" size="sm" className="h-7 text-xs w-full">Generate Full QR</Button></Link>
+          <Link href="/invite"><Button variant="outline" size="sm" className="h-7 text-xs w-full">Full QR &amp; Options</Button></Link>
         </div>
         <div className="rounded-xl bg-primary/5 border border-primary/20 p-3">
           <p className="text-xs text-muted-foreground leading-relaxed"><span className="font-semibold text-primary">Tip:</span> Share in your family WhatsApp group — the tree builds itself! 🌳</p>
@@ -726,16 +739,30 @@ export default function FamilyGraphApp() {
   // which is only set in demo data, not in real user records.
   const pfResult = useMemo<RelationshipResult | null>(() => {
     if (!pfFrom || !pfTo || pfFrom === pfTo) return null
-    const base = isDemoMode ? sampleFamilyMembers : dbMembers
-    const enriched = selfMember
-      ? enrichMembersWithDerivedEdges(base, selfMember.id)
-      : base
-    const fromM = enriched.find(m => m.id === pfFrom)
-    const fromLabel = pfFrom === selfMember?.id
-      ? 'your'
-      : `${fromM?.name?.split(' ')[0] ?? ''}'s`
-    return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
-  }, [pfFrom, pfTo, isDemoMode, dbMembers, selfMember])
+    // Use the full `members` array (includes linked-family members shown in the picker).
+    // dbMembers would exclude linked members, causing NOT_FOUND when a linked member is selected.
+    const base = isDemoMode ? sampleFamilyMembers : members
+
+    const compute = (anchorId: string | null | undefined): RelationshipResult => {
+      const enriched = anchorId ? enrichMembersWithDerivedEdges(base, anchorId) : base
+      const fromM = enriched.find(m => m.id === pfFrom)
+      const fromLabel = pfFrom === selfMember?.id
+        ? 'your'
+        : `${fromM?.name?.split(' ')[0] ?? ''}'s`
+      return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
+    }
+
+    // Try anchors in order: self (most semantically accurate) → pfFrom → pfTo → raw BFS.
+    // Multiple anchors ensure connectivity even when selfMember is not set (unclaimed profile)
+    // or when label-only members have no structural edges anchored at self.
+    const r = compute(selfMember?.id ?? null)
+    if (r.found) return r
+    const r2 = compute(pfFrom)
+    if (r2.found) return r2
+    const r3 = compute(pfTo)
+    if (r3.found) return r3
+    return compute(undefined) // raw BFS, no enrichment
+  }, [pfFrom, pfTo, isDemoMode, members, selfMember])
 
   useEffect(() => {
     if (pfResult?.found && pfResult.people.length > 0) {
@@ -778,19 +805,18 @@ export default function FamilyGraphApp() {
   }, [displayMembers, filteredMembers, relationshipPerspectiveEnabled])
 
   const { toast } = useToast()
-  const selectedMember = members.find((m) => m.id === (viewMode === 'universe' ? detailMemberId : selectedMemberId)) ?? null
+  // Both universe and graph view only show the full sidebar when detailMemberId is set.
+  // Node selection in graph view shows the lightweight popup card in FamilyTree;
+  // the sidebar opens only after the user clicks "View Profile" in that card.
+  const selectedMember = members.find((m) => m.id === detailMemberId) ?? null
   const selectedMemberDisplay = selectedMember && !relationshipPerspectiveEnabled
     ? { ...selectedMember, relationship: undefined }
     : selectedMember
 
   const closeMemberDetail = useCallback(() => {
-    if (viewMode === 'universe') {
-      setDetailMemberId(null)
-      return
-    }
-    setSelectedMemberId(null)
+    setDetailMemberId(null)
     setMobileMenuMemberId(null)
-  }, [viewMode])
+  }, [])
 
   // Mobile: tap node → compact context menu (not full detail)
   const handleSelectMemberMobile = useCallback((id: string) => {
@@ -812,7 +838,10 @@ export default function FamilyGraphApp() {
 
   // Mobile: "View Full Profile" from context menu → open full drawer
   const handleOpenMobileDetail = useCallback(() => {
-    if (mobileMenuMemberId) setSelectedMemberId(mobileMenuMemberId)
+    if (mobileMenuMemberId) {
+      setSelectedMemberId(mobileMenuMemberId)
+      setDetailMemberId(mobileMenuMemberId)
+    }
   }, [mobileMenuMemberId])
 
   const handleSelectMember = useCallback((id: string) => {
@@ -833,6 +862,7 @@ export default function FamilyGraphApp() {
     setShowInviteWidget(false)
     setPathFinderOpen(false)
     setSelectedMemberId(id)
+    setDetailMemberId(id)
     setExplorationTrail((trail) => {
       if (trail[trail.length - 1] === id) return trail
       const existingIdx = trail.indexOf(id)
@@ -1127,8 +1157,8 @@ export default function FamilyGraphApp() {
                   Expect changes. Found a bug?
                 </span>
               </div>
-              <a 
-                href="mailto:support@familygraph.app?subject=Family%20Graph%20Feedback" 
+              <a
+                href="mailto:support@familygraph.app?subject=Family%20Graph%20Feedback"
                 className="text-amber-600 hover:text-amber-700 underline font-medium"
               >
                 Send Feedback
@@ -1450,9 +1480,16 @@ export default function FamilyGraphApp() {
                 }}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                 onOpenProfile={!isMobile ? handleOpenProfileFromRing : undefined}
+                onOpenMemberDetail={!isMobile ? handleOpenSelectedMemberDetail : undefined}
                 onFindRelationship={!isMobile && relationshipIntelligenceEnabled ? handleOpenPathFinder : undefined}
                 onInviteNode={!isDemoMode && !isViewer && !isMobile
-                  ? () => { setShowInviteWidget(true); setShowAIWidget(false) }
+                  ? (memberId) => {
+                    const m = members.find(m => m.id === memberId)
+                    if (m && !m.isClaimed) setInviteToClaimTarget(m)
+                  }
+                  : undefined}
+                onClaimNode={!isDemoMode && user && !isMobile
+                  ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) }
                   : undefined}
                 onLongPressMember={isMobile && isAdmin ? handleLongPressMemberMobile : undefined}
                 isAdmin={isAdmin}
@@ -1477,7 +1514,11 @@ export default function FamilyGraphApp() {
                 detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
-                onInvite={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
+                onInvite={!isDemoMode && !isViewer ? (memberId) => {
+                  const m = members.find(m => m.id === memberId)
+                  if (m && !m.isClaimed) setInviteToClaimTarget(m)
+                } : undefined}
+                onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
                 isAdmin={isAdmin}
               />
@@ -1707,7 +1748,7 @@ export default function FamilyGraphApp() {
                 onClose={closeMemberDetail}
                 onEdit={(
                   !isViewer &&
-                  (isAdmin || !selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
+                  (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                 ) ? () => setEditingMember(selectedMember) : undefined}
                 onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
                 onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
@@ -1811,7 +1852,7 @@ export default function FamilyGraphApp() {
                       onClose={closeMemberDetail}
                       onEdit={(
                         !isViewer &&
-                        (isAdmin || !selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
+                        (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                       ) ? () => setEditingMember(selectedMember) : undefined}
                       onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
                       onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
