@@ -154,14 +154,44 @@ export async function POST(
 
     const admin = adminClient()
 
-    // Fetch node
+    // Fetch node — intentionally does NOT select normalized_phone here so that
+    // a missing migration (018_phone_auth) doesn't block the entire claim flow.
+    // The phone-bypass check does a separate targeted query below.
     const { data: node, error: nodeErr } = await admin
       .from('family_members')
-      .select('id, name, birth_year, claim_status, is_deceased, family_id, normalized_phone')
+      .select('id, name, birth_year, claim_status, is_deceased, family_id')
       .eq('id', nodeId)
       .single()
 
-    if (nodeErr || !node) return NextResponse.json({ error: 'NODE_NOT_FOUND', message: 'This profile does not exist in the family tree. The invite link may be stale — ask the family admin for a fresh one.' }, { status: 404 })
+    if (nodeErr) {
+      const dbMsg = nodeErr.message ?? ''
+      console.error('[claim] family_members lookup failed — nodeId:', nodeId, 'error:', dbMsg)
+      // PGRST116 = "no rows" — the node genuinely does not exist
+      if ((nodeErr as any).code === 'PGRST116') {
+        return NextResponse.json(
+          { error: 'NODE_NOT_FOUND', message: 'This profile does not exist in the family tree. The invite link may be stale — ask the family admin to send a fresh invite.' },
+          { status: 404 }
+        )
+      }
+      // Schema gap: a column we SELECT doesn't exist yet in this deployment
+      if (/column .* does not exist|does not exist/i.test(dbMsg)) {
+        return NextResponse.json(
+          { error: 'SCHEMA_ERROR', message: 'Server schema is out of date. Please ask the family admin to run the latest Supabase migrations.' },
+          { status: 500 }
+        )
+      }
+      // Any other DB error (network, RLS misconfiguration, etc.)
+      return NextResponse.json(
+        { error: 'NODE_QUERY_FAILED', message: 'Could not load this profile right now. Please try again in a moment.' },
+        { status: 500 }
+      )
+    }
+    if (!node) {
+      return NextResponse.json(
+        { error: 'NODE_NOT_FOUND', message: 'This profile does not exist in the family tree. The invite link may be stale — ask the family admin to send a fresh invite.' },
+        { status: 404 }
+      )
+    }
 
     // B1: Family boundary check. A user may only claim a node if EITHER (a) they
     // already belong to the same family, OR (b) an active, unconsumed, non-expired
@@ -249,9 +279,18 @@ export async function POST(
     }
     // (c) Phone-number match bypass: node.normalized_phone === user.phone
     // user.phone is the E.164 number verified by Supabase OTP — high confidence.
+    // Uses a separate query so that if migration 018_phone_auth hasn't been applied
+    // (column doesn't exist) the rest of the claim flow continues unaffected.
     if (!authorized && user.phone) {
-      const nodePhone = (node as any).normalized_phone as string | null
-      if (nodePhone && nodePhone === user.phone) authorized = true
+      try {
+        const { data: phoneRow } = await admin
+          .from('family_members')
+          .select('normalized_phone')
+          .eq('id', nodeId)
+          .maybeSingle()
+        const nodePhone = (phoneRow as any)?.normalized_phone as string | null
+        if (nodePhone && nodePhone === user.phone) authorized = true
+      } catch { /* normalized_phone column not yet present — skip phone bypass */ }
     }
     if (!authorized) {
       return NextResponse.json(

@@ -418,6 +418,12 @@ export default function JoinPage() {
           case 'NODE_DECEASED':
             userMessage = serverMsg ?? 'This profile is marked as deceased and cannot be claimed.'
             break
+          case 'SCHEMA_ERROR':
+            userMessage = serverMsg ?? 'The server database is out of date. Ask the family admin to run the latest migrations, then try again.'
+            break
+          case 'NODE_QUERY_FAILED':
+            userMessage = serverMsg ?? 'Could not load this profile right now. Please try again in a moment. If the problem persists, contact the family admin.'
+            break
           case 'UNAUTHENTICATED':
             userMessage = 'Your session expired. Please sign in and then open the invite link again.'
             break
