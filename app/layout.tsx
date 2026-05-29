@@ -13,6 +13,30 @@ export const metadata: Metadata = {
   description: 'Visualize, preserve, and understand your family heritage across generations with AI-powered insights.',
   generator: 'v0.app',
   manifest: '/manifest.json',
+  keywords: ['family tree', 'genealogy', 'family history', 'Indian families', 'gotra', 'relationship mapping', 'AI family tree'],
+  authors: [{ name: 'Family Graph' }],
+  openGraph: {
+    type: 'website',
+    locale: 'en_IN',
+    url: 'https://familygraph.app',
+    title: 'Family Graph - Map Your Entire Family Network',
+    description: 'India\'s first AI-powered family intelligence platform. Discover lost relatives, check gotra compatibility, preserve elder stories. Free during beta.',
+    siteName: 'Family Graph',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Family Graph - Your Family\'s Digital Legacy',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Family Graph - Map Your Entire Family Network',
+    description: 'India\'s first AI-powered family intelligence platform. Discover lost relatives, check gotra compatibility, preserve elder stories.',
+    images: ['/og-image.png'],
+  },
   icons: {
     icon: [
       {

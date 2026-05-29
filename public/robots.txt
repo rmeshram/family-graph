@@ -1,0 +1,14 @@
+# Family Graph - Robots.txt
+# https://familygraph.app
+
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /auth/
+Disallow: /api/
+Disallow: /onboarding
+Disallow: /join/
+Disallow: /family/
+
+# Sitemap
+Sitemap: https://familygraph.app/sitemap.xml

@@ -333,6 +333,13 @@ function SignUpContent() {
         <Link href={signinHref} className="text-primary hover:underline font-medium">Sign in</Link>
       </p>
 
+      <p className="text-center text-xs text-muted-foreground/70 mt-4">
+        By signing up, you agree to our{" "}
+        <Link href="/legal" className="underline hover:text-foreground">
+          Terms of Service and Privacy Policy
+        </Link>
+      </p>
+
       <div className="relative mt-6">
         <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border/40" /></div>
         <div className="relative flex justify-center">

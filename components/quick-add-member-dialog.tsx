@@ -15,6 +15,15 @@ export type QuickRelType = 'father' | 'mother' | 'spouse' | 'child' | 'sibling'
 export const QUICK_REL_LABELS: Record<QuickRelType, string> = {
   father: 'Father',
   mother: 'Mother',
+  spouse: 'Spouse / Partner',
+  child: 'Child',
+  sibling: 'Brother / Sister',
+}
+
+// Short labels for the pill selector
+const REL_PILL_LABELS: Record<QuickRelType, string> = {
+  father: 'Father',
+  mother: 'Mother',
   spouse: 'Spouse',
   child: 'Child',
   sibling: 'Sibling',
@@ -27,6 +36,8 @@ const DEFAULT_GENDER: Record<QuickRelType, 'male' | 'female' | 'other' | ''> = {
   child: '',
   sibling: '',
 }
+
+const ALL_REL_TYPES: QuickRelType[] = ['father', 'mother', 'spouse', 'child', 'sibling']
 
 type DuplicateWarning = { member: FamilyMember; score: number; tier: 'high' | 'medium' }
 
@@ -58,15 +69,16 @@ interface QuickAddMemberDialogProps {
 export function QuickAddMemberDialog({
   open,
   onOpenChange,
-  relType,
+  relType: initialRelType,
   anchorMember,
   existingMembers,
   onFocusExisting,
   onLinkExisting,
   onAdd,
 }: QuickAddMemberDialogProps) {
+  const [relType, setRelType] = useState<QuickRelType>(initialRelType)
   const [name, setName] = useState('')
-  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>(DEFAULT_GENDER[relType])
+  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>(DEFAULT_GENDER[initialRelType])
   const [birthYear, setBirthYear] = useState('')
   const [nameError, setNameError] = useState('')
   const [birthYearError, setBirthYearError] = useState('')
@@ -74,9 +86,21 @@ export function QuickAddMemberDialog({
   const [isLinking, setIsLinking] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
 
+  const handleRelTypeChange = (type: QuickRelType) => {
+    setRelType(type)
+    // Auto-update gender default when the user switches relation type,
+    // but only if they haven't explicitly made a choice yet.
+    setGender(prev => {
+      const wasDefault = Object.entries(DEFAULT_GENDER).some(([, v]) => v === prev)
+      return wasDefault ? DEFAULT_GENDER[type] : prev
+    })
+    setDuplicateWarning(null)
+  }
+
   const reset = () => {
+    setRelType(initialRelType)
     setName('')
-    setGender(DEFAULT_GENDER[relType])
+    setGender(DEFAULT_GENDER[initialRelType])
     setBirthYear('')
     setNameError('')
     setBirthYearError('')
@@ -168,19 +192,41 @@ export function QuickAddMemberDialog({
   }
 
   const anchorFirstName = anchorMember.name.split(' ')[0]
-  const label = QUICK_REL_LABELS[relType]
+  const label = REL_PILL_LABELS[relType]
+  const fullLabel = QUICK_REL_LABELS[relType]
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[380px]">
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Add {anchorFirstName}&apos;s {label}</DialogTitle>
+          <DialogTitle>Add a Relative for {anchorFirstName}</DialogTitle>
           <DialogDescription>
-            Quick-add a {label.toLowerCase()} for {anchorFirstName}. You can fill in more details later.
+            Choose the relationship type, enter their name, and fill in optional details later.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+
+          {/* ── Relationship type picker ── */}
+          <div className="space-y-2">
+            <Label>Relation to {anchorFirstName}</Label>
+            <div className="grid grid-cols-5 gap-1">
+              {ALL_REL_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => handleRelTypeChange(type)}
+                  className={`rounded-lg border py-2 text-xs font-medium transition-all ${relType === type
+                      ? 'border-primary bg-primary/15 text-primary'
+                      : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70 hover:text-foreground'
+                    }`}
+                >
+                  {REL_PILL_LABELS[type]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="qa-name">
