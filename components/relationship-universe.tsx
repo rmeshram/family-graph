@@ -1814,14 +1814,6 @@ export function RelationshipUniverse({
                   color: 'var(--muted-foreground)',
                   action: () => onAddRelative!(selectedMemberId!, 'child'),
                 }] : []),
-                // For unclaimed nodes: always show a "Profile" secondary action so the
-                // detail panel (with Edit button) is reachable even when the primary CTA
-                // is "Invite to Join" or "Claim as myself".
-                ...((canInvite || canClaim) && onOpenMemberDetail ? [{
-                  key: 'profile', label: 'Profile', icon: '👤',
-                  color: 'var(--primary)',
-                  action: () => onOpenMemberDetail!(selectedMemberId!),
-                }] : []),
               ] as { key: string; label: string; icon: string; color: string; action: () => void }[]
 
               // ── Primary CTA ────────────────────────────────────────────────
@@ -1984,21 +1976,19 @@ export function RelationshipUniverse({
                         </div>
                       )}
 
-                      {/* View / Edit Profile — only when primary CTA is Invite/Claim (avoids duplicating View Profile) */}
-                      {!isSelf && (canClaim || canInvite) && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                          className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all hover:brightness-105 active:scale-[0.98]"
-                          style={{
-                            background: 'var(--muted)',
-                            border: `1px solid var(--universe-panel-border)`,
-                            color: 'var(--muted-foreground)',
-                          }}
-                        >
-                          <span style={{ fontSize: 12 }}>👤</span>
-                          {isUnclaimed ? 'Edit Profile' : 'View Profile'}
-                        </button>
-                      )}
+                      {/* View / Edit Profile — full width */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                        className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all hover:brightness-105 active:scale-[0.98]"
+                        style={{
+                          background: 'var(--muted)',
+                          border: `1px solid var(--universe-panel-border)`,
+                          color: 'var(--muted-foreground)',
+                        }}
+                      >
+                        <span style={{ fontSize: 12 }}>👤</span>
+                        {isSelf ? 'Edit Profile' : 'View Profile'}
+                      </button>
                     </div>
                   </div>
                 )
@@ -2345,21 +2335,19 @@ export function RelationshipUniverse({
                       ))}
                     </div>
 
-                    {/* View / Edit Profile — only when primary CTA is Invite/Claim (avoids duplicating View Profile) */}
-                    {!isSelf && (canClaim || canInvite) && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                        className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
-                        style={{
-                          background: 'var(--muted)',
-                          border: `1px solid var(--universe-panel-border)`,
-                          color: 'var(--muted-foreground)',
-                        }}
-                      >
-                        <span style={{ fontSize: 11 }}>👤</span>
-                        {isUnclaimed ? 'Edit Profile' : 'View Profile'}
-                      </button>
-                    )}
+                    {/* View / Edit Profile — full width */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                      className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
+                      style={{
+                        background: 'var(--muted)',
+                        border: `1px solid var(--universe-panel-border)`,
+                        color: 'var(--muted-foreground)',
+                      }}
+                    >
+                      <span style={{ fontSize: 11 }}>👤</span>
+                      {isSelf ? 'Edit Profile' : 'View Profile'}
+                    </button>
                   </div>
                 </div>
               )

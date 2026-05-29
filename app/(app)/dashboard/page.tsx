@@ -1484,9 +1484,9 @@ export default function FamilyGraphApp() {
                 onFindRelationship={!isMobile && relationshipIntelligenceEnabled ? handleOpenPathFinder : undefined}
                 onInviteNode={!isDemoMode && !isViewer && !isMobile
                   ? (memberId) => {
-                    const m = members.find(m => m.id === memberId)
-                    if (m && !m.isClaimed) setInviteToClaimTarget(m)
-                  }
+                      const m = members.find(m => m.id === memberId)
+                      if (m && !m.isClaimed) setInviteToClaimTarget(m)
+                    }
                   : undefined}
                 onClaimNode={!isDemoMode && user && !isMobile
                   ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) }
