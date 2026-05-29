@@ -39,20 +39,35 @@ function EmailSignUp() {
     setError('')
     if (password.length < 6) { setError('Password must be at least 6 characters'); return }
     setIsLoading(true)
+    const nextPath = searchParams.get('next')
+    // Preserve ?next so that email-confirmation links bring the user back to the
+    // right page (e.g. invite join) rather than always landing on /dashboard.
+    const emailRedirectTo = nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')
+      ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
+      : `${window.location.origin}/auth/callback`
     const { data, error } = await supabase.auth.signUp({
       email, password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo },
     })
     setIsLoading(false)
     if (error) { setError(error.message); return }
     if (!data.user) { setError('Sign up failed — please try again.'); return }
 
-    if (!data.session || data.user.identities?.length === 0) {
+    // identities.length === 0 means the email is already registered.
+    // data.session being null just means email confirmation is required — that is NOT an error.
+    if (data.user.identities?.length === 0) {
       setError('An account with this email already exists. Please sign in instead, or use "Forgot Password" to set a new password.')
       return
     }
+    // Email confirmation required — session is null until the user clicks the link.
+    // Show a clear message so they know to check their inbox.
+    if (!data.session) {
+      setError('')
+      // Re-use the error state to surface a success/info message (no dedicated info state)
+      router.push(`/auth/signin?info=${encodeURIComponent('Check your email and click the confirmation link to complete sign up.')}${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`)
+      return
+    }
     // Forward invite context — join page handles member creation for invite flows
-    const nextPath = searchParams.get('next')
     if (nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')) {
       router.push(nextPath); router.refresh(); return
     }

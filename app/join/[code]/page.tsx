@@ -26,13 +26,13 @@ interface FamilyPreview {
   privacyMode?: 'open' | 'protected' | 'closed'
 }
 
-const RELATIONSHIP_OPTIONS: { key: RelType; label: string; sublabel: string; icon: React.ElementType; color: string }[] = [
-  { key: 'spouse', label: 'Spouse / Partner', sublabel: 'Husband, wife, or partner', icon: Heart, color: 'text-pink-400 bg-pink-500/10 border-pink-500/30' },
-  { key: 'child', label: 'Son / Daughter', sublabel: 'Their child', icon: User, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
-  { key: 'parent', label: 'Father / Mother', sublabel: 'Their parent', icon: Users, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
-  { key: 'sibling', label: 'Brother / Sister', sublabel: 'Their sibling', icon: GitBranch, color: 'text-green-400 bg-green-500/10 border-green-500/30' },
-  { key: 'relative', label: 'Other Relative', sublabel: 'Uncle, aunt, cousin, in-law…', icon: UserPlus, color: 'text-violet-400 bg-violet-500/10 border-violet-500/30' },
-  { key: 'skip', label: 'Just Browse', sublabel: 'Add details later', icon: ArrowRight, color: 'text-muted-foreground bg-muted/30 border-border/50' },
+const RELATIONSHIP_OPTIONS: { key: RelType; label: string; sublabel: (name: string) => string; icon: React.ElementType; color: string }[] = [
+  { key: 'spouse', label: 'Spouse / Partner', sublabel: (n) => `${n}'s husband, wife, or partner`, icon: Heart, color: 'text-pink-400 bg-pink-500/10 border-pink-500/30' },
+  { key: 'child', label: 'Son / Daughter', sublabel: (n) => `${n}'s child`, icon: User, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+  { key: 'parent', label: 'Father / Mother', sublabel: (n) => `${n}'s parent`, icon: Users, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
+  { key: 'sibling', label: 'Brother / Sister', sublabel: (n) => `${n}'s sibling`, icon: GitBranch, color: 'text-green-400 bg-green-500/10 border-green-500/30' },
+  { key: 'relative', label: 'Other Relative', sublabel: (n) => `${n}'s uncle, aunt, cousin, in-law…`, icon: UserPlus, color: 'text-violet-400 bg-violet-500/10 border-violet-500/30' },
+  { key: 'skip', label: 'Just Browse', sublabel: () => 'Add details later', icon: ArrowRight, color: 'text-muted-foreground bg-muted/30 border-border/50' },
 ]
 
 export default function JoinPage() {
@@ -472,13 +472,12 @@ export default function JoinPage() {
         return
       }
 
-      // Bind profile to the family + set display_name to the node's canonical name.
-      // The user can update their display name from settings after joining.
+      // family_id, role, and member_id are now set server-side by the claim API
+      // using the service-role client — this is the authoritative update.
+      // Update display_name client-side only (not security-sensitive, lower RLS risk).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const profUpdate = supabase.from('profiles') as any
       await profUpdate.update({
-        family_id: nodeClaim.familyId,
-        role: 'contributor',
         display_name: nodeClaim.identityHint,
       }).eq('id', user.id)
 
@@ -630,11 +629,20 @@ export default function JoinPage() {
           {status === 'relate' && preview && (
             <div className="p-6 space-y-5">
               <div className="text-center">
+                {/* Always show who invited them so the relation options make sense */}
+                {preview.inviterName && (
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Invited by <span className="font-semibold text-foreground">{preview.inviterName}</span>
+                  </p>
+                )}
                 <h2 className="text-lg font-bold text-foreground">
-                  How do you know {preview.inviterName ? <span className="text-primary">{preview.inviterName}</span> : 'the inviter'}?
+                  What is your relation to{' '}
+                  {preview.inviterName
+                    ? <span className="text-primary">{preview.inviterName}</span>
+                    : 'the person who invited you'}?
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  This places you correctly in the family tree — the magic happens automatically ✨
+                  This places you correctly in the {preview.name} tree ✨
                 </p>
               </div>
 
@@ -686,7 +694,7 @@ export default function JoinPage() {
                     <Icon className={cn('h-4 w-4 mt-0.5 shrink-0', selectedRel === key ? '' : 'text-muted-foreground')} />
                     <div>
                       <p className={cn('text-xs font-semibold', selectedRel === key ? '' : 'text-foreground')}>{label}</p>
-                      <p className="text-[10px] text-muted-foreground">{sublabel}</p>
+                      <p className="text-[10px] text-muted-foreground">{sublabel(preview.inviterName ?? 'the inviter')}</p>
                     </div>
                   </button>
                 ))}

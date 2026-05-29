@@ -74,6 +74,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
+  // If signed in and on the marketing home page, redirect to dashboard.
+  // Prevents the confusing case where a logged-in user ends up on the landing page.
+  if (user && pathname === '/') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
   // /auth/phone-onboarding is accessible to authenticated users without a family_id —
   // do NOT redirect them to /auth/signin even though it's under /auth/.
   // (middleware has no easy way to query family_id, so we just allow all /auth/* for authed users

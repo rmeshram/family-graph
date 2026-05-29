@@ -302,7 +302,9 @@ export async function POST(
     }
 
     // B4: One account can be linked to only one active primary node globally.
-    // Check profile.member_id and active user_node_links.
+    // B4: One account can be linked to only one active primary node globally.
+    // Auto-heal stale links first (e.g. after admin revoke that didn't fully clean up)
+    // before hard-blocking — avoids permanently locking out users after a revoke.
     const { data: profileLink } = await admin
       .from('profiles')
       .select('member_id')
@@ -310,14 +312,28 @@ export async function POST(
       .maybeSingle()
     const profileMemberId = (profileLink as any)?.member_id as string | null
     if (profileMemberId && profileMemberId !== nodeId) {
-      return NextResponse.json(
-        {
-          error: 'ALREADY_LINKED_ACCOUNT',
-          claimedNodeId: profileMemberId,
-          message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
-        },
-        { status: 409 }
-      )
+      // Check if the stale link is still actively claimed by this user.
+      const { data: staleMemberNode } = await admin
+        .from('family_members')
+        .select('is_claimed, claimed_by_user_id')
+        .eq('id', profileMemberId)
+        .maybeSingle()
+      const isStale = !staleMemberNode ||
+        !(staleMemberNode as any).is_claimed ||
+        (staleMemberNode as any).claimed_by_user_id !== user.id
+      if (isStale) {
+        // Auto-heal: clear the stale member_id so the claim can proceed.
+        await admin.from('profiles').update({ member_id: null } as any).eq('id', user.id)
+      } else {
+        return NextResponse.json(
+          {
+            error: 'ALREADY_LINKED_ACCOUNT',
+            claimedNodeId: profileMemberId,
+            message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
+          },
+          { status: 409 }
+        )
+      }
     }
 
     const { data: existingLink } = await admin
@@ -327,14 +343,28 @@ export async function POST(
       .neq('node_id', nodeId)
       .maybeSingle()
     if (existingLink) {
-      return NextResponse.json(
-        {
-          error: 'ALREADY_LINKED_ACCOUNT',
-          claimedNodeId: (existingLink as any).node_id,
-          message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
-        },
-        { status: 409 }
-      )
+      // Check if the stale link is still actively claimed by this user.
+      const { data: staleLinkedNode } = await admin
+        .from('family_members')
+        .select('is_claimed, claimed_by_user_id')
+        .eq('id', (existingLink as any).node_id)
+        .maybeSingle()
+      const isStale = !staleLinkedNode ||
+        !(staleLinkedNode as any).is_claimed ||
+        (staleLinkedNode as any).claimed_by_user_id !== user.id
+      if (isStale) {
+        // Auto-heal: remove the stale link so the claim can proceed.
+        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
+      } else {
+        return NextResponse.json(
+          {
+            error: 'ALREADY_LINKED_ACCOUNT',
+            claimedNodeId: (existingLink as any).node_id,
+            message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
+          },
+          { status: 409 }
+        )
+      }
     }
 
     const ns = node.claim_status as ClaimStatus
@@ -559,7 +589,13 @@ export async function POST(
       )
     }
 
-    const { error: profileUpdateErr } = await admin.from('profiles').update({ member_id: nodeId } as any).eq('id', user.id)
+    // Set member_id, family_id, and role server-side so the user is immediately
+    // recognised as a contributor even if the client-side profile update fails.
+    const { error: profileUpdateErr } = await admin.from('profiles').update({
+      member_id: nodeId,
+      family_id: (node as any).family_id,
+      role: 'contributor',
+    } as any).eq('id', user.id)
     if (profileUpdateErr) {
       return NextResponse.json(
         { error: 'PROFILE_UPDATE_FAILED', message: 'Your claim was verified but profile linking failed. Please contact the family admin.' },
