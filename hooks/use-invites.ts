@@ -268,9 +268,12 @@ export function useJoinFamily() {
         .eq('id', profile.member_id)
         .single()
       if (existingMember?.family_id === invite.family_id) {
+        // Cap at contributor — joining via invite never grants admin, even if the
+        // invite record says 'admin'. Only the family creator (onboarding) gets admin.
+        const safeRole = invite.role === 'admin' ? 'contributor' : invite.role
         await supabase.from('profiles').update({
           family_id: invite.family_id,
-          role: invite.role,
+          role: safeRole,
         }).eq('id', userId)
 
         const incrQuery = supabase.from('invite_links') as any
@@ -293,9 +296,11 @@ export function useJoinFamily() {
       // to point to the invited family so the user can see this tree.
       // They will appear as a viewer without a claimed node until they claim one.
       if (existingMember && existingMember.family_id !== invite.family_id) {
+        // Cap at contributor — joining via invite never grants admin
+        const safeRole = invite.role === 'admin' ? 'contributor' : invite.role
         await supabase.from('profiles').update({
           family_id: invite.family_id,
-          role: invite.role,
+          role: safeRole,
           ...(opts?.displayName ? { display_name: opts.displayName } : {}),
         }).eq('id', userId)
         const incrQ = supabase.from('invite_links') as any
@@ -314,9 +319,12 @@ export function useJoinFamily() {
     }
 
     // 2. Update profile with family_id + role
+    // Cap at contributor — joining via invite never grants admin, even if the
+    // invite record says 'admin'. Only the family creator (onboarding) gets admin.
+    const safeRole = invite.role === 'admin' ? 'contributor' : invite.role
     const { error: profileErr } = await supabase.from('profiles').update({
       family_id: invite.family_id,
-      role: invite.role,
+      role: safeRole,
     }).eq('id', userId)
     if (profileErr) throw new Error(profileErr.message)
 
