@@ -451,6 +451,8 @@ interface Props {
   onAddMember?: () => void
   /** Called when user clicks an inline add-relative action on a node */
   onAddRelative?: (anchorId: string, relType: import('@/components/quick-add-member-dialog').QuickRelType) => void
+  /** Called when user wants to invite/claim an unclaimed node */
+  onInvite?: (memberId: string) => void
   /** True while the parent is fetching members — suppresses the empty-state animation */
   loading?: boolean
 }
@@ -467,6 +469,7 @@ export function RelationshipUniverse({
   detailPanelOpen = false,
   onAddMember,
   onAddRelative,
+  onInvite,
   loading = false,
   isAdmin = false,
 }: Props) {
@@ -531,6 +534,8 @@ export function RelationshipUniverse({
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Dock vanishes while the user is actively panning so it doesn't obstruct the canvas.
   const [dockHiddenByPan, setDockHiddenByPan] = useState(false)
+  // Identity card: show/hide the collapsible "More" section
+  const [showMoreActions, setShowMoreActions] = useState(false)
 
   // Multi-touch tracking
   const activePointers = useRef(new Map<number, { x: number; y: number }>())
@@ -812,6 +817,7 @@ export function RelationshipUniverse({
   // Ring: clear when selection changes externally
   useEffect(() => {
     setRingNodeId(prev => (prev && prev !== selectedMemberId ? null : prev))
+    setShowMoreActions(false)
   }, [selectedMemberId])
 
   const focusId = selectedMemberId ?? hoveredId
@@ -1712,10 +1718,10 @@ export function RelationshipUniverse({
         {selectedMemberId && selectedPerson && !detailPanelOpen && !pathFinderOpen && (
           <motion.div
             key={selectedMemberId}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: dockHiddenByPan ? 0 : 0.96, y: dockHiddenByPan ? 4 : 0 }}
-            exit={{ opacity: 0, y: 6 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
+            initial={{ opacity: 0, scale: 0.88, y: 12 }}
+            animate={{ opacity: dockHiddenByPan ? 0 : 1, scale: dockHiddenByPan ? 0.96 : 1, y: dockHiddenByPan ? 4 : 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 8 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 26 }}
             className={cn('absolute z-50 overflow-hidden', dockHiddenByPan && 'pointer-events-none')}
             style={{
               ...(isMobileView
@@ -1763,7 +1769,7 @@ export function RelationshipUniverse({
                 <div className="text-[14px] font-bold leading-tight truncate" style={{ color: 'var(--foreground)' }}>
                   {selectedPerson.name}
                 </div>
-                <div className="flex items-center gap-1.5 mt-1">
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   <span
                     className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                     style={{
@@ -1777,11 +1783,19 @@ export function RelationshipUniverse({
                   </span>
                   {selectedPerson.city && (
                     <span className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>
-                      {selectedPerson.city}
+                      📍 {selectedPerson.city}
                     </span>
                   )}
+                  {(() => {
+                    const fm = membersById.get(selectedMemberId!)
+                    if (!fm) return null
+                    const isSelf = selfMemberId === selectedMemberId
+                    if (isSelf) return <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.40 0.18 230 / 0.25)', color: 'oklch(0.72 0.18 230)' }}>You</span>
+                    if (fm.isClaimed) return <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.40 0.18 145 / 0.22)', color: 'oklch(0.68 0.18 145)' }}>● Active</span>
+                    if (!fm.isDeceased && !fm.deathYear) return <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.40 0.12 60 / 0.22)', color: 'oklch(0.72 0.14 60)' }}>Unclaimed</span>
+                    return null
+                  })()}
                 </div>
-
               </div>
 
               {/* Dismiss */}
@@ -1797,85 +1811,145 @@ export function RelationshipUniverse({
 
             <div className="mx-5 h-px" style={{ background: 'var(--border)' }} />
 
-            {/* Action grid */}
-            <div className={cn('grid gap-2 p-3', isMobileView ? 'grid-cols-5' : 'grid-cols-3')}>
-              <motion.button
-                onClick={(e) => { e.stopPropagation(); panToPerson(selectedMemberId, 1.6) }}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl"
-                style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.86 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                title="Zoom in & center"
-              >
-                <span className="text-xl leading-none">🔍</span>
-                <span className="text-[9px] font-semibold tracking-widest uppercase">Focus</span>
-              </motion.button>
+            {/* ── Contextual primary actions ───────────────────────────── */}
+            {(() => {
+              const fullM = membersById.get(selectedMemberId!)
+              const isSelf = !!selfMemberId && selectedMemberId === selfMemberId
+              const isUnclaimed = fullM ? !fullM.isClaimed : false
+              const isDeceased = fullM?.isDeceased ?? fullM?.deathYear != null
+              const canInvite = isUnclaimed && !isDeceased && !!onInvite
+              const canAddRelative = !!onAddRelative && !isSelf
 
-              <motion.button
-                onClick={(e) => { e.stopPropagation(); setVisibleDepth(maxDepth); panToPerson(effectiveSelfId, 0.58) }}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl"
-                style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.86 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                title="Show full network"
-              >
-                <span className="text-xl leading-none">🌐</span>
-                <span className="text-[9px] font-semibold tracking-widest uppercase">Network</span>
-              </motion.button>
+              return (
+                <div className="px-3 pt-2.5 pb-2 space-y-2">
+                  {/* Primary CTA — most important single action */}
+                  {isSelf ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                      className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
+                      style={{ background: 'var(--primary)', color: '#fff' }}
+                    >
+                      <span>✏️</span> Edit My Profile
+                    </button>
+                  ) : canInvite ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onInvite!(selectedMemberId!) }}
+                      className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
+                      style={{ background: 'oklch(0.52 0.20 145)', color: '#fff' }}
+                    >
+                      <span>✉️</span> Invite to Join
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                      className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
+                      style={{ background: 'var(--primary)', color: '#fff' }}
+                    >
+                      <span>👤</span> View Profile
+                    </button>
+                  )}
 
-              <motion.button
-                disabled={marriageNeighbors.length === 0}
-                onClick={(e) => { e.stopPropagation(); if (marriageNeighbors.length > 0) runMarriagePortal() }}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl disabled:opacity-30 disabled:cursor-not-allowed"
-                style={{
-                  color: marriageNeighbors.length > 0 ? 'var(--marriage)' : 'var(--muted-foreground)',
-                  background: marriageNeighbors.length > 0 ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-                  outline: marriageNeighbors.length > 0 ? '1.5px solid var(--marriage)' : 'none',
-                }}
-                whileHover={marriageNeighbors.length > 0 ? { scale: 1.04 } : {}}
-                whileTap={marriageNeighbors.length > 0 ? { scale: 0.86 } : {}}
-                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                title={marriageNeighbors.length === 0 ? 'No spouse connected' : 'Explore spouse\'s family'}
-              >
-                <span className="text-xl leading-none">💍</span>
-                <span className="text-[9px] font-semibold tracking-widest uppercase">Portal</span>
-              </motion.button>
+                  {/* Secondary CTA row */}
+                  <div className={cn('grid gap-2', canAddRelative && !isSelf ? 'grid-cols-2' : 'grid-cols-1')}>
+                    {!isSelf && onOpenPathFinder && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOpenPathFinder!(selectedMemberId!); setShowAnalytics(false); setShowIntelPanel(false) }}
+                        className="flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all active:scale-[0.97]"
+                        style={{ background: 'var(--glow-primary)', color: 'var(--primary)', border: '1px solid var(--primary)' }}
+                      >
+                        <span>⟷</span> Find Path
+                      </button>
+                    )}
+                    {canAddRelative && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAddRelative!(selectedMemberId!, 'child') }}
+                        className="flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all active:scale-[0.97]"
+                        style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)', border: '1px solid var(--universe-chip-border)' }}
+                      >
+                        <span>＋</span> Add Relative
+                      </button>
+                    )}
+                  </div>
 
-              <motion.button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenPathFinder?.(selectedMemberId ?? undefined)
-                  setShowAnalytics(false); setShowIntelPanel(false)
-                }}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl"
-                style={{ color: 'var(--primary)', background: 'var(--glow-primary)', outline: '1.5px solid var(--primary)' }}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.86 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                title="Trace relationship path"
-              >
-                <span className="text-xl leading-none">⟷</span>
-                <span className="text-[9px] font-semibold tracking-widest uppercase">Path</span>
-              </motion.button>
+                  {/* More ▾ toggle */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoreActions(v => !v) }}
+                    className="w-full flex items-center justify-center gap-1 h-7 rounded-lg text-[10px] font-medium transition-all opacity-50 hover:opacity-80 active:scale-[0.97]"
+                    style={{ color: 'var(--muted-foreground)' }}
+                  >
+                    {showMoreActions ? '▴ Less' : '▾ More actions'}
+                  </button>
 
-              <motion.button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenMemberDetail?.(selectedMemberId ?? undefined)
-                }}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl"
-                style={{ color: 'var(--foreground)', background: 'var(--universe-chip-bg-active)', outline: '1.5px solid var(--universe-panel-border)' }}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.86 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                title="Open member details"
-              >
-                <span className="text-xl leading-none">👤</span>
-                <span className="text-[9px] font-semibold tracking-widest uppercase">Details</span>
-              </motion.button>
-            </div>
+                  {/* Expandable advanced actions */}
+                  <AnimatePresence>
+                    {showMoreActions && (
+                      <motion.div
+                        key="more-actions"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div className={cn('grid gap-2 pt-1', isMobileView ? 'grid-cols-4' : 'grid-cols-4')}>
+                          <motion.button
+                            onClick={(e) => { e.stopPropagation(); panToPerson(selectedMemberId!, 1.6) }}
+                            className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl"
+                            style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
+                            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.86 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                          >
+                            <span className="text-lg leading-none">🔍</span>
+                            <span className="text-[8px] font-semibold tracking-widest uppercase">Focus</span>
+                          </motion.button>
+
+                          <motion.button
+                            onClick={(e) => { e.stopPropagation(); setVisibleDepth(maxDepth); panToPerson(effectiveSelfId, 0.58) }}
+                            className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl"
+                            style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
+                            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.86 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                          >
+                            <span className="text-lg leading-none">🌐</span>
+                            <span className="text-[8px] font-semibold tracking-widest uppercase">Network</span>
+                          </motion.button>
+
+                          <motion.button
+                            disabled={marriageNeighbors.length === 0}
+                            onClick={(e) => { e.stopPropagation(); if (marriageNeighbors.length > 0) runMarriagePortal() }}
+                            className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed"
+                            style={{
+                              color: marriageNeighbors.length > 0 ? 'var(--marriage)' : 'var(--muted-foreground)',
+                              background: marriageNeighbors.length > 0 ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
+                              outline: marriageNeighbors.length > 0 ? '1.5px solid var(--marriage)' : 'none',
+                            }}
+                            whileHover={marriageNeighbors.length > 0 ? { scale: 1.04 } : {}}
+                            whileTap={marriageNeighbors.length > 0 ? { scale: 0.86 } : {}}
+                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                          >
+                            <span className="text-lg leading-none">💍</span>
+                            <span className="text-[8px] font-semibold tracking-widest uppercase">Portal</span>
+                          </motion.button>
+
+                          {isAdmin && fullM && (
+                            <motion.button
+                              onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                              className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl"
+                              style={{ background: 'var(--universe-chip-bg)', color: 'var(--muted-foreground)' }}
+                              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.86 }}
+                              transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                            >
+                              <span className="text-lg leading-none">⚙️</span>
+                              <span className="text-[8px] font-semibold tracking-widest uppercase">Admin</span>
+                            </motion.button>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )
+            })()}
 
             {/* Marriage Portal: explore in-laws family */}
             {portalPair && marriageNeighbors.length > 0 && (() => {
