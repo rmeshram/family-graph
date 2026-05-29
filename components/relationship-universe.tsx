@@ -1976,19 +1976,21 @@ export function RelationshipUniverse({
                         </div>
                       )}
 
-                      {/* View / Edit Profile — full width */}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                        className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all hover:brightness-105 active:scale-[0.98]"
-                        style={{
-                          background: 'var(--muted)',
-                          border: `1px solid var(--universe-panel-border)`,
-                          color: 'var(--muted-foreground)',
-                        }}
-                      >
-                        <span style={{ fontSize: 12 }}>👤</span>
-                        {isSelf ? 'Edit Profile' : 'View Profile'}
-                      </button>
+                      {/* View / Edit Profile — only when primary CTA doesn't already open the profile */}
+                      {!isSelf && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                          className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all hover:brightness-105 active:scale-[0.98]"
+                          style={{
+                            background: 'var(--muted)',
+                            border: `1px solid var(--universe-panel-border)`,
+                            color: 'var(--muted-foreground)',
+                          }}
+                        >
+                          <span style={{ fontSize: 12 }}>👤</span>
+                          {isUnclaimed ? 'Edit Profile' : 'View Profile'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
@@ -2335,19 +2337,21 @@ export function RelationshipUniverse({
                       ))}
                     </div>
 
-                    {/* View / Edit Profile — full width */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                      className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
-                      style={{
-                        background: 'var(--muted)',
-                        border: `1px solid var(--universe-panel-border)`,
-                        color: 'var(--muted-foreground)',
-                      }}
-                    >
-                      <span style={{ fontSize: 11 }}>👤</span>
-                      {isSelf ? 'Edit Profile' : 'View Profile'}
-                    </button>
+                    {/* View / Edit Profile — only when primary CTA doesn't already open the profile */}
+                    {!isSelf && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                        className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
+                        style={{
+                          background: 'var(--muted)',
+                          border: `1px solid var(--universe-panel-border)`,
+                          color: 'var(--muted-foreground)',
+                        }}
+                      >
+                        <span style={{ fontSize: 11 }}>👤</span>
+                        {isUnclaimed ? 'Edit Profile' : 'View Profile'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )
