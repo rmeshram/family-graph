@@ -778,19 +778,18 @@ export default function FamilyGraphApp() {
   }, [displayMembers, filteredMembers, relationshipPerspectiveEnabled])
 
   const { toast } = useToast()
-  const selectedMember = members.find((m) => m.id === (viewMode === 'universe' ? detailMemberId : selectedMemberId)) ?? null
+  // Both universe and graph view only show the full sidebar when detailMemberId is set.
+  // Node selection in graph view shows the lightweight popup card in FamilyTree;
+  // the sidebar opens only after the user clicks "View Profile" in that card.
+  const selectedMember = members.find((m) => m.id === detailMemberId) ?? null
   const selectedMemberDisplay = selectedMember && !relationshipPerspectiveEnabled
     ? { ...selectedMember, relationship: undefined }
     : selectedMember
 
   const closeMemberDetail = useCallback(() => {
-    if (viewMode === 'universe') {
-      setDetailMemberId(null)
-      return
-    }
-    setSelectedMemberId(null)
+    setDetailMemberId(null)
     setMobileMenuMemberId(null)
-  }, [viewMode])
+  }, [])
 
   // Mobile: tap node → compact context menu (not full detail)
   const handleSelectMemberMobile = useCallback((id: string) => {
@@ -812,7 +811,10 @@ export default function FamilyGraphApp() {
 
   // Mobile: "View Full Profile" from context menu → open full drawer
   const handleOpenMobileDetail = useCallback(() => {
-    if (mobileMenuMemberId) setSelectedMemberId(mobileMenuMemberId)
+    if (mobileMenuMemberId) {
+      setSelectedMemberId(mobileMenuMemberId)
+      setDetailMemberId(mobileMenuMemberId)
+    }
   }, [mobileMenuMemberId])
 
   const handleSelectMember = useCallback((id: string) => {
@@ -833,6 +835,7 @@ export default function FamilyGraphApp() {
     setShowInviteWidget(false)
     setPathFinderOpen(false)
     setSelectedMemberId(id)
+    setDetailMemberId(id)
     setExplorationTrail((trail) => {
       if (trail[trail.length - 1] === id) return trail
       const existingIdx = trail.indexOf(id)
@@ -1127,8 +1130,8 @@ export default function FamilyGraphApp() {
                   Expect changes. Found a bug?
                 </span>
               </div>
-              <a 
-                href="mailto:support@familygraph.app?subject=Family%20Graph%20Feedback" 
+              <a
+                href="mailto:support@familygraph.app?subject=Family%20Graph%20Feedback"
                 className="text-amber-600 hover:text-amber-700 underline font-medium"
               >
                 Send Feedback
@@ -1450,9 +1453,16 @@ export default function FamilyGraphApp() {
                 }}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
                 onOpenProfile={!isMobile ? handleOpenProfileFromRing : undefined}
+                onOpenMemberDetail={!isMobile ? handleOpenSelectedMemberDetail : undefined}
                 onFindRelationship={!isMobile && relationshipIntelligenceEnabled ? handleOpenPathFinder : undefined}
                 onInviteNode={!isDemoMode && !isViewer && !isMobile
-                  ? () => { setShowInviteWidget(true); setShowAIWidget(false) }
+                  ? (memberId) => {
+                      const m = members.find(m => m.id === memberId)
+                      if (m && !m.isClaimed) setInviteToClaimTarget(m)
+                    }
+                  : undefined}
+                onClaimNode={!isDemoMode && user && !isMobile
+                  ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) }
                   : undefined}
                 onLongPressMember={isMobile && isAdmin ? handleLongPressMemberMobile : undefined}
                 isAdmin={isAdmin}
@@ -1477,7 +1487,11 @@ export default function FamilyGraphApp() {
                 detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
-                onInvite={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
+                onInvite={!isDemoMode && !isViewer ? (memberId) => {
+                  const m = members.find(m => m.id === memberId)
+                  if (m && !m.isClaimed) setInviteToClaimTarget(m)
+                } : undefined}
+                onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
                 isAdmin={isAdmin}
               />
@@ -1707,7 +1721,7 @@ export default function FamilyGraphApp() {
                 onClose={closeMemberDetail}
                 onEdit={(
                   !isViewer &&
-                  (isAdmin || !selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
+                  (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                 ) ? () => setEditingMember(selectedMember) : undefined}
                 onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
                 onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
@@ -1811,7 +1825,7 @@ export default function FamilyGraphApp() {
                       onClose={closeMemberDetail}
                       onEdit={(
                         !isViewer &&
-                        (isAdmin || !selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
+                        (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                       ) ? () => setEditingMember(selectedMember) : undefined}
                       onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
                       onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
