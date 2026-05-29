@@ -367,17 +367,72 @@ export default function JoinPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setStatus('node_claim')
-        const fallback = 'Could not claim this profile. Contact the family admin.'
-        const userMessage =
-          data.error === 'DOB_MISMATCH_INVITE'
-            ? 'Birth year does not match this invited profile. Please check with the family admin.'
-            : data.error === 'MISSING_BIRTH_YEAR'
-              ? 'Please enter your birth year to verify this invite.'
-              : data.error === 'FORBIDDEN'
-                ? 'This invite is no longer valid for claiming this profile. Ask the family admin for a fresh invite.'
-                : data.error === 'ALREADY_CLAIMED'
-                  ? 'This profile has already been claimed. Ask the family admin to help you join.'
-                  : data.message ?? fallback
+        const errorCode: string = data.error ?? 'UNKNOWN'
+        // Prefer the server's own message; only fall back to per-code defaults when absent.
+        const serverMsg: string | undefined = data.message
+        let userMessage: string
+        switch (errorCode) {
+          case 'DOB_MISMATCH_INVITE':
+            userMessage = serverMsg ?? 'The birth year you entered does not match this invited profile. Double-check your year of birth or ask the family admin to confirm the correct one.'
+            break
+          case 'MISSING_BIRTH_YEAR':
+            userMessage = serverMsg ?? 'Please enter your birth year to verify this invite.'
+            break
+          case 'FORBIDDEN':
+          case 'INVITE_INVALID_TYPE':
+            userMessage = serverMsg ?? 'This invite is no longer valid for claiming this profile. Ask the family admin to send a fresh invite link.'
+            break
+          case 'INVITE_ALREADY_USED':
+            userMessage = serverMsg ?? 'This invite link has already been used. Each invite can only be used once — ask the family admin to generate a new one.'
+            break
+          case 'INVITE_EXPIRED':
+            userMessage = serverMsg ?? 'This invite link has expired. Ask the family admin to generate a fresh invite.'
+            break
+          case 'INVITE_NODE_MISMATCH':
+            userMessage = serverMsg ?? 'This invite link does not match the profile it was intended for. Make sure you opened the exact link the family admin shared with you.'
+            break
+          case 'INVITE_LOOKUP_FAILED':
+            userMessage = serverMsg ?? 'Could not verify this invite right now. Please wait a moment and try again.'
+            break
+          case 'ALREADY_CLAIMED':
+            userMessage = serverMsg ?? 'This profile has already been claimed by someone else. Ask the family admin if this is a mistake.'
+            break
+          case 'ALREADY_LINKED_ACCOUNT':
+            userMessage = serverMsg ?? 'Your account is already linked to a different profile in the family tree. Sign in with a different account, or ask the family admin to unlink your current profile first.'
+            break
+          case 'CLAIM_PENDING_ANOTHER_USER':
+            userMessage = serverMsg ?? 'Another person is currently in the process of claiming this profile. Try again later or contact the family admin.'
+            break
+          case 'IDENTITY_MISMATCH':
+            userMessage = serverMsg ?? 'The details you entered do not match this profile. Check your name and birth year and try again.'
+            break
+          case 'RATE_LIMITED':
+            userMessage = serverMsg ?? 'Too many claim attempts in the last hour. Please wait 1 hour and try again.'
+            break
+          case 'LOCKED_OUT':
+            userMessage = serverMsg ?? 'Too many failed verification attempts — this profile is temporarily locked. Ask the family admin to reset the lock.'
+            break
+          case 'NODE_NOT_FOUND':
+            userMessage = serverMsg ?? 'The profile you are trying to claim no longer exists in the family tree. Ask the family admin for an updated invite link.'
+            break
+          case 'NODE_DECEASED':
+            userMessage = serverMsg ?? 'This profile is marked as deceased and cannot be claimed.'
+            break
+          case 'UNAUTHENTICATED':
+            userMessage = 'Your session expired. Please sign in and then open the invite link again.'
+            break
+          case 'CONFIG_ERROR':
+          case 'INTERNAL_ERROR':
+          case 'CLAIM_REQUEST_WRITE_FAILED':
+          case 'CLAIM_UPDATE_FAILED':
+          case 'LINK_WRITE_FAILED':
+          case 'PROFILE_UPDATE_FAILED':
+            userMessage = serverMsg ?? 'A server error occurred. Please try again in a few minutes. If the problem persists, share this error with the family admin: ' + errorCode
+            break
+          default:
+            // Show the server message when available; otherwise include the code so the user can report it.
+            userMessage = serverMsg ?? ('An unexpected error occurred (' + errorCode + '). Please try again or share this code with the family admin.')
+        }
         setMessage(userMessage)
         return
       }
