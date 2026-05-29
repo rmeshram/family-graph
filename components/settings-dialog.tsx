@@ -120,10 +120,13 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
         setDeleting(false)
         return
       }
-      // Sign out locally then redirect to home
-      await supabase.auth.signOut()
+      // Clear the local session only — the auth user is already deleted on the
+      // server so calling the Supabase signout endpoint would 401. scope:'local'
+      // wipes cookies/localStorage without making a network request.
+      try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* already deleted */ }
       window.location.href = '/'
-    } catch {
+    } catch (err) {
+      console.error('[delete-account]', err)
       toast.error('Network error. Please try again.')
       setDeleting(false)
     }

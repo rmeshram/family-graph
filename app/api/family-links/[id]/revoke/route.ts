@@ -77,5 +77,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'DB_ERROR' }, { status: 500 })
   }
 
+  // NOTIFICATION FIX: Notify the other family about revocation
+  const isFamilyA = myFamilyId === l.family_a_id
+  const otherFamilyId = isFamilyA ? l.family_b_id : l.family_a_id
+  
+  await admin.from('family_link_notifications').insert({
+    link_id: id,
+    event_type: 'link_revoked',
+    recipient_family_id: otherFamilyId,
+    created_at: new Date().toISOString()
+  } as any)
+
   return NextResponse.json({ ok: true })
 }

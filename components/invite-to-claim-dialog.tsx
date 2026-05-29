@@ -85,7 +85,9 @@ export function InviteToClaimDialog({
         .eq('id', member.id)
         .eq('claim_status', 'unclaimed')
 
-      const link = `${window.location.origin}/join/${(data as any).code}`
+      // Node-claim invites use /claim/[code] — a dedicated identity-centric URL
+      // that clearly communicates "you are claiming YOUR profile" vs. a general join.
+      const link = `${window.location.origin}/claim/${(data as any).code}`
       setInviteLink(link)
       setExpiresAt((data as any).expires_at)
       toast.success('Invite link created!')

@@ -133,12 +133,13 @@ export async function POST(
       intentToken?: string
       isGuardianClaim?: boolean
       inviteCode?: string
+      confirmCrossFamily?: boolean
     }
     try { body = await req.json() } catch {
       return NextResponse.json({ error: 'INVALID_REQUEST', message: 'The request body could not be parsed. Please try again.' }, { status: 400 })
     }
 
-    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode } = body
+    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode, confirmCrossFamily } = body
     if (!submittedName?.trim()) {
       return NextResponse.json({ error: 'MISSING_NAME', message: 'A name is required to claim this profile.' }, { status: 400 })
     }
@@ -301,7 +302,25 @@ export async function POST(
       )
     }
 
-    // B4: One account can be linked to only one active primary node globally.
+    // C1: Cross-family switch guard.
+    // If the claimer already belongs to a DIFFERENT family, require explicit
+    // confirmation before switching. Without this, a user who accidentally created
+    // their own tree would silently lose access to it when claiming via invite.
+    // The join page shows a confirmation dialog and re-sends with confirmCrossFamily=true.
+    const isCrossFamily = !!(callerFamilyId && callerFamilyId !== (node as any).family_id)
+    if (isCrossFamily && !confirmCrossFamily) {
+      const [{ data: currentFamily }, { data: targetFamily }] = await Promise.all([
+        admin.from('families').select('name').eq('id', callerFamilyId!).maybeSingle() as any,
+        admin.from('families').select('name').eq('id', (node as any).family_id).maybeSingle() as any,
+      ])
+      return NextResponse.json({
+        error: 'CROSS_FAMILY_CLAIM',
+        currentFamilyId: callerFamilyId,
+        currentFamilyName: (currentFamily as any)?.name ?? 'your current family',
+        targetFamilyName: (targetFamily as any)?.name ?? 'the new family',
+        message: `You\'re currently a member of \"${(currentFamily as any)?.name ?? 'another family'}\". Claiming this profile will move your account to \"${(targetFamily as any)?.name ?? 'the new family'}\".`,
+      }, { status: 409 })
+    }
     // B4: One account can be linked to only one active primary node globally.
     // Auto-heal stale links first (e.g. after admin revoke that didn't fully clean up)
     // before hard-blocking — avoids permanently locking out users after a revoke.
@@ -601,6 +620,17 @@ export async function POST(
         { error: 'PROFILE_UPDATE_FAILED', message: 'Your claim was verified but profile linking failed. Please contact the family admin.' },
         { status: 500 }
       )
+    }
+
+    // Consume the single-use invite atomically on the server side.
+    // Doing this here (rather than client-side) prevents a race condition where
+    // two simultaneous requests both succeed before either consumes the invite.
+    if (inviteCode && authorizedViaNodeClaimInvite) {
+      await (admin.from('invite_links') as any)
+        .update({ consumed_at: new Date().toISOString(), used_count: 1 })
+        .eq('code', inviteCode.trim().toUpperCase())
+        .is('consumed_at', null)
+        .eq('node_id', nodeId)
     }
 
     return NextResponse.json({

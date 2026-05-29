@@ -122,5 +122,14 @@ export async function POST(
     return NextResponse.json({ error: 'ALREADY_PROCESSED' }, { status: 409 })
   }
 
+  // NOTIFICATION FIX: Notify requester family of response
+  const recipientFamilyId = (link as any).family_a_id // Notify the family that requested
+  await admin.from('family_link_notifications').insert({
+    link_id: linkId,
+    event_type: action === 'accept' ? 'link_accepted' : 'link_rejected',
+    recipient_family_id: recipientFamilyId,
+    created_at: new Date().toISOString()
+  } as any)
+
   return NextResponse.json({ linkId, status: newStatus })
 }

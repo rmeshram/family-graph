@@ -33,7 +33,9 @@ export async function GET(request: Request) {
         // The join page handles family assignment + member creation / node claim.
         // Running onboarding first would create an orphan family + duplicate member nodes.
         if (!profile?.family_id) {
-          if (next.startsWith('/join/')) {
+          // Skip onboarding for both family-invite and node-claim invite URLs.
+          // /join/[code] handles family assignment; /claim/[code] redirects to /join/.
+          if (next.startsWith('/join/') || next.startsWith('/claim/')) {
             return NextResponse.redirect(`${origin}${next}`)
           }
           const onboardingUrl = next !== '/dashboard'

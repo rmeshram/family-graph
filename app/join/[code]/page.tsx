@@ -73,6 +73,12 @@ export default function JoinPage() {
   const nodeClaimSubmittingRef = useRef(false)
   // Post-claim profile completion (birth year prompt when node had none)
   const [pcBirthYear, setPcBirthYear] = useState('')
+  // Cross-family switch: set when the claim API returns CROSS_FAMILY_CLAIM
+  // to show an explicit confirmation before proceeding.
+  const [crossFamilyConfirmData, setCrossFamilyConfirmData] = useState<{
+    currentFamilyName: string
+    targetFamilyName: string
+  } | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -359,7 +365,7 @@ export default function JoinPage() {
   // the invite for their specific node. We send the node's own name as the
   // submitted name (always scores ≥ 60 → passes the identity threshold).
   // The real security comes from the single-use, admin-created invite itself.
-  const handleNodeClaim = async () => {
+  const handleNodeClaim = async (confirmCrossFamily = false) => {
     if (!nodeClaim?.identityHint) {
       setMessage('This invite is missing profile information. Contact the family admin.')
       return
@@ -391,12 +397,21 @@ export default function JoinPage() {
           submittedName: nodeClaim.identityHint,
           submittedBirthYear,
           inviteCode: code.toUpperCase(),
+          confirmCrossFamily,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setStatus('node_claim')
         const errorCode: string = data.error ?? 'UNKNOWN'
+        // C1: Cross-family switch — show a confirmation step instead of an error message.
+        if (errorCode === 'CROSS_FAMILY_CLAIM') {
+          setCrossFamilyConfirmData({
+            currentFamilyName: data.currentFamilyName ?? 'your current family',
+            targetFamilyName: data.targetFamilyName ?? 'the new family',
+          })
+          return
+        }
         // Prefer the server's own message; only fall back to per-code defaults when absent.
         const serverMsg: string | undefined = data.message
         let userMessage: string
@@ -481,13 +496,8 @@ export default function JoinPage() {
         display_name: nodeClaim.identityHint,
       }).eq('id', user.id)
 
-      // Consume the single-use invite
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inviteUpd = supabase.from('invite_links') as any
-      await inviteUpd
-        .update({ consumed_at: new Date().toISOString(), used_count: 1 })
-        .eq('code', code.toUpperCase())
-        .is('consumed_at', null)
+      // Invite consumption is handled server-side by the claim API.
+      // No client-side consume needed here.
 
       if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
       // If the node had no birth year, show a quick completion step before
@@ -1023,22 +1033,50 @@ export default function JoinPage() {
                 </div>
               )}
 
-              <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-muted-foreground">
-                <Shield className="inline h-3.5 w-3.5 mr-1 text-blue-400" />
-                Claiming links your account to this profile. You can update your name and details after joining.
-              </div>
+              {/* ── Cross-family confirmation ── */}
+              {crossFamilyConfirmData ? (
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-amber-400">⚠️ Family Switch Required</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    You&apos;re currently a member of <strong className="text-foreground">{crossFamilyConfirmData.currentFamilyName}</strong>.
+                    Claiming this profile will move your account to <strong className="text-foreground">{crossFamilyConfirmData.targetFamilyName}</strong>.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Your existing family data stays intact — other members can still see it.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => setCrossFamilyConfirmData(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                      onClick={() => { setCrossFamilyConfirmData(null); handleNodeClaim(true) }}
+                    >
+                      Switch &amp; Claim
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-muted-foreground">
+                    <Shield className="inline h-3.5 w-3.5 mr-1 text-blue-400" />
+                    Claiming links your account to this profile. You can update your name and details after joining.
+                  </div>
 
-              <Button
-                onClick={handleNodeClaim}
-                className="w-full h-11 bg-primary hover:bg-primary/90"
-              >
-                {isAuthed ? "Yes, that's me — Claim this profile" : 'Sign in & Claim'}
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
+                  <Button
+                    onClick={() => handleNodeClaim()}
+                    className="w-full h-11 bg-primary hover:bg-primary/90"
+                  >
+                    {isAuthed ? "Yes, that's me — Claim this profile" : 'Sign in & Claim'}
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
 
-              <p className="text-center text-xs text-muted-foreground">
-                Not you? Contact the person who sent this invite.
-              </p>
+                  <p className="text-center text-xs text-muted-foreground">
+                    Not you? Contact the person who sent this invite.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
