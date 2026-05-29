@@ -350,7 +350,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
     setUnclaiming(true)
     setUnclaimError(null)
     try {
-      const res = await fetch(`/api/nodes/${selfMember.id}/unclaim`, { method: 'POST' })
+      const res = await fetch(`/api/nodes/${selfMember.id}/unclaim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         const msg = data.message ?? data.error ?? `Error ${res.status}`
