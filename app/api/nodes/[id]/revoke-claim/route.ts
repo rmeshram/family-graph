@@ -44,7 +44,7 @@ export async function POST(
 
   const { data: node } = await admin
     .from('family_members')
-    .select('id, claim_status, claimed_by_user_id, family_id')
+    .select('id, claim_status, is_claimed, claimed_by_user_id, family_id')
     .eq('id', id)
     .single()
   if (!node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
@@ -61,7 +61,10 @@ export async function POST(
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
 
   const revocableStatuses = ['claimed', 'claim_pending', 'invite_sent']
-  if (!revocableStatuses.includes((node as any).claim_status))
+  const nodeIsClaimed =
+    revocableStatuses.includes((node as any).claim_status) ||
+    (node as any).is_claimed === true
+  if (!nodeIsClaimed)
     return NextResponse.json({ error: 'NOT_CLAIMED' }, { status: 409 })
 
   const revokedAt = new Date().toISOString()

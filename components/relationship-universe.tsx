@@ -1976,8 +1976,8 @@ export function RelationshipUniverse({
                         </div>
                       )}
 
-                      {/* View / Edit Profile — only when primary CTA doesn't already open the profile */}
-                      {!isSelf && (
+                      {/* View / Edit Profile — only when primary CTA is Invite/Claim (avoids duplicating View Profile) */}
+                      {!isSelf && (canClaim || canInvite) && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
                           className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all hover:brightness-105 active:scale-[0.98]"
@@ -2337,8 +2337,8 @@ export function RelationshipUniverse({
                       ))}
                     </div>
 
-                    {/* View / Edit Profile — only when primary CTA doesn't already open the profile */}
-                    {!isSelf && (
+                    {/* View / Edit Profile — only when primary CTA is Invite/Claim (avoids duplicating View Profile) */}
+                    {!isSelf && (canClaim || canInvite) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
                         className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
