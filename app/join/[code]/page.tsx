@@ -26,13 +26,13 @@ interface FamilyPreview {
   privacyMode?: 'open' | 'protected' | 'closed'
 }
 
-const RELATIONSHIP_OPTIONS: { key: RelType; label: string; sublabel: string; icon: React.ElementType; color: string }[] = [
-  { key: 'spouse', label: 'Spouse / Partner', sublabel: 'Husband, wife, or partner', icon: Heart, color: 'text-pink-400 bg-pink-500/10 border-pink-500/30' },
-  { key: 'child', label: 'Son / Daughter', sublabel: 'Their child', icon: User, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
-  { key: 'parent', label: 'Father / Mother', sublabel: 'Their parent', icon: Users, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
-  { key: 'sibling', label: 'Brother / Sister', sublabel: 'Their sibling', icon: GitBranch, color: 'text-green-400 bg-green-500/10 border-green-500/30' },
-  { key: 'relative', label: 'Other Relative', sublabel: 'Uncle, aunt, cousin, in-law…', icon: UserPlus, color: 'text-violet-400 bg-violet-500/10 border-violet-500/30' },
-  { key: 'skip', label: 'Just Browse', sublabel: 'Add details later', icon: ArrowRight, color: 'text-muted-foreground bg-muted/30 border-border/50' },
+const RELATIONSHIP_OPTIONS: { key: RelType; label: string; sublabel: (name: string) => string; icon: React.ElementType; color: string }[] = [
+  { key: 'spouse', label: 'Spouse / Partner', sublabel: (n) => `${n}'s husband, wife, or partner`, icon: Heart, color: 'text-pink-400 bg-pink-500/10 border-pink-500/30' },
+  { key: 'child', label: 'Son / Daughter', sublabel: (n) => `${n}'s child`, icon: User, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+  { key: 'parent', label: 'Father / Mother', sublabel: (n) => `${n}'s parent`, icon: Users, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
+  { key: 'sibling', label: 'Brother / Sister', sublabel: (n) => `${n}'s sibling`, icon: GitBranch, color: 'text-green-400 bg-green-500/10 border-green-500/30' },
+  { key: 'relative', label: 'Other Relative', sublabel: (n) => `${n}'s uncle, aunt, cousin, in-law…`, icon: UserPlus, color: 'text-violet-400 bg-violet-500/10 border-violet-500/30' },
+  { key: 'skip', label: 'Just Browse', sublabel: () => 'Add details later', icon: ArrowRight, color: 'text-muted-foreground bg-muted/30 border-border/50' },
 ]
 
 export default function JoinPage() {
@@ -73,6 +73,12 @@ export default function JoinPage() {
   const nodeClaimSubmittingRef = useRef(false)
   // Post-claim profile completion (birth year prompt when node had none)
   const [pcBirthYear, setPcBirthYear] = useState('')
+  // Cross-family switch: set when the claim API returns CROSS_FAMILY_CLAIM
+  // to show an explicit confirmation before proceeding.
+  const [crossFamilyConfirmData, setCrossFamilyConfirmData] = useState<{
+    currentFamilyName: string
+    targetFamilyName: string
+  } | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -359,7 +365,7 @@ export default function JoinPage() {
   // the invite for their specific node. We send the node's own name as the
   // submitted name (always scores ≥ 60 → passes the identity threshold).
   // The real security comes from the single-use, admin-created invite itself.
-  const handleNodeClaim = async () => {
+  const handleNodeClaim = async (confirmCrossFamily = false) => {
     if (!nodeClaim?.identityHint) {
       setMessage('This invite is missing profile information. Contact the family admin.')
       return
@@ -391,12 +397,21 @@ export default function JoinPage() {
           submittedName: nodeClaim.identityHint,
           submittedBirthYear,
           inviteCode: code.toUpperCase(),
+          confirmCrossFamily,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setStatus('node_claim')
         const errorCode: string = data.error ?? 'UNKNOWN'
+        // C1: Cross-family switch — show a confirmation step instead of an error message.
+        if (errorCode === 'CROSS_FAMILY_CLAIM') {
+          setCrossFamilyConfirmData({
+            currentFamilyName: data.currentFamilyName ?? 'your current family',
+            targetFamilyName: data.targetFamilyName ?? 'the new family',
+          })
+          return
+        }
         // Prefer the server's own message; only fall back to per-code defaults when absent.
         const serverMsg: string | undefined = data.message
         let userMessage: string
@@ -472,23 +487,17 @@ export default function JoinPage() {
         return
       }
 
-      // Bind profile to the family + set display_name to the node's canonical name.
-      // The user can update their display name from settings after joining.
+      // family_id, role, and member_id are now set server-side by the claim API
+      // using the service-role client — this is the authoritative update.
+      // Update display_name client-side only (not security-sensitive, lower RLS risk).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const profUpdate = supabase.from('profiles') as any
       await profUpdate.update({
-        family_id: nodeClaim.familyId,
-        role: 'contributor',
         display_name: nodeClaim.identityHint,
       }).eq('id', user.id)
 
-      // Consume the single-use invite
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inviteUpd = supabase.from('invite_links') as any
-      await inviteUpd
-        .update({ consumed_at: new Date().toISOString(), used_count: 1 })
-        .eq('code', code.toUpperCase())
-        .is('consumed_at', null)
+      // Invite consumption is handled server-side by the claim API.
+      // No client-side consume needed here.
 
       if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('fg_invite_return')
       // If the node had no birth year, show a quick completion step before
@@ -630,11 +639,20 @@ export default function JoinPage() {
           {status === 'relate' && preview && (
             <div className="p-6 space-y-5">
               <div className="text-center">
+                {/* Always show who invited them so the relation options make sense */}
+                {preview.inviterName && (
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Invited by <span className="font-semibold text-foreground">{preview.inviterName}</span>
+                  </p>
+                )}
                 <h2 className="text-lg font-bold text-foreground">
-                  How do you know {preview.inviterName ? <span className="text-primary">{preview.inviterName}</span> : 'the inviter'}?
+                  What is your relation to{' '}
+                  {preview.inviterName
+                    ? <span className="text-primary">{preview.inviterName}</span>
+                    : 'the person who invited you'}?
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  This places you correctly in the family tree — the magic happens automatically ✨
+                  This places you correctly in the {preview.name} tree ✨
                 </p>
               </div>
 
@@ -686,7 +704,7 @@ export default function JoinPage() {
                     <Icon className={cn('h-4 w-4 mt-0.5 shrink-0', selectedRel === key ? '' : 'text-muted-foreground')} />
                     <div>
                       <p className={cn('text-xs font-semibold', selectedRel === key ? '' : 'text-foreground')}>{label}</p>
-                      <p className="text-[10px] text-muted-foreground">{sublabel}</p>
+                      <p className="text-[10px] text-muted-foreground">{sublabel(preview.inviterName ?? 'the inviter')}</p>
                     </div>
                   </button>
                 ))}
@@ -1015,22 +1033,50 @@ export default function JoinPage() {
                 </div>
               )}
 
-              <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-muted-foreground">
-                <Shield className="inline h-3.5 w-3.5 mr-1 text-blue-400" />
-                Claiming links your account to this profile. You can update your name and details after joining.
-              </div>
+              {/* ── Cross-family confirmation ── */}
+              {crossFamilyConfirmData ? (
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-amber-400">⚠️ Family Switch Required</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    You&apos;re currently a member of <strong className="text-foreground">{crossFamilyConfirmData.currentFamilyName}</strong>.
+                    Claiming this profile will move your account to <strong className="text-foreground">{crossFamilyConfirmData.targetFamilyName}</strong>.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Your existing family data stays intact — other members can still see it.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => setCrossFamilyConfirmData(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                      onClick={() => { setCrossFamilyConfirmData(null); handleNodeClaim(true) }}
+                    >
+                      Switch &amp; Claim
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-3 text-xs text-muted-foreground">
+                    <Shield className="inline h-3.5 w-3.5 mr-1 text-blue-400" />
+                    Claiming links your account to this profile. You can update your name and details after joining.
+                  </div>
 
-              <Button
-                onClick={handleNodeClaim}
-                className="w-full h-11 bg-primary hover:bg-primary/90"
-              >
-                {isAuthed ? "Yes, that's me — Claim this profile" : 'Sign in & Claim'}
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
+                  <Button
+                    onClick={() => handleNodeClaim()}
+                    className="w-full h-11 bg-primary hover:bg-primary/90"
+                  >
+                    {isAuthed ? "Yes, that's me — Claim this profile" : 'Sign in & Claim'}
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
 
-              <p className="text-center text-xs text-muted-foreground">
-                Not you? Contact the person who sent this invite.
-              </p>
+                  <p className="text-center text-xs text-muted-foreground">
+                    Not you? Contact the person who sent this invite.
+                  </p>
+                </>
+              )}
             </div>
           )}
 

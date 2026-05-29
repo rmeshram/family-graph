@@ -33,10 +33,13 @@ function EmailSignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
 
   useEffect(() => {
     const urlError = searchParams.get('error')
     if (urlError) setError(decodeURIComponent(urlError))
+    const urlInfo = searchParams.get('info')
+    if (urlInfo) setInfo(decodeURIComponent(urlInfo))
   }, [searchParams])
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -74,6 +77,9 @@ function EmailSignIn() {
   return (
     <>
       <form onSubmit={handleSignIn} className="space-y-4">
+        {info && (
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm">{info}</div>
+        )}
         {error && (
           <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">{error}</div>
         )}

@@ -133,12 +133,13 @@ export async function POST(
       intentToken?: string
       isGuardianClaim?: boolean
       inviteCode?: string
+      confirmCrossFamily?: boolean
     }
     try { body = await req.json() } catch {
       return NextResponse.json({ error: 'INVALID_REQUEST', message: 'The request body could not be parsed. Please try again.' }, { status: 400 })
     }
 
-    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode } = body
+    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode, confirmCrossFamily } = body
     if (!submittedName?.trim()) {
       return NextResponse.json({ error: 'MISSING_NAME', message: 'A name is required to claim this profile.' }, { status: 400 })
     }
@@ -301,8 +302,28 @@ export async function POST(
       )
     }
 
+    // C1: Cross-family switch guard.
+    // If the claimer already belongs to a DIFFERENT family, require explicit
+    // confirmation before switching. Without this, a user who accidentally created
+    // their own tree would silently lose access to it when claiming via invite.
+    // The join page shows a confirmation dialog and re-sends with confirmCrossFamily=true.
+    const isCrossFamily = !!(callerFamilyId && callerFamilyId !== (node as any).family_id)
+    if (isCrossFamily && !confirmCrossFamily) {
+      const [{ data: currentFamily }, { data: targetFamily }] = await Promise.all([
+        admin.from('families').select('name').eq('id', callerFamilyId!).maybeSingle() as any,
+        admin.from('families').select('name').eq('id', (node as any).family_id).maybeSingle() as any,
+      ])
+      return NextResponse.json({
+        error: 'CROSS_FAMILY_CLAIM',
+        currentFamilyId: callerFamilyId,
+        currentFamilyName: (currentFamily as any)?.name ?? 'your current family',
+        targetFamilyName: (targetFamily as any)?.name ?? 'the new family',
+        message: `You\'re currently a member of \"${(currentFamily as any)?.name ?? 'another family'}\". Claiming this profile will move your account to \"${(targetFamily as any)?.name ?? 'the new family'}\".`,
+      }, { status: 409 })
+    }
     // B4: One account can be linked to only one active primary node globally.
-    // Check profile.member_id and active user_node_links.
+    // Auto-heal stale links first (e.g. after admin revoke that didn't fully clean up)
+    // before hard-blocking — avoids permanently locking out users after a revoke.
     const { data: profileLink } = await admin
       .from('profiles')
       .select('member_id')
@@ -310,14 +331,28 @@ export async function POST(
       .maybeSingle()
     const profileMemberId = (profileLink as any)?.member_id as string | null
     if (profileMemberId && profileMemberId !== nodeId) {
-      return NextResponse.json(
-        {
-          error: 'ALREADY_LINKED_ACCOUNT',
-          claimedNodeId: profileMemberId,
-          message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
-        },
-        { status: 409 }
-      )
+      // Check if the stale link is still actively claimed by this user.
+      const { data: staleMemberNode } = await admin
+        .from('family_members')
+        .select('is_claimed, claimed_by_user_id')
+        .eq('id', profileMemberId)
+        .maybeSingle()
+      const isStale = !staleMemberNode ||
+        !(staleMemberNode as any).is_claimed ||
+        (staleMemberNode as any).claimed_by_user_id !== user.id
+      if (isStale) {
+        // Auto-heal: clear the stale member_id so the claim can proceed.
+        await admin.from('profiles').update({ member_id: null } as any).eq('id', user.id)
+      } else {
+        return NextResponse.json(
+          {
+            error: 'ALREADY_LINKED_ACCOUNT',
+            claimedNodeId: profileMemberId,
+            message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
+          },
+          { status: 409 }
+        )
+      }
     }
 
     const { data: existingLink } = await admin
@@ -327,14 +362,28 @@ export async function POST(
       .neq('node_id', nodeId)
       .maybeSingle()
     if (existingLink) {
-      return NextResponse.json(
-        {
-          error: 'ALREADY_LINKED_ACCOUNT',
-          claimedNodeId: (existingLink as any).node_id,
-          message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
-        },
-        { status: 409 }
-      )
+      // Check if the stale link is still actively claimed by this user.
+      const { data: staleLinkedNode } = await admin
+        .from('family_members')
+        .select('is_claimed, claimed_by_user_id')
+        .eq('id', (existingLink as any).node_id)
+        .maybeSingle()
+      const isStale = !staleLinkedNode ||
+        !(staleLinkedNode as any).is_claimed ||
+        (staleLinkedNode as any).claimed_by_user_id !== user.id
+      if (isStale) {
+        // Auto-heal: remove the stale link so the claim can proceed.
+        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
+      } else {
+        return NextResponse.json(
+          {
+            error: 'ALREADY_LINKED_ACCOUNT',
+            claimedNodeId: (existingLink as any).node_id,
+            message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
+          },
+          { status: 409 }
+        )
+      }
     }
 
     const ns = node.claim_status as ClaimStatus
@@ -559,12 +608,29 @@ export async function POST(
       )
     }
 
-    const { error: profileUpdateErr } = await admin.from('profiles').update({ member_id: nodeId } as any).eq('id', user.id)
+    // Set member_id, family_id, and role server-side so the user is immediately
+    // recognised as a contributor even if the client-side profile update fails.
+    const { error: profileUpdateErr } = await admin.from('profiles').update({
+      member_id: nodeId,
+      family_id: (node as any).family_id,
+      role: 'contributor',
+    } as any).eq('id', user.id)
     if (profileUpdateErr) {
       return NextResponse.json(
         { error: 'PROFILE_UPDATE_FAILED', message: 'Your claim was verified but profile linking failed. Please contact the family admin.' },
         { status: 500 }
       )
+    }
+
+    // Consume the single-use invite atomically on the server side.
+    // Doing this here (rather than client-side) prevents a race condition where
+    // two simultaneous requests both succeed before either consumes the invite.
+    if (inviteCode && authorizedViaNodeClaimInvite) {
+      await (admin.from('invite_links') as any)
+        .update({ consumed_at: new Date().toISOString(), used_count: 1 })
+        .eq('code', inviteCode.trim().toUpperCase())
+        .is('consumed_at', null)
+        .eq('node_id', nodeId)
     }
 
     return NextResponse.json({

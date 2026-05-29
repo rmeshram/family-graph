@@ -151,7 +151,7 @@ function OnboardingContent() {
       const inviteCodeBackup = typeof window !== 'undefined'
         ? sessionStorage.getItem('fg_invite_return')
         : null
-      const invitePath = (inviteNext?.startsWith('/join/') ? inviteNext : null)
+      const invitePath = (inviteNext?.startsWith('/join/') || inviteNext?.startsWith('/claim/') ? inviteNext : null)
         ?? (inviteCodeBackup ? `/join/${inviteCodeBackup}` : null)
       if (invitePath) {
         window.location.href = invitePath

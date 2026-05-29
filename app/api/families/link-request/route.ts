@@ -145,6 +145,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'DB_ERROR' }, { status: 500 })
   }
 
+  // NOTIFICATION FIX: Notify recipient family of link request
+  await admin.from('family_link_notifications').insert({
+    link_id: (link as any).id,
+    event_type: 'link_requested',
+    recipient_family_id: targetFamily.id,
+    created_at: new Date().toISOString()
+  } as any)
+
   return NextResponse.json({
     linkId: (link as any).id,
     targetFamilyName: targetFamily.name,
