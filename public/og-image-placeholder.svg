@@ -1,0 +1,69 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Gradient -->
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366F1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    <pattern id="dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="white" opacity="0.1"/>
+    </pattern>
+  </defs>
+  
+  <rect width="1200" height="630" fill="url(#grad1)"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  
+  <!-- Family Tree Network Visualization -->
+  <g opacity="0.3">
+    <!-- Connections -->
+    <line x1="400" y1="200" x2="300" y2="300" stroke="white" stroke-width="2" opacity="0.4"/>
+    <line x1="400" y1="200" x2="500" y2="300" stroke="white" stroke-width="2" opacity="0.4"/>
+    <line x1="600" y1="200" x2="700" y2="300" stroke="white" stroke-width="2" opacity="0.4"/>
+    <line x1="600" y1="200" x2="500" y2="300" stroke="white" stroke-width="2" opacity="0.4"/>
+    <line x1="300" y1="300" x2="400" y2="400" stroke="white" stroke-width="2" opacity="0.4"/>
+    <line x1="500" y1="300" x2="600" y2="400" stroke="white" stroke-width="2" opacity="0.4"/>
+    
+    <!-- Nodes -->
+    <circle cx="400" cy="200" r="25" fill="#A78BFA" opacity="0.8"/>
+    <circle cx="600" cy="200" r="25" fill="#A78BFA" opacity="0.8"/>
+    <circle cx="300" cy="300" r="22" fill="#6366F1" opacity="0.7"/>
+    <circle cx="500" cy="300" r="22" fill="#6366F1" opacity="0.7"/>
+    <circle cx="700" cy="300" r="22" fill="#6366F1" opacity="0.7"/>
+    <circle cx="400" cy="400" r="26" fill="#06B6D4" stroke="#06B6D4" stroke-width="3" opacity="0.9"/>
+    <circle cx="600" cy="400" r="22" fill="#6366F1" opacity="0.7"/>
+  </g>
+  
+  <!-- Logo Icon -->
+  <g transform="translate(100, 80)">
+    <circle cx="30" cy="30" r="30" fill="white" opacity="0.15"/>
+    <svg x="12" y="12" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+      <circle cx="12" cy="7" r="3"/>
+      <circle cx="6" cy="17" r="2.5"/>
+      <circle cx="18" cy="17" r="2.5"/>
+      <path d="M12 10v3M8 14l-1.5 2M16 14l1.5 2" stroke-linecap="round"/>
+    </svg>
+  </g>
+  
+  <!-- Main Title -->
+  <text x="600" y="250" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="bold" fill="white" text-anchor="middle">
+    Family Graph
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="600" y="310" font-family="system-ui, -apple-system, sans-serif" font-size="32" fill="white" opacity="0.9" text-anchor="middle">
+    Your Family's Digital Legacy
+  </text>
+  
+  <!-- Tagline -->
+  <text x="600" y="380" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="white" opacity="0.7" text-anchor="middle">
+    India's First AI-Powered Family Intelligence Platform
+  </text>
+  
+  <!-- Badge -->
+  <g transform="translate(475, 440)">
+    <rect x="0" y="0" width="250" height="50" rx="25" fill="white" opacity="0.15"/>
+    <text x="35" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="white">
+      🇮🇳 Made for Indian Families
+    </text>
+  </g>
+</svg>

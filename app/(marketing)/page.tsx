@@ -801,8 +801,7 @@ export default function MarketingPage() {
               <span className="text-xs text-muted-foreground">© 2026</span>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
-              <a href="#" className="hover:text-foreground transition-colors">Terms</a>
+              <Link href="/legal" className="hover:text-foreground transition-colors">Legal</Link>
               <a href="#" className="hover:text-foreground transition-colors">Contact</a>
               <a href="#" className="hover:text-foreground transition-colors">Blog</a>
             </div>

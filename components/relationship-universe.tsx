@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { FamilyMember } from '@/lib/types'
 import { computeRelationLabel, enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
@@ -478,6 +479,7 @@ export function RelationshipUniverse({
   // graph visible, but that anchor must NOT be treated as "You".
   const effectiveSelfId = selfMemberId ?? ''
   const layoutAnchorId = selfMemberId ?? selectedMemberId ?? members[0]?.id ?? ''
+  const router = useRouter()
 
   // ── Graph data ───────────────────────────────────────────────────────────
   const { people, edges } = useMemo(
@@ -517,10 +519,11 @@ export function RelationshipUniverse({
   useEffect(() => {
     setVisibleDepth(1)
     const timers: ReturnType<typeof setTimeout>[] = []
-    // Auto-reveal the full family — generation-based fallback may place members
-    // at depth 3-5, so we expand to maxDepth to ensure everyone is visible.
-    // Each ring is staggered 480ms to keep the cinematic entrance effect.
-    for (let i = 2; i <= maxDepth; i++) timers.push(setTimeout(() => setVisibleDepth(i), (i - 1) * 480))
+    // Auto-reveal close family only (depth 1→2): parents, spouse, children, siblings, grandparents.
+    // Extended family (depth 3+) and community/affiliated (depth 4) are hidden until the user
+    // taps ◎ Expand — this keeps the initial view focused and uncluttered.
+    const initialRevealDepth = Math.min(2, maxDepth)
+    for (let i = 2; i <= initialRevealDepth; i++) timers.push(setTimeout(() => setVisibleDepth(i), (i - 1) * 480))
     return () => timers.forEach(clearTimeout)
   }, [people.length, maxDepth])
 
@@ -534,8 +537,6 @@ export function RelationshipUniverse({
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Dock vanishes while the user is actively panning so it doesn't obstruct the canvas.
   const [dockHiddenByPan, setDockHiddenByPan] = useState(false)
-  // Identity card: show/hide the collapsible "More" section
-  const [showMoreActions, setShowMoreActions] = useState(false)
 
   // Multi-touch tracking
   const activePointers = useRef(new Map<number, { x: number; y: number }>())
@@ -817,7 +818,6 @@ export function RelationshipUniverse({
   // Ring: clear when selection changes externally
   useEffect(() => {
     setRingNodeId(prev => (prev && prev !== selectedMemberId ? null : prev))
-    setShowMoreActions(false)
   }, [selectedMemberId])
 
   const focusId = selectedMemberId ?? hoveredId
@@ -1713,260 +1713,621 @@ export function RelationshipUniverse({
         )}
       </AnimatePresence>
 
-      {/* ── Contextual actions for selected node ─────────────────────────── */}
+      {/* ── Contextual identity card for selected node ────────────────────── */}
+      {/*
+          Design principles:
+          • Fully theme-aware — uses CSS variable tokens (dark + light).
+          • Signature actions (Path, Focus, Portal, Network) are always visible —
+            they are the product's signature UX, not buried behind a toggle.
+          • Mobile: bottom sheet — header + scrollable info chips + primary CTA
+            + 2-row signature grid.
+          • Desktop: 4-column tray — identity | family | about | actions.
+          • maxHeight capped so the graph always dominates the viewport.
+      */}
       <AnimatePresence>
         {selectedMemberId && selectedPerson && !detailPanelOpen && !pathFinderOpen && (
           <motion.div
             key={selectedMemberId}
-            initial={{ opacity: 0, scale: 0.88, y: 12 }}
-            animate={{ opacity: dockHiddenByPan ? 0 : 1, scale: dockHiddenByPan ? 0.96 : 1, y: dockHiddenByPan ? 4 : 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 8 }}
-            transition={{ type: 'spring', stiffness: 340, damping: 26 }}
+            initial={{ opacity: 0, y: isMobileView ? 64 : 18 }}
+            animate={{ opacity: dockHiddenByPan ? 0 : 1, y: dockHiddenByPan ? (isMobileView ? 64 : 10) : 0 }}
+            exit={{ opacity: 0, y: isMobileView ? 64 : 14 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 32 }}
             className={cn('absolute z-50 overflow-hidden', dockHiddenByPan && 'pointer-events-none')}
             style={{
               ...(isMobileView
-                // bottom:68 clears the legend bar (~56px tall) + 12px breathing room
-                ? { left: 12, right: 12, bottom: 68 }
-                : { top: 18, right: 18, width: 340 }),
-              borderRadius: 20,
+                ? { left: 0, right: 0, bottom: 56, borderRadius: '20px 20px 0 0' }
+                : { left: 12, right: 12, bottom: 68, borderRadius: 16 }),
               background: 'var(--universe-panel-bg)',
-              border: `1px solid ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}28`,
-              backdropFilter: 'blur(32px)',
-              WebkitBackdropFilter: 'blur(32px)',
-              boxShadow: `0 2px 20px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.04)`,
+              border: `1px solid var(--universe-panel-border)`,
+              backdropFilter: 'blur(40px)',
+              WebkitBackdropFilter: 'blur(40px)',
+              boxShadow: `0 -4px 40px rgba(0,0,0,0.22), 0 0 0 1px var(--universe-panel-border)`,
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Left category accent bar */}
-            <div
-              className="absolute left-0 top-0 bottom-0 w-[3px]"
-              style={{
-                borderRadius: '20px 0 0 20px',
-                background: `linear-gradient(180deg, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'} 0%, transparent 100%)`,
-              }}
-            />
+            {/* Category color accent stripe — top edge */}
+            <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none"
+              style={{ background: `linear-gradient(90deg, ${CATEGORY_COLOR[selectedPerson.category]} 0%, transparent 60%)` }} />
 
-            {/* Header */}
-            <div className="flex items-center gap-3 pl-5 pr-2.5 pt-3 pb-2.5">
-              {/* Avatar with category glow */}
-              <div
-                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[13px] font-bold relative overflow-hidden"
-                style={{
-                  background: `linear-gradient(135deg, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}cc, ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}55)`,
-                  boxShadow: `0 0 0 2px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}44, 0 0 16px ${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}33`,
-                  color: '#fff',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                {selectedPerson.photoUrl
-                  ? <img src={selectedPerson.photoUrl} alt={selectedPerson.name} className="absolute inset-0 w-full h-full object-cover" />
-                  : selectedPerson.initials
-                }
-              </div>
-
-              {/* Name + relation badge */}
-              <div className="flex-1 min-w-0">
-                <div className="text-[14px] font-bold leading-tight truncate" style={{ color: 'var(--foreground)' }}>
-                  {selectedPerson.name}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <span
-                    className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                    style={{
-                      background: `${CATEGORY_COLOR[selectedPerson.category] ?? '#888'}22`,
-                      color: CATEGORY_COLOR[selectedPerson.category] ?? 'var(--muted-foreground)',
-                    }}
-                  >
-                    {selectedPerson.relation
-                      ? selectedPerson.relation
-                      : selectedPerson.category.replace(/-/g, ' ')}
-                  </span>
-                  {selectedPerson.city && (
-                    <span className="text-[10px] truncate" style={{ color: 'var(--muted-foreground)' }}>
-                      📍 {selectedPerson.city}
-                    </span>
-                  )}
-                  {(() => {
-                    const fm = membersById.get(selectedMemberId!)
-                    if (!fm) return null
-                    const isSelf = selfMemberId === selectedMemberId
-                    if (isSelf) return <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.40 0.18 230 / 0.25)', color: 'oklch(0.72 0.18 230)' }}>You</span>
-                    if (fm.isClaimed) return <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.40 0.18 145 / 0.22)', color: 'oklch(0.68 0.18 145)' }}>● Active</span>
-                    if (!fm.isDeceased && !fm.deathYear) return <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.40 0.12 60 / 0.22)', color: 'oklch(0.72 0.14 60)' }}>Unclaimed</span>
-                    return null
-                  })()}
-                </div>
-              </div>
-
-              {/* Dismiss */}
+            {/* Global dismiss button — top-right of the whole card */}
+            {!isMobileView && (
               <button
                 onClick={(e) => { e.stopPropagation(); onSelectMember(selectedMemberId) }}
-                className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all hover:bg-white/10 active:scale-90"
-                style={{ color: 'var(--muted-foreground)' }}
-                title="Dismiss"
-              >
-                <span style={{ fontSize: 13, lineHeight: 1 }}>✕</span>
-              </button>
-            </div>
+                className="absolute top-2.5 right-3 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-all hover:brightness-110 active:scale-90"
+                style={{ background: 'var(--muted)', color: 'var(--muted-foreground)', fontSize: 11 }}
+              >✕</button>
+            )}
 
-            <div className="mx-5 h-px" style={{ background: 'var(--border)' }} />
-
-            {/* ── Contextual primary actions ───────────────────────────── */}
             {(() => {
               const fullM = membersById.get(selectedMemberId!)
               const isSelf = !!selfMemberId && selectedMemberId === selfMemberId
-              const isUnclaimed = fullM ? !fullM.isClaimed : false
-              const isDeceased = fullM?.isDeceased ?? fullM?.deathYear != null
+              const isUnclaimed = !(fullM?.isClaimed ?? false)
+              const isDeceased = !!(fullM?.isDeceased ?? fullM?.deathYear)
               const canInvite = isUnclaimed && !isDeceased && !!onInvite
-              const canAddRelative = !!onAddRelative && !isSelf
+              const spouseIds: string[] = fullM?.spouseIds ?? []
+              const spouses = spouseIds.map(id => membersById.get(id)).filter(Boolean) as FamilyMember[]
+              const children = members.filter(m => m.parentIds?.includes(selectedMemberId!))
+              const age = fullM?.birthYear ? new Date().getFullYear() - fullM.birthYear : null
+              const hasAbout = !!(age ?? fullM?.occupation ?? fullM?.hometown ?? fullM?.gotra ?? fullM?.caste)
+              const hasFamily = spouses.length > 0 || children.length > 0
+              const catColor = CATEGORY_COLOR[selectedPerson.category]
+
+              // ── Signature action buttons — ALWAYS VISIBLE, never hidden ─────
+              // These are the core "universe navigation" primitives.
+              // Each button has its own semantic color so users build muscle memory.
+              const sigButtons = [
+                ...(onOpenPathFinder && !isSelf ? [{
+                  key: 'path', label: 'Find Rel', icon: '⟷',
+                  color: 'var(--paternal)',
+                  action: () => { onOpenPathFinder!(selectedMemberId!); setShowAnalytics(false); setShowIntelPanel(false) },
+                }] : []),
+                {
+                  key: 'focus', label: 'Focus', icon: '⊕',
+                  color: 'var(--cyan-glow)',
+                  action: () => panToPerson(selectedMemberId!, 1.6),
+                },
+                ...(marriageNeighbors.length > 0 ? [{
+                  key: 'portal', label: 'In-Laws', icon: '💍',
+                  color: 'var(--marriage)',
+                  action: () => runMarriagePortal(),
+                }] : []),
+                {
+                  key: 'network', label: 'Expand', icon: '◎',
+                  color: 'var(--community)',
+                  action: () => {
+                    // Staggered cinematic reveal of extended family (depth 3 → maxDepth)
+                    const expandTimers: ReturnType<typeof setTimeout>[] = []
+                    for (let i = 3; i <= maxDepth; i++) {
+                      expandTimers.push(setTimeout(() => setVisibleDepth(i), (i - 3) * 480))
+                    }
+                    panToPerson(effectiveSelfId, 0.58)
+                  },
+                },
+                ...(onAddRelative ? [{
+                  key: 'add', label: 'Add', icon: '＋',
+                  color: 'var(--muted-foreground)',
+                  action: () => onAddRelative!(selectedMemberId!, 'child'),
+                }] : []),
+              ] as { key: string; label: string; icon: string; color: string; action: () => void }[]
+
+              // ── Primary CTA ────────────────────────────────────────────────
+              const primaryBtn = isSelf
+                ? { label: 'Edit My Profile', icon: '✏️', bg: 'var(--primary)', action: () => onOpenMemberDetail?.(selectedMemberId!) }
+                : canInvite
+                  ? { label: 'Invite to Join', icon: '✉️', bg: 'oklch(0.50 0.22 145)', action: () => onInvite!(selectedMemberId!) }
+                  : { label: 'View Profile', icon: '👤', bg: 'var(--primary)', action: () => onOpenMemberDetail?.(selectedMemberId!) }
+
+              // ── Avatar element — reused in both layouts ─────────────────────
+              const AvatarEl = (
+                <div className="relative shrink-0">
+                  <div className="rounded-full overflow-hidden flex items-center justify-center font-bold text-white"
+                    style={{
+                      width: isMobileView ? 44 : 52, height: isMobileView ? 44 : 52,
+                      fontSize: isMobileView ? 14 : 17,
+                      background: `linear-gradient(135deg, color-mix(in srgb, ${catColor} 80%, #000) 0%, color-mix(in srgb, ${catColor} 30%, transparent) 100%)`,
+                      boxShadow: `0 0 0 2.5px color-mix(in srgb, ${catColor} 40%, transparent), 0 0 20px color-mix(in srgb, ${catColor} 22%, transparent)`,
+                    }}>
+                    {selectedPerson.photoUrl
+                      ? <img src={selectedPerson.photoUrl} alt={selectedPerson.name} className="w-full h-full object-cover" />
+                      : selectedPerson.initials}
+                  </div>
+                  {fullM?.isClaimed && !isDeceased && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 flex items-center justify-center"
+                      style={{ background: 'oklch(0.62 0.22 145)', borderColor: 'var(--universe-panel-bg)' }} />
+                  )}
+                </div>
+              )
+
+              // ── MOBILE LAYOUT ───────────────────────────────────────────────
+              if (isMobileView) {
+                return (
+                  <div className="flex flex-col">
+                    {/* Row 1 — Avatar + Identity + dismiss */}
+                    <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5"
+                      style={{ borderBottom: `1px solid var(--universe-panel-border)` }}>
+                      {AvatarEl}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-[14px] truncate leading-tight"
+                          style={{ color: 'var(--foreground)' }}>{selectedPerson.name}</div>
+                        <div className="text-[11px] font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <span style={{ color: catColor }}>
+                            {selectedPerson.relation || selectedPerson.category.replace(/-/g, ' ')}
+                          </span>
+                          {age && <span style={{ color: 'var(--muted-foreground)' }}>· {age} yrs</span>}
+                          {selectedPerson.city && <span style={{ color: 'var(--muted-foreground)' }}>· {selectedPerson.city}</span>}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1">
+                          {isSelf && (
+                            <span className="text-[9px] font-bold px-1.5 py-px rounded-full"
+                              style={{ background: 'color-mix(in srgb, var(--primary) 18%, transparent)', color: 'var(--primary)' }}>You</span>
+                          )}
+                          {!isSelf && isUnclaimed && !isDeceased && (
+                            <span className="text-[9px] px-1.5 py-px rounded-full"
+                              style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>unclaimed</span>
+                          )}
+                          {!isSelf && fullM?.isClaimed && (
+                            <span className="text-[9px] font-semibold px-1.5 py-px rounded-full"
+                              style={{ background: 'color-mix(in srgb, oklch(0.62 0.22 145) 14%, transparent)', color: 'oklch(0.62 0.22 145)' }}>● active</span>
+                          )}
+                        </div>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); onSelectMember(selectedMemberId) }}
+                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all hover:brightness-110 active:scale-90"
+                        style={{ background: 'var(--muted)', color: 'var(--muted-foreground)', fontSize: 11 }}>✕</button>
+                    </div>
+
+                    {/* Row 2 — Scrollable info chips (family + about facts) */}
+                    {(hasFamily || hasAbout) && (
+                      <div className="flex items-center gap-2 px-4 py-2 overflow-x-auto"
+                        style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', borderBottom: `1px solid var(--universe-panel-border)` }}>
+                        {spouses.slice(0, 1).map(sp => (
+                          <button key={sp.id}
+                            onClick={(e) => { e.stopPropagation(); onSelectMember(sp.id) }}
+                            className="shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium transition-opacity hover:opacity-80"
+                            style={{
+                              background: 'color-mix(in srgb, var(--marriage) 12%, var(--muted))',
+                              border: '1px solid color-mix(in srgb, var(--marriage) 28%, transparent)',
+                              color: 'var(--foreground)',
+                            }}>
+                            💍 {sp.name.split(' ')[0]}
+                          </button>
+                        ))}
+                        {children.length > 0 && (
+                          <span className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px]"
+                            style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border)', color: 'var(--muted-foreground)' }}>
+                            👨‍👩‍👧 {children.length} {children.length === 1 ? 'child' : 'children'}
+                          </span>
+                        )}
+                        {age && (
+                          <span className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px]"
+                            style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border)', color: 'var(--muted-foreground)' }}>
+                            🎂 {age} yrs
+                          </span>
+                        )}
+                        {fullM?.occupation && (
+                          <span className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px]"
+                            style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border)', color: 'var(--muted-foreground)' }}>
+                            💼 {fullM.occupation}
+                          </span>
+                        )}
+                        {fullM?.hometown && (
+                          <span className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px]"
+                            style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border)', color: 'var(--muted-foreground)' }}>
+                            🏡 {fullM.hometown}
+                          </span>
+                        )}
+                        {fullM?.gotra && (
+                          <span className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px]"
+                            style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border)', color: 'var(--muted-foreground)' }}>
+                            ∞ {fullM.gotra}
+                          </span>
+                        )}
+                        {spouses.length === 0 && children.length === 0 && onAddRelative && (
+                          <button onClick={(e) => { e.stopPropagation(); onAddRelative!(selectedMemberId!, 'spouse') }}
+                            className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] transition-opacity hover:opacity-80"
+                            style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border)', color: 'var(--muted-foreground)' }}>
+                            + Add spouse
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Row 3 — Primary CTA + Signature action grid */}
+                    <div className="px-4 pt-2.5 pb-3 space-y-2">
+                      {/* Primary CTA — full width */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); primaryBtn.action() }}
+                        className="w-full flex items-center justify-center gap-2 h-9 rounded-xl text-[12px] font-semibold transition-all hover:brightness-110 active:scale-[0.98]"
+                        style={{ background: primaryBtn.bg, color: '#fff' }}
+                      >
+                        <span style={{ fontSize: 14 }}>{primaryBtn.icon}</span>
+                        {primaryBtn.label}
+                      </button>
+
+                      {/* Signature grid — ALWAYS VISIBLE on mobile */}
+                      {sigButtons.length > 0 && (
+                        <div
+                          className="grid gap-1.5"
+                          style={{ gridTemplateColumns: `repeat(${Math.min(sigButtons.length, 5)}, 1fr)` }}
+                        >
+                          {sigButtons.map(({ key, icon, label, color, action }) => (
+                            <button
+                              key={key}
+                              onClick={(e) => { e.stopPropagation(); action() }}
+                              className="flex flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95"
+                              style={{
+                                background: `color-mix(in srgb, ${color} 12%, var(--muted))`,
+                                border: `1px solid color-mix(in srgb, ${color} 24%, transparent)`,
+                                color,
+                              }}
+                            >
+                              <span className="text-[15px] leading-none">{icon}</span>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              }
+
+              // ── DESKTOP LAYOUT — 5-column card (reference-matched) ──────────
+              // Columns: Identity (250px) | Family (flex) | About (flex) | Connections (148px) | Actions (140px)
+              // About uses a CSS grid so label and value sit immediately adjacent — no justify-between gap.
+              const adjacentIds = adjacencyMap.get(selectedMemberId!) ?? new Set<string>()
+              const selfAdjacentIds = adjacencyMap.get(effectiveSelfId) ?? new Set<string>()
+              const mutualIds = [...adjacentIds].filter(id =>
+                id !== selectedMemberId && id !== effectiveSelfId && selfAdjacentIds.has(id)
+              )
+              const mutualPeople = mutualIds.map(id => peopleById.get(id)).filter(Boolean) as UPerson[]
+
+              // Occupation + gotra pill tags (shown in identity column)
+              const identityPills = [
+                fullM?.occupation,
+                fullM?.gotra ? `${fullM.gotra} gotra` : undefined,
+              ].filter(Boolean) as string[]
+
+              // Community string: "Verma • Kashyap" style
+              const communityLine = [fullM?.caste, fullM?.nativeLanguage].filter(Boolean).join(' • ')
 
               return (
-                <div className="px-3 pt-2.5 pb-2 space-y-2">
-                  {/* Primary CTA — most important single action */}
-                  {isSelf ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                      className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
-                      style={{ background: 'var(--primary)', color: '#fff' }}
-                    >
-                      <span>✏️</span> Edit My Profile
-                    </button>
-                  ) : canInvite ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onInvite!(selectedMemberId!) }}
-                      className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
-                      style={{ background: 'oklch(0.52 0.20 145)', color: '#fff' }}
-                    >
-                      <span>✉️</span> Invite to Join
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                      className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
-                      style={{ background: 'var(--primary)', color: '#fff' }}
-                    >
-                      <span>👤</span> View Profile
-                    </button>
-                  )}
+                <div className="flex flex-row" style={{ minHeight: 150, maxHeight: 190 }}>
 
-                  {/* Secondary CTA row */}
-                  <div className={cn('grid gap-2', canAddRelative && !isSelf ? 'grid-cols-2' : 'grid-cols-1')}>
-                    {!isSelf && onOpenPathFinder && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onOpenPathFinder!(selectedMemberId!); setShowAnalytics(false); setShowIntelPanel(false) }}
-                        className="flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all active:scale-[0.97]"
-                        style={{ background: 'var(--glow-primary)', color: 'var(--primary)', border: '1px solid var(--primary)' }}
-                      >
-                        <span>⟷</span> Find Path
-                      </button>
-                    )}
-                    {canAddRelative && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onAddRelative!(selectedMemberId!, 'child') }}
-                        className="flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all active:scale-[0.97]"
-                        style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)', border: '1px solid var(--universe-chip-border)' }}
-                      >
-                        <span>＋</span> Add Relative
-                      </button>
+                  {/* ── IDENTITY (280px) — photo · name · relation · location · community · pills ── */}
+                  <div className="relative flex items-start gap-3 px-4 pt-4 pb-3 shrink-0"
+                    style={{ width: 280, borderRight: `1px solid var(--universe-panel-border)` }}>
+
+                    {/* Larger avatar — 64px with glow */}
+                    <div className="relative shrink-0 mt-0.5">
+                      <div className="rounded-full overflow-hidden flex items-center justify-center font-bold text-white"
+                        style={{
+                          width: 64, height: 64, fontSize: 20,
+                          background: `linear-gradient(135deg, color-mix(in srgb, ${catColor} 75%, #000) 0%, color-mix(in srgb, ${catColor} 28%, transparent) 100%)`,
+                          boxShadow: `0 0 0 2.5px color-mix(in srgb, ${catColor} 45%, transparent), 0 0 22px color-mix(in srgb, ${catColor} 20%, transparent)`,
+                        }}>
+                        {selectedPerson.photoUrl
+                          ? <img src={selectedPerson.photoUrl} alt={selectedPerson.name} className="w-full h-full object-cover" />
+                          : selectedPerson.initials}
+                      </div>
+                      {fullM?.isClaimed && !isDeceased && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold"
+                          style={{ background: 'oklch(0.62 0.22 145)', borderColor: 'var(--universe-panel-bg)', color: '#fff' }}>✓</span>
+                      )}
+                    </div>
+
+                    {/* Text block */}
+                    <div className="min-w-0 flex-1 pt-0.5 pr-7">
+                      {/* Name + badge */}
+                      <div className="flex items-start gap-1 leading-tight">
+                        <span className="font-bold text-[13px] leading-snug break-words" style={{ color: 'var(--foreground)', wordBreak: 'break-word' }}>
+                          {selectedPerson.name}
+                        </span>
+                        {fullM?.isClaimed && (
+                          <span className="shrink-0 text-[10px]" style={{ color: catColor }}>✓</span>
+                        )}
+                      </div>
+                      {/* Relation */}
+                      <div className="text-[11px] font-medium mt-0.5 truncate" style={{ color: catColor }}>
+                        {selectedPerson.relation || selectedPerson.category.replace(/-/g, ' ')}
+                        {isSelf && <span className="ml-1 font-bold" style={{ color: 'var(--primary)' }}>· You</span>}
+                      </div>
+                      {/* Location */}
+                      {selectedPerson.city && (
+                        <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--muted-foreground)' }}>
+                          {selectedPerson.city}
+                        </div>
+                      )}
+                      {/* Community line */}
+                      {communityLine && (
+                        <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--muted-foreground)' }}>
+                          {communityLine}
+                        </div>
+                      )}
+                      {/* Tag pills — occupation, gotra */}
+                      {identityPills.length > 0 && (
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {identityPills.map(pill => (
+                            <span key={pill} className="text-[9px] px-1.5 py-px rounded-md"
+                              style={{ background: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--universe-panel-border)' }}>
+                              {pill}
+                            </span>
+                          ))}
+                          {isUnclaimed && !isDeceased && !isSelf && (
+                            <span className="text-[9px] px-1.5 py-px rounded-md"
+                              style={{ background: 'color-mix(in srgb, var(--warning) 12%, var(--muted))', color: 'var(--warning)', border: '1px solid color-mix(in srgb, var(--warning) 22%, transparent)' }}>
+                              unclaimed
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── FAMILY column (flex-1) ─────────────────────────────── */}
+                  <div className="flex-1 min-w-0 flex flex-col px-4 py-3 overflow-hidden"
+                    style={{ borderRight: `1px solid var(--universe-panel-border)`, minWidth: 150 }}>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em] mb-2"
+                      style={{ color: 'var(--muted-foreground)' }}>Family</div>
+
+                    {hasFamily ? (
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          {/* Spouse row */}
+                          {spouses.slice(0, 1).map(sp => (
+                            <button key={sp.id}
+                              onClick={(e) => { e.stopPropagation(); onSelectMember(sp.id) }}
+                              className="flex items-center gap-2 w-full group text-left">
+                              <div className="shrink-0">
+                                <div className="text-[8.5px] mb-0.5" style={{ color: 'var(--muted-foreground)' }}>Spouse</div>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-7 h-7 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-[9px] font-semibold"
+                                    style={{
+                                      background: 'color-mix(in srgb, var(--marriage) 30%, var(--muted))',
+                                      color: 'var(--foreground)',
+                                    }}>
+                                    {sp.photoUrl ? <img src={sp.photoUrl} alt={sp.name} className="w-full h-full object-cover" /> : sp.name[0]}
+                                  </div>
+                                  <span className="text-[11px] font-semibold truncate group-hover:opacity-70 transition-opacity"
+                                    style={{ color: 'var(--foreground)' }}>{sp.name}</span>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+
+                          {/* Children — avatar + first name chips */}
+                          {children.length > 0 && (
+                            <div>
+                              <div className="text-[8.5px] mb-1" style={{ color: 'var(--muted-foreground)' }}>Children</div>
+                              <div className="flex gap-2 flex-wrap">
+                                {children.slice(0, 4).map(ch => (
+                                  <button key={ch.id}
+                                    onClick={(e) => { e.stopPropagation(); onSelectMember(ch.id) }}
+                                    className="flex items-center gap-1 group hover:opacity-80 transition-opacity">
+                                    <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-[8px] font-semibold"
+                                      style={{
+                                        background: `color-mix(in srgb, ${catColor} 28%, var(--muted))`,
+                                        color: 'var(--foreground)',
+                                      }}>
+                                      {ch.photoUrl ? <img src={ch.photoUrl} alt={ch.name} className="w-full h-full object-cover" /> : ch.name[0]}
+                                    </div>
+                                    <span className="text-[10px] font-medium" style={{ color: 'var(--foreground)' }}>
+                                      {ch.name.split(' ')[0]}
+                                    </span>
+                                  </button>
+                                ))}
+                                {children.length > 4 && (
+                                  <span className="text-[10px] self-center" style={{ color: 'var(--muted-foreground)' }}>
+                                    +{children.length - 4}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* View Family Tree link */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                          className="mt-auto pt-2 text-left text-[10px] font-semibold hover:opacity-70 transition-opacity"
+                          style={{ color: catColor }}>
+                          View Family Tree ›
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div className="space-y-1.5">
+                          {!!onAddRelative && (
+                            <>
+                              <button onClick={(e) => { e.stopPropagation(); onAddRelative!(selectedMemberId!, 'spouse') }}
+                                className="flex items-center gap-1.5 text-[10px] transition-opacity hover:opacity-70"
+                                style={{ color: 'var(--muted-foreground)' }}>
+                                <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px]"
+                                  style={{ borderColor: 'var(--universe-panel-border)' }}>+</span>
+                                Add spouse
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); onAddRelative!(selectedMemberId!, 'child') }}
+                                className="flex items-center gap-1.5 text-[10px] transition-opacity hover:opacity-70"
+                                style={{ color: 'var(--muted-foreground)' }}>
+                                <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px]"
+                                  style={{ borderColor: 'var(--universe-panel-border)' }}>+</span>
+                                Add child
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                          className="mt-auto pt-2 text-left text-[10px] font-semibold hover:opacity-70 transition-opacity"
+                          style={{ color: catColor }}>
+                          View Family Tree ›
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  {/* More ▾ toggle */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowMoreActions(v => !v) }}
-                    className="w-full flex items-center justify-center gap-1 h-7 rounded-lg text-[10px] font-medium transition-all opacity-50 hover:opacity-80 active:scale-[0.97]"
-                    style={{ color: 'var(--muted-foreground)' }}
-                  >
-                    {showMoreActions ? '▴ Less' : '▾ More actions'}
-                  </button>
+                  {/* ── ABOUT column (flex-1) — CSS grid keeps label+value immediately adjacent ── */}
+                  <div className="flex-1 min-w-0 px-4 py-3 overflow-hidden"
+                    style={{ borderRight: `1px solid var(--universe-panel-border)`, minWidth: 150 }}>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em] mb-2"
+                      style={{ color: 'var(--muted-foreground)' }}>About</div>
+                    {hasAbout ? (
+                      /* 2-column CSS grid: fixed label column (72px) | value column
+                         No justify-between — label and value are immediately adjacent */
+                      <div className="grid" style={{ gridTemplateColumns: '72px 1fr', rowGap: 6, columnGap: 10 }}>
+                        {age && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Age</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{age}</span>
+                          </>
+                        )}
+                        {fullM?.occupation && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Profession</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{fullM.occupation}</span>
+                          </>
+                        )}
+                        {fullM?.hometown && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Hometown</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{fullM.hometown}</span>
+                          </>
+                        )}
+                        {fullM?.caste && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Community</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{fullM.caste}</span>
+                          </>
+                        )}
+                        {fullM?.gotra && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Gotra</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{fullM.gotra}</span>
+                          </>
+                        )}
+                        {fullM?.religion && (
+                          <>
+                            <span className="text-[10px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>Religion</span>
+                            <span className="text-[11px] font-semibold leading-snug truncate" style={{ color: 'var(--foreground)' }}>{fullM.religion}</span>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] mt-1" style={{ color: 'var(--muted-foreground)' }}>
+                        No details yet —{' '}
+                        <button onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                          className="underline underline-offset-2 hover:opacity-70 transition-opacity">
+                          add info
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                  {/* Expandable advanced actions */}
-                  <AnimatePresence>
-                    {showMoreActions && (
-                      <motion.div
-                        key="more-actions"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.18, ease: 'easeInOut' }}
-                        className="overflow-hidden"
-                      >
-                        <div className={cn('grid gap-2 pt-1', isMobileView ? 'grid-cols-4' : 'grid-cols-4')}>
-                          <motion.button
-                            onClick={(e) => { e.stopPropagation(); panToPerson(selectedMemberId!, 1.6) }}
-                            className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl"
-                            style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
-                            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.86 }}
-                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                          >
-                            <span className="text-lg leading-none">🔍</span>
-                            <span className="text-[8px] font-semibold tracking-widest uppercase">Focus</span>
-                          </motion.button>
+                  {/* ── SHARED CONNECTIONS (148px) ─────────────────────────── */}
+                  <div className="shrink-0 flex flex-col px-4 py-3"
+                    style={{ width: 148, borderRight: `1px solid var(--universe-panel-border)` }}>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em] mb-2"
+                      style={{ color: 'var(--muted-foreground)' }}>Connections</div>
 
-                          <motion.button
-                            onClick={(e) => { e.stopPropagation(); setVisibleDepth(maxDepth); panToPerson(effectiveSelfId, 0.58) }}
-                            className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl"
-                            style={{ background: 'var(--universe-chip-bg)', color: 'var(--foreground)' }}
-                            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.86 }}
-                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                          >
-                            <span className="text-lg leading-none">🌐</span>
-                            <span className="text-[8px] font-semibold tracking-widest uppercase">Network</span>
-                          </motion.button>
-
-                          <motion.button
-                            disabled={marriageNeighbors.length === 0}
-                            onClick={(e) => { e.stopPropagation(); if (marriageNeighbors.length > 0) runMarriagePortal() }}
-                            className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed"
-                            style={{
-                              color: marriageNeighbors.length > 0 ? 'var(--marriage)' : 'var(--muted-foreground)',
-                              background: marriageNeighbors.length > 0 ? 'var(--universe-chip-bg-active)' : 'var(--universe-chip-bg)',
-                              outline: marriageNeighbors.length > 0 ? '1.5px solid var(--marriage)' : 'none',
-                            }}
-                            whileHover={marriageNeighbors.length > 0 ? { scale: 1.04 } : {}}
-                            whileTap={marriageNeighbors.length > 0 ? { scale: 0.86 } : {}}
-                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                          >
-                            <span className="text-lg leading-none">💍</span>
-                            <span className="text-[8px] font-semibold tracking-widest uppercase">Portal</span>
-                          </motion.button>
-
-                          {isAdmin && fullM && (
-                            <motion.button
-                              onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
-                              className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl"
-                              style={{ background: 'var(--universe-chip-bg)', color: 'var(--muted-foreground)' }}
-                              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.86 }}
-                              transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                            >
-                              <span className="text-lg leading-none">⚙️</span>
-                              <span className="text-[8px] font-semibold tracking-widest uppercase">Admin</span>
-                            </motion.button>
+                    {/* Overlapping avatar stack */}
+                    {mutualPeople.length > 0 ? (
+                      <>
+                        <div className="flex items-center mb-1.5">
+                          {mutualPeople.slice(0, 4).map((mp, i) => (
+                            <button key={mp.id}
+                              onClick={(e) => { e.stopPropagation(); onSelectMember(mp.id) }}
+                              title={mp.name}
+                              className="relative rounded-full overflow-hidden flex items-center justify-center text-[8px] font-bold hover:scale-110 transition-transform"
+                              style={{
+                                width: 26, height: 26,
+                                marginLeft: i === 0 ? 0 : -8,
+                                zIndex: 4 - i,
+                                background: `color-mix(in srgb, ${CATEGORY_COLOR[mp.category]} 50%, var(--muted))`,
+                                color: 'var(--foreground)',
+                                border: '1.5px solid var(--universe-panel-bg)',
+                              }}>
+                              {mp.photoUrl
+                                ? <img src={mp.photoUrl} alt={mp.name} className="w-full h-full object-cover" />
+                                : mp.initials[0]}
+                            </button>
+                          ))}
+                          {mutualPeople.length > 4 && (
+                            <div className="relative rounded-full flex items-center justify-center text-[8px] font-bold"
+                              style={{
+                                width: 26, height: 26, marginLeft: -8, zIndex: 0,
+                                background: 'var(--muted)', color: 'var(--muted-foreground)',
+                                border: '1.5px solid var(--universe-panel-bg)',
+                              }}>
+                              +{mutualPeople.length - 4}
+                            </div>
                           )}
                         </div>
-                      </motion.div>
+                        <div className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--foreground)' }}>
+                          {mutualPeople.length} Mutual {mutualPeople.length === 1 ? 'Connection' : 'Connections'}
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShowIntelPanel(true); setShowAnalytics(false) }}
+                          className="mt-1 text-left text-[10px] font-semibold hover:opacity-70 transition-opacity"
+                          style={{ color: catColor }}>
+                          View All ›
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-[10px] mt-1" style={{ color: 'var(--muted-foreground)' }}>
+                        No shared connections yet
+                      </div>
                     )}
-                  </AnimatePresence>
-                </div>
-              )
-            })()}
+                  </div>
 
-            {/* Marriage Portal: explore in-laws family */}
-            {portalPair && marriageNeighbors.length > 0 && (() => {
-              const spouse = peopleById.get(marriageNeighbors[0])
-              if (!spouse) return null
-              return (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    panToPerson(marriageNeighbors[0], 0.72)
-                    setVisibleDepth(maxDepth)
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all hover:opacity-80"
-                  style={{ color: 'var(--marriage)', borderTop: '1px solid var(--border)' }}
-                >
-                  <span>↗</span> Explore {spouse.name.split(' ')[0]}&apos;s full family
-                </button>
+                  {/* ── ACTIONS (156px) — 2×2 icon+label grid + Add Memory ── */}
+                  <div className="shrink-0 flex flex-col px-3 py-3 gap-2" style={{ width: 156 }}>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.10em]"
+                      style={{ color: 'var(--muted-foreground)' }}>Actions</div>
+
+                    {/* Primary CTA — full width */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); primaryBtn.action() }}
+                      className="w-full flex items-center gap-2 px-2.5 h-8 rounded-lg text-[10.5px] font-semibold transition-all hover:brightness-110 active:scale-[0.97]"
+                      style={{ background: primaryBtn.bg, color: '#fff' }}
+                    >
+                      <span style={{ fontSize: 12 }}>{primaryBtn.icon}</span>
+                      {primaryBtn.label}
+                    </button>
+
+                    {/* 2×2 compact grid: Focus · In-Laws / Expand · Add Relative */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {sigButtons.filter(b => b.key === 'focus' || b.key === 'portal' || b.key === 'network' || b.key === 'add').map(({ key, icon, label, color, action }) => (
+                        <button
+                          key={key}
+                          onClick={(e) => { e.stopPropagation(); action() }}
+                          className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95"
+                          style={{
+                            background: `color-mix(in srgb, ${color} 12%, var(--muted))`,
+                            border: `1px solid color-mix(in srgb, ${color} 22%, var(--universe-panel-border))`,
+                            color,
+                          }}
+                        >
+                          <span style={{ fontSize: 13, lineHeight: 1 }}>{icon}</span>
+                          <span style={{ color: 'var(--foreground)' }}>{label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Add Memory — full width, navigates to Memory Vault */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); router.push('/memory') }}
+                      className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
+                      style={{
+                        background: 'var(--muted)',
+                        border: `1px solid var(--universe-panel-border)`,
+                        color: 'var(--muted-foreground)',
+                      }}
+                    >
+                      <span style={{ fontSize: 11 }}>📷</span>
+                      Add Memory
+                    </button>
+                  </div>
+                </div>
               )
             })()}
           </motion.div>
@@ -1980,6 +2341,28 @@ export function RelationshipUniverse({
           className="absolute top-2 left-14 right-2 z-30 flex flex-row gap-1.5 overflow-x-auto"
           style={{ zIndex: 10, scrollbarWidth: 'none' }}
         >
+          {/* Hidden-members hint — mobile: inline chip in the filter row */}
+          {(() => {
+            const hiddenCount = people.filter(p => p.depth > visibleDepth).length
+            if (hiddenCount === 0) return null
+            return (
+              <button
+                onClick={() => {
+                  for (let i = visibleDepth + 1; i <= maxDepth; i++) {
+                    setTimeout(() => setVisibleDepth(i), (i - visibleDepth - 1) * 480)
+                  }
+                }}
+                className="shrink-0 rounded-full px-3 py-1 text-xs font-medium border transition-all backdrop-blur-md shadow-sm"
+                style={{
+                  background: 'var(--universe-chip-bg)',
+                  borderColor: 'var(--community)',
+                  color: 'var(--community)',
+                }}
+              >
+                +{hiddenCount} ◎
+              </button>
+            )
+          })()}
           {([
             { cat: null, label: 'All', color: 'var(--primary)' },
             { cat: 'paternal', label: 'Paternal', color: 'var(--paternal)' },
@@ -2030,7 +2413,7 @@ export function RelationshipUniverse({
       {/* ── Intelligence Panel toggle buttons — desktop only (mobile: in legend bar) ── */}
       {
         !isMobileView && (
-          <div className="absolute bottom-14 left-4 z-30 flex gap-1.5">
+          <div className="absolute bottom-14 left-4 z-30 flex items-center gap-1.5 flex-wrap">
             <button
               onClick={() => { setShowAnalytics(v => !v); setShowIntelPanel(false) }}
               className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all"
@@ -2053,6 +2436,29 @@ export function RelationshipUniverse({
             >
               ✦ Intelligence
             </button>
+            {/* Hidden members hint — shown when extended family is not yet revealed */}
+            {(() => {
+              const hiddenCount = people.filter(p => p.depth > visibleDepth).length
+              if (hiddenCount === 0) return null
+              return (
+                <button
+                  onClick={() => {
+                    for (let i = visibleDepth + 1; i <= maxDepth; i++) {
+                      setTimeout(() => setVisibleDepth(i), (i - visibleDepth - 1) * 480)
+                    }
+                  }}
+                  className="rounded-full px-3 py-1.5 text-[11px] font-medium border backdrop-blur-md transition-all animate-pulse"
+                  style={{
+                    background: 'var(--universe-chip-bg)',
+                    borderColor: 'var(--community)',
+                    color: 'var(--community)',
+                  }}
+                  title="Show extended family and affiliated members"
+                >
+                  +{hiddenCount} hidden · ◎ Expand
+                </button>
+              )
+            })()}
           </div>
         )
       }
@@ -2070,7 +2476,14 @@ export function RelationshipUniverse({
             )}
             style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Family Overview</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted-foreground)' }}>Family Overview</h3>
+              <button
+                onClick={() => setShowAnalytics(false)}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-opacity hover:opacity-70"
+                style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}
+              >✕</button>
+            </div>
             <div className="space-y-3">
               <div className="flex justify-between text-sm border-b pb-2" style={{ borderColor: 'var(--border)' }}>
                 <span style={{ color: 'var(--muted-foreground)' }}>Total relatives</span>
@@ -2144,7 +2557,14 @@ export function RelationshipUniverse({
             )}
             style={{ zIndex: 10, maxHeight: isMobileView ? '52vh' : '70vh', background: 'var(--universe-panel-bg)', borderColor: 'var(--universe-panel-border)', color: 'var(--foreground)' }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted-foreground)' }}>Relationship Intelligence</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted-foreground)' }}>Relationship Intelligence</h3>
+              <button
+                onClick={() => setShowIntelPanel(false)}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-opacity hover:opacity-70"
+                style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}
+              >✕</button>
+            </div>
             <div className="space-y-4">
 
               {/* Trust Network */}

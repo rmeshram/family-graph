@@ -1117,6 +1117,26 @@ export default function FamilyGraphApp() {
     <TooltipProvider>
       <div className="flex flex-col h-full overflow-hidden">
 
+        {/* Beta Banner */}
+        {user && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 shrink-0">
+            <div className="container max-w-7xl mx-auto px-4 py-2 flex items-center justify-center gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-600 font-semibold">🚧 Beta Version</span>
+                <span className="text-muted-foreground hidden sm:inline">
+                  Expect changes. Found a bug?
+                </span>
+              </div>
+              <a 
+                href="mailto:support@familygraph.app?subject=Family%20Graph%20Feedback" 
+                className="text-amber-600 hover:text-amber-700 underline font-medium"
+              >
+                Send Feedback
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Demo mode banner */}
         {!user && (
           <div
