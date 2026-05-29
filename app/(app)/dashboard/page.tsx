@@ -48,10 +48,11 @@ import { useToast } from '@/hooks/use-toast'
 import { Toaster } from '@/components/ui/toaster'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Drawer, DrawerContent } from '@/components/ui/drawer'
+import { QRCodeSVG } from 'qrcode.react'
 import {
   GitBranch, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
-  Copy, Check, QrCode, Send, Bot, ChevronRight, List, Network, Users2,
+  Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -481,11 +482,23 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
         <div className="rounded-xl border border-border/50 p-3 text-center space-y-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">QR Code</p>
           <div className="flex justify-center">
-            <div className="inline-flex h-24 w-24 items-center justify-center rounded-xl bg-muted/40 border border-border/50">
-              <QrCode className="h-12 w-12 text-muted-foreground/50" />
-            </div>
+            {displayLink ? (
+              <div className="relative rounded-xl bg-white p-2 shadow-inner">
+                <QRCodeSVG
+                  value={displayLink}
+                  size={96}
+                  bgColor="#ffffff"
+                  fgColor="#111827"
+                  level="M"
+                />
+              </div>
+            ) : (
+              <div className="inline-flex h-24 w-24 items-center justify-center rounded-xl bg-muted/40 border border-border/50 text-[10px] text-muted-foreground">
+                Generate link first
+              </div>
+            )}
           </div>
-          <Link href="/invite"><Button variant="outline" size="sm" className="h-7 text-xs w-full">Generate Full QR</Button></Link>
+          <Link href="/invite"><Button variant="outline" size="sm" className="h-7 text-xs w-full">Full QR &amp; Options</Button></Link>
         </div>
         <div className="rounded-xl bg-primary/5 border border-primary/20 p-3">
           <p className="text-xs text-muted-foreground leading-relaxed"><span className="font-semibold text-primary">Tip:</span> Share in your family WhatsApp group — the tree builds itself! 🌳</p>

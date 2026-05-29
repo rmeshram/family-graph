@@ -172,8 +172,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
 
     const nodeWidth = 160
     const nodeHeight = 155
-    const horizontalGap = 44
-    const verticalGap = 155
+    const horizontalGap = 64
+    const verticalGap = 170
 
     //  Core + Extended: layout core by generation, extended members in a
     //  separate column grid to the left so they don't widen the core rows.

@@ -95,10 +95,10 @@ const SECTOR_ARC: Record<UCategory, [number, number]> = {
   community: [Math.PI * 0.60, Math.PI * 1.60],    // outer left cluster
 }
 
-const BASE_RING_RADIUS = 190   // depth-1 ring radius (px in graph space)
-const RING_STEP = 145   // extra radius per depth level
-const MIN_ANG_GAP = 0.15  // min radians between nodes in same ring (~8.6°) — allows more nodes per ring
-const JITTER_SCALE = 28    // px of deterministic position jitter
+const BASE_RING_RADIUS = 210   // depth-1 ring radius (px in graph space)
+const RING_STEP = 160   // extra radius per depth level
+const MIN_ANG_GAP = 0.26  // min radians between nodes in same ring (~15°) — prevents node overlap
+const JITTER_SCALE = 14    // px of deterministic position jitter (kept < half MIN_ANG_GAP arc-length)
 
 // ─── Layout engine ─────────────────────────────────────────────────────────
 
