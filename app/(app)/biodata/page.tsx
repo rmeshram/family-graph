@@ -28,6 +28,8 @@ export default function BiodataPage() {
 
   const eligible = allMembers.filter(m => {
     if (m.isAlive === false || !m.birthYear) return false
+    // Exclude married members (has at least one spouse)
+    if ((m.spouseIds ?? []).length > 0) return false
     const age = CURRENT_YEAR - m.birthYear
     return age >= 18 && age <= 45
   })
