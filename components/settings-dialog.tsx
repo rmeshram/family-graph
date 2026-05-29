@@ -350,7 +350,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
     setUnclaiming(true)
     setUnclaimError(null)
     try {
-      const res = await fetch(`/api/nodes/${selfMember.id}/unclaim`, { method: 'POST' })
+      const res = await fetch(`/api/nodes/${selfMember.id}/unclaim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         const msg = data.message ?? data.error ?? `Error ${res.status}`
@@ -996,7 +1000,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
           )}
 
           {/* ── Unlink My Profile (self-unclaim, 7-day window) ─── */}
-          {selfMember && (
+          {/* Only shown when this user is the active claimer of the node.
+              If an admin revoked the claim, selfMember.isClaimed is false
+              and selfMember.claimedByUserId is null — hide the section. */}
+          {selfMember && selfMember.isClaimed && selfMember.claimedByUserId === user?.id && (
             <Card className="bg-muted/30 border-destructive/20">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">

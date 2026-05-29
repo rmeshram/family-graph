@@ -126,7 +126,7 @@ export async function POST(
     const { id: nodeId } = await params
     const supabase = await authedClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
+    if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED', message: 'Your session has expired. Please sign in and try the invite link again.' }, { status: 401 })
     let body: {
       submittedName?: string
       submittedBirthYear?: number | null
@@ -135,33 +135,63 @@ export async function POST(
       inviteCode?: string
     }
     try { body = await req.json() } catch {
-      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+      return NextResponse.json({ error: 'INVALID_REQUEST', message: 'The request body could not be parsed. Please try again.' }, { status: 400 })
     }
 
     const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode } = body
     if (!submittedName?.trim()) {
-      return NextResponse.json({ error: 'MISSING_NAME' }, { status: 400 })
+      return NextResponse.json({ error: 'MISSING_NAME', message: 'A name is required to claim this profile.' }, { status: 400 })
     }
     // Bounds-check to prevent O(m*n) Levenshtein DoS
     if (submittedName.length > 200) {
-      return NextResponse.json({ error: 'INVALID_NAME' }, { status: 400 })
+      return NextResponse.json({ error: 'INVALID_NAME', message: 'The name provided is too long.' }, { status: 400 })
     }
     // Allow null (means «not provided»); only validate when an actual value is sent
     if (submittedBirthYear !== undefined && submittedBirthYear !== null &&
       (typeof submittedBirthYear !== 'number' || submittedBirthYear < 1800 || submittedBirthYear > 2200)) {
-      return NextResponse.json({ error: 'INVALID_BIRTH_YEAR' }, { status: 400 })
+      return NextResponse.json({ error: 'INVALID_BIRTH_YEAR', message: 'Please enter a valid birth year (1800–2200).' }, { status: 400 })
     }
 
     const admin = adminClient()
 
-    // Fetch node
+    // Fetch node — intentionally does NOT select normalized_phone here so that
+    // a missing migration (018_phone_auth) doesn't block the entire claim flow.
+    // The phone-bypass check does a separate targeted query below.
     const { data: node, error: nodeErr } = await admin
       .from('family_members')
-      .select('id, name, birth_year, claim_status, is_deceased, family_id, normalized_phone')
+      .select('id, name, birth_year, claim_status, is_deceased, family_id')
       .eq('id', nodeId)
       .single()
 
-    if (nodeErr || !node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
+    if (nodeErr) {
+      const dbMsg = nodeErr.message ?? ''
+      console.error('[claim] family_members lookup failed — nodeId:', nodeId, 'error:', dbMsg)
+      // PGRST116 = "no rows" — the node genuinely does not exist
+      if ((nodeErr as any).code === 'PGRST116') {
+        return NextResponse.json(
+          { error: 'NODE_NOT_FOUND', message: 'This profile does not exist in the family tree. The invite link may be stale — ask the family admin to send a fresh invite.' },
+          { status: 404 }
+        )
+      }
+      // Schema gap: a column we SELECT doesn't exist yet in this deployment
+      if (/column .* does not exist|does not exist/i.test(dbMsg)) {
+        return NextResponse.json(
+          { error: 'SCHEMA_ERROR', message: 'Server schema is out of date. Please ask the family admin to run the latest Supabase migrations.' },
+          { status: 500 }
+        )
+      }
+      // Any other DB error (network, RLS misconfiguration, etc.)
+      return NextResponse.json(
+        { error: 'NODE_QUERY_FAILED', message: 'Could not load this profile right now. Please try again in a moment.' },
+        { status: 500 }
+      )
+    }
+    if (!node) {
+      return NextResponse.json(
+        { error: 'NODE_NOT_FOUND', message: 'This profile does not exist in the family tree. The invite link may be stale — ask the family admin to send a fresh invite.' },
+        { status: 404 }
+      )
+    }
 
     // B1: Family boundary check. A user may only claim a node if EITHER (a) they
     // already belong to the same family, OR (b) an active, unconsumed, non-expired
@@ -249,9 +279,18 @@ export async function POST(
     }
     // (c) Phone-number match bypass: node.normalized_phone === user.phone
     // user.phone is the E.164 number verified by Supabase OTP — high confidence.
+    // Uses a separate query so that if migration 018_phone_auth hasn't been applied
+    // (column doesn't exist) the rest of the claim flow continues unaffected.
     if (!authorized && user.phone) {
-      const nodePhone = (node as any).normalized_phone as string | null
-      if (nodePhone && nodePhone === user.phone) authorized = true
+      try {
+        const { data: phoneRow } = await admin
+          .from('family_members')
+          .select('normalized_phone')
+          .eq('id', nodeId)
+          .maybeSingle()
+        const nodePhone = (phoneRow as any)?.normalized_phone as string | null
+        if (nodePhone && nodePhone === user.phone) authorized = true
+      } catch { /* normalized_phone column not yet present — skip phone bypass */ }
     }
     if (!authorized) {
       return NextResponse.json(
@@ -303,7 +342,7 @@ export async function POST(
         { status: 409 }
       )
     }
-    if (ns === 'claimed') return NextResponse.json({ error: 'ALREADY_CLAIMED' }, { status: 409 })
+    if (ns === 'claimed') return NextResponse.json({ error: 'ALREADY_CLAIMED', message: 'This profile has already been claimed by someone else. If this is a mistake, ask the family admin to release the claim.' }, { status: 409 })
 
     // Check for pending claim by a different user
     const { data: rivalClaim } = await admin
@@ -329,7 +368,7 @@ export async function POST(
       .eq('claimant_user_id', user.id)
       .gt('created_at', oneHourAgo)
     if ((recentAttempts ?? 0) >= 5) {
-      return NextResponse.json({ error: 'RATE_LIMITED', retryAfter: 3600 }, { status: 429 })
+      return NextResponse.json({ error: 'RATE_LIMITED', retryAfter: 3600, message: 'Too many claim attempts in the last hour. Please wait 1 hour and try again.' }, { status: 429 })
     }
 
     // Check existing claim request for lockout
@@ -342,7 +381,7 @@ export async function POST(
 
     if (myRequest?.locked_until && new Date(myRequest.locked_until) > new Date()) {
       return NextResponse.json(
-        { error: 'LOCKED_OUT', lockedUntil: myRequest.locked_until },
+        { error: 'LOCKED_OUT', lockedUntil: myRequest.locked_until, message: 'Too many failed attempts. This profile is locked for 24 hours. Ask the family admin to reset the lock if needed.' },
         { status: 423 }
       )
     }

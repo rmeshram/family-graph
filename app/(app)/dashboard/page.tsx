@@ -499,7 +499,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 
 export default function FamilyGraphApp() {
   const isMobile = useIsMobile()
-  const { user, familyId, profile, loading: authLoading } = useAuth()
+  const { user, familyId, profile, loading: authLoading, refreshProfile } = useAuth()
   const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility, setAnonymous, refetch: refetchMembers } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
@@ -1025,12 +1025,15 @@ export default function FamilyGraphApp() {
   }, [toast, refetchMembers])
 
   // Called after the user unlinks themselves from their own claimed node.
-  // Refreshes members + profile so the UI reflects the unclaimed state immediately.
+  // Refreshes members + auth profile so the UI reflects the unclaimed state immediately.
+  // refreshProfile clears the stale profile.member_id in client state, which
+  // makes selfMemberId null → the "Claim This Profile" button reappears on unclaimed nodes.
   const handleUnclaimSelf = useCallback(() => {
     refetchMembers()
+    refreshProfile()
     closeMemberDetail()
-    toast({ title: 'Profile unlinked', description: 'Your account is no longer linked to that profile.' })
-  }, [refetchMembers, toast])
+    toast({ title: 'Profile unlinked', description: 'Your account is no longer linked to that profile. You can claim another node if needed.' })
+  }, [refetchMembers, refreshProfile, toast])
 
   const handleAddStory = useCallback(async (memberId: string, storyData: Omit<Story, 'id' | 'createdAt'>) => {
     if (familyId) {
@@ -1454,6 +1457,7 @@ export default function FamilyGraphApp() {
                 detailPanelOpen={!!detailMemberId && !showAIWidget && !showInviteWidget && !pathFinderOpen}
                 onAddMember={() => setIsAddDialogOpen(true)}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+                onInvite={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
                 isAdmin={isAdmin}
               />
@@ -1916,7 +1920,7 @@ export default function FamilyGraphApp() {
             toast({ title: 'Could not update anonymous setting', description: err?.message, variant: 'destructive' })
           }
         }}
-        onUnclaim={refetchMembers}
+        onUnclaim={() => { refetchMembers(); refreshProfile() }}
       />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}

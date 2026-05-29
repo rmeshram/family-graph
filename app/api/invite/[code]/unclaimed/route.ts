@@ -95,7 +95,10 @@ async function fetchNodePreview(
     .select('id, name, birth_year, relationship, gender, parent_ids')
     .eq('id', nodeId)
     .single()
-  if (!node) return null
+  if (!node) {
+    console.warn('[unclaimed] nodePreview: node not found for nodeId:', nodeId, '— invite may reference a deleted node')
+    return null
+  }
   const parentIds: string[] = (node as any).parent_ids ?? []
   let parentNames: string[] = []
   if (parentIds.length > 0) {
