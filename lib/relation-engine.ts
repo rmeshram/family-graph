@@ -48,8 +48,12 @@ export function enrichMembersWithDerivedEdges(
 
   const sid = self.id
 
+  const memberIdSet = new Set(members.map(m => m.id))
   const isIsolated = (m: FamilyMember): boolean => {
-    if (m.parentIds.length > 0 || m.spouseIds.length > 0) return false
+    // Only count parentIds/spouseIds that actually resolve to real members in this set.
+    // Dangling references (deleted members, cross-family IDs) must not block enrichment.
+    if (m.parentIds.some(pid => memberIdSet.has(pid))) return false
+    if (m.spouseIds.some(sid => memberIdSet.has(sid))) return false
     return !members.some(o => o.parentIds.includes(m.id) || o.spouseIds.includes(m.id))
   }
 
@@ -74,12 +78,12 @@ export function enrichMembersWithDerivedEdges(
     if (!virtCreated.has(id)) { virtCreated.add(id); virtuals.push(makeVirtMember(id, pIds, sIds)) }
   }
 
-  const VP   = `__virt_p_${sid}`
-  const VGP  = `__virt_gp_${sid}`
-  const VS   = `__virt_sib_${sid}`
-  const VSP  = `__virt_sp_${sid}`
-  const VC   = `__virt_ch_${sid}`
-  const VU   = `__virt_unc_${sid}`
+  const VP = `__virt_p_${sid}`
+  const VGP = `__virt_gp_${sid}`
+  const VS = `__virt_sib_${sid}`
+  const VSP = `__virt_sp_${sid}`
+  const VC = `__virt_ch_${sid}`
+  const VU = `__virt_unc_${sid}`
   const VSPP = `__virt_spp_${sid}`
 
   let vpReady = false, vgpReady = false, vsReady = false
@@ -247,10 +251,10 @@ export interface SemanticRelationship {
 
 function edgeStepLabel(type: EngineEdgeType, target: FamilyMember): string {
   const m = target.gender === 'male', f = target.gender === 'female'
-  if (type === 'PARENT')  return m ? 'Father'  : f ? 'Mother'   : 'Parent'
-  if (type === 'CHILD')   return m ? 'Son'      : f ? 'Daughter' : 'Child'
-  if (type === 'SIBLING') return m ? 'Brother'  : f ? 'Sister'   : 'Sibling'
-  return                         m ? 'Husband'  : f ? 'Wife'     : 'Spouse'
+  if (type === 'PARENT') return m ? 'Father' : f ? 'Mother' : 'Parent'
+  if (type === 'CHILD') return m ? 'Son' : f ? 'Daughter' : 'Child'
+  if (type === 'SIBLING') return m ? 'Brother' : f ? 'Sister' : 'Sibling'
+  return m ? 'Husband' : f ? 'Wife' : 'Spouse'
 }
 
 export function computeRelationLabel(
@@ -320,8 +324,8 @@ export function computeSemanticRelationship(
     }
   }
 
-  const enriched   = enrichMembersWithDerivedEdges(members, selfId)
-  const memberMap  = new Map(members.map(m  => [m.id, m]))
+  const enriched = enrichMembersWithDerivedEdges(members, selfId)
+  const memberMap = new Map(members.map(m => [m.id, m]))
   const enrichedMap = new Map(enriched.map(m => [m.id, m]))
 
   const result = getRelationshipBetweenPeople(enriched, fromId, toId, fromLabel)

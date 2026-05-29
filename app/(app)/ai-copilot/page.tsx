@@ -264,8 +264,13 @@ function generateAIResponse(query: string, members: FamilyMember[]): { content: 
 }
 
 // ─── Compact member mapper (strips sensitive fields before sending to API) ──────
+// Members with showAsAnonymous=true are excluded entirely — their real name
+// must not be revealed to the AI (and by extension, potentially to the user).
 
 function toCompactMember(m: FamilyMember) {
+  // Do not include anonymous members — the AI receives their real name and
+  // could inadvertently reveal it in responses.
+  if (m.showAsAnonymous) return null
   return {
     id: m.id,
     name: m.name,
@@ -381,7 +386,7 @@ export default function AICopilotPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updatedHistory,
-          members: members.map(toCompactMember),
+          members: members.map(toCompactMember).filter(Boolean),
         }),
       })
 

@@ -739,16 +739,30 @@ export default function FamilyGraphApp() {
   // which is only set in demo data, not in real user records.
   const pfResult = useMemo<RelationshipResult | null>(() => {
     if (!pfFrom || !pfTo || pfFrom === pfTo) return null
-    const base = isDemoMode ? sampleFamilyMembers : dbMembers
-    const enriched = selfMember
-      ? enrichMembersWithDerivedEdges(base, selfMember.id)
-      : base
-    const fromM = enriched.find(m => m.id === pfFrom)
-    const fromLabel = pfFrom === selfMember?.id
-      ? 'your'
-      : `${fromM?.name?.split(' ')[0] ?? ''}'s`
-    return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
-  }, [pfFrom, pfTo, isDemoMode, dbMembers, selfMember])
+    // Use the full `members` array (includes linked-family members shown in the picker).
+    // dbMembers would exclude linked members, causing NOT_FOUND when a linked member is selected.
+    const base = isDemoMode ? sampleFamilyMembers : members
+
+    const compute = (anchorId: string | null | undefined): RelationshipResult => {
+      const enriched = anchorId ? enrichMembersWithDerivedEdges(base, anchorId) : base
+      const fromM = enriched.find(m => m.id === pfFrom)
+      const fromLabel = pfFrom === selfMember?.id
+        ? 'your'
+        : `${fromM?.name?.split(' ')[0] ?? ''}'s`
+      return getRelationshipBetweenPeople(enriched, pfFrom, pfTo, fromLabel)
+    }
+
+    // Try anchors in order: self (most semantically accurate) → pfFrom → pfTo → raw BFS.
+    // Multiple anchors ensure connectivity even when selfMember is not set (unclaimed profile)
+    // or when label-only members have no structural edges anchored at self.
+    const r = compute(selfMember?.id ?? null)
+    if (r.found) return r
+    const r2 = compute(pfFrom)
+    if (r2.found) return r2
+    const r3 = compute(pfTo)
+    if (r3.found) return r3
+    return compute(undefined) // raw BFS, no enrichment
+  }, [pfFrom, pfTo, isDemoMode, members, selfMember])
 
   useEffect(() => {
     if (pfResult?.found && pfResult.people.length > 0) {

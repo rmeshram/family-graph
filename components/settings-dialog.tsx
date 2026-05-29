@@ -102,6 +102,33 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
   const [showUnclaimConfirm, setShowUnclaimConfirm] = useState(false)
   const [unclaimError, setUnclaimError] = useState<string | null>(null)
 
+  // Delete account state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/users/me/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error ?? 'Failed to delete account. Please try again.')
+        setDeleting(false)
+        return
+      }
+      // Sign out locally then redirect to home
+      await supabase.auth.signOut()
+      window.location.href = '/'
+    } catch {
+      toast.error('Network error. Please try again.')
+      setDeleting(false)
+    }
+  }
+
   // Connected families
   const [linkedData, setLinkedData] = useState<{
     incoming: any[]
@@ -1214,10 +1241,19 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                 Danger Zone
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <Button variant="outline" size="sm" className="w-full border-destructive/50 text-destructive hover:bg-destructive/10">
-                Delete All My Data
+            <CardContent className="space-y-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={deleting}
+              >
+                {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : <><Trash2 className="h-4 w-4 mr-2" />Delete All My Data</>}
               </Button>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Permanently deletes your account and unlinks you from your family node. Your family member record will remain in the tree for other members to see.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1400,6 +1436,32 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (removeConfirmUserId) removeFromFamily(removeConfirmUserId); setRemoveConfirmUserId(null) }}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Delete All My Data confirmation ─────────────────────────────── */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={(v) => { if (!v && !deleting) setShowDeleteConfirm(false) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">This will <strong>permanently delete</strong> your account and sign you out. This action cannot be undone.</span>
+              <span className="block">Your family member record (name, photos, bio) will remain in the tree so your relatives can still see it — only your login access will be removed.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteAccount()
+              }}
+            >
+              {deleting ? 'Deleting…' : 'Yes, delete my account'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -89,6 +89,27 @@ export default function JoinPage() {
         setDisplayName(prefillName)
       }
 
+      // Re-validate expiry every time init runs (initial load + auth state changes).
+      // This catches the edge case where the invite expires while the user is in
+      // the middle of the auth flow (e.g., slow signup form fill).
+      const { data: freshInvite } = await supabase
+        .from('invite_links')
+        .select('expires_at, consumed_at, max_uses, used_count')
+        .eq('code', code.toUpperCase())
+        .single()
+      if (freshInvite) {
+        const fi = freshInvite as any
+        if (fi.expires_at && new Date(fi.expires_at) < new Date()) {
+          setStatus('error'); setMessage('This invite link has expired. Ask the sender for a new one.'); return
+        }
+        if (fi.consumed_at) {
+          setStatus('error'); setMessage('This invite has already been used.'); return
+        }
+        if (fi.max_uses && fi.used_count >= fi.max_uses) {
+          setStatus('error'); setMessage('This invite has reached its user limit.'); return
+        }
+      }
+
       const { data: invite } = await supabase
         .from('invite_links')
         .select('*, families(name)')
@@ -185,6 +206,14 @@ export default function JoinPage() {
       setStatus('preview')
     }
     init()
+
+    // Re-run init when auth state changes (e.g. user completes signup in another tab
+    // and the token is injected via the Supabase auth listener). This ensures we
+    // re-validate invite expiry and update isAuthed without requiring a page reload.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) init()
+    })
+    return () => subscription.unsubscribe()
   }, [code, supabase])
 
   const handleContinueToRelate = () => {

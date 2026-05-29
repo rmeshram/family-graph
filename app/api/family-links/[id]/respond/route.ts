@@ -75,6 +75,29 @@ export async function POST(
     return NextResponse.json({ error: 'NOT_ADMIN' }, { status: 403 })
   }
 
+  // BUG FIX #FL1: Validate junction member B belongs to responding family
+  if (action === 'accept' && junctionMemberBId) {
+    const { data: memberB } = await admin
+      .from('family_members')
+      .select('id, family_id, name')
+      .eq('id', junctionMemberBId)
+      .single()
+    
+    if (!memberB) {
+      return NextResponse.json(
+        { error: 'JUNCTION_MEMBER_NOT_FOUND', message: 'The specified junction member does not exist.' },
+        { status: 404 }
+      )
+    }
+    
+    if ((memberB as any).family_id !== (link as any).family_b_id) {
+      return NextResponse.json(
+        { error: 'INVALID_JUNCTION_MEMBER', message: 'Junction member must belong to your family.' },
+        { status: 400 }
+      )
+    }
+  }
+
   const newStatus = action === 'accept' ? 'accepted' : 'rejected'
 
   const { data: updated, error } = await admin

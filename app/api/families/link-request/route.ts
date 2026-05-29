@@ -66,6 +66,29 @@ export async function POST(req: Request) {
 
   const myFamilyId = (profile as any).family_id as string
 
+  // BUG FIX #FL1: Validate junction member belongs to caller's family
+  if (junctionMemberAId) {
+    const { data: memberA } = await admin
+      .from('family_members')
+      .select('id, family_id, name')
+      .eq('id', junctionMemberAId)
+      .single()
+    
+    if (!memberA) {
+      return NextResponse.json(
+        { error: 'JUNCTION_MEMBER_NOT_FOUND', message: 'The specified junction member does not exist.' },
+        { status: 404 }
+      )
+    }
+    
+    if ((memberA as any).family_id !== myFamilyId) {
+      return NextResponse.json(
+        { error: 'INVALID_JUNCTION_MEMBER', message: 'Junction member must belong to your family.' },
+        { status: 400 }
+      )
+    }
+  }
+
   // Resolve target family by invite code
   const { data: targetFamily } = await admin
     .from('families')
