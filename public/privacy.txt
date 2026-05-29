@@ -1,0 +1,60 @@
+FAMILY GRAPH - PRIVACY POLICY (BETA)
+Last Updated: May 29, 2026
+
+1. INFORMATION WE COLLECT
+- Account info: Email, name, phone (if provided)
+- Family data: Names, birth years, locations, photos, stories you upload
+- Usage data: Pages visited, features used (via Vercel Analytics)
+- Device data: Browser type, IP address (for security)
+
+2. HOW WE USE YOUR DATA
+- To provide the family tree service
+- To send you important service updates
+- To improve our product (anonymous analytics)
+- To provide AI chat features (Google Gemini)
+
+3. DATA SHARING
+We share data with:
+- Supabase (database hosting) - USA
+- Google AI (chat features) - USA  
+- Vercel (hosting & analytics) - USA
+- Family members you invite to your tree
+
+We DO NOT:
+- Sell your data to third parties
+- Use your data for advertising
+- Share publicly without your permission
+
+4. DATA SECURITY
+- Encrypted connections (HTTPS)
+- Row-level security on database
+- Regular security updates
+- Access controls (only you and invited family see your tree)
+
+5. YOUR RIGHTS
+You can:
+- Export your data (contact us)
+- Delete your account (Settings → Delete Account)
+- Control who sees your profile (Privacy settings)
+- Revoke family member access (Admin controls)
+
+6. COOKIES
+We use minimal cookies for:
+- Authentication (required)
+- Analytics (Vercel Analytics)
+- Theme preference
+
+7. CHILDREN'S PRIVACY
+You can add children to your family tree, but they cannot create accounts under age 13.
+
+8. INTERNATIONAL USERS
+Data stored in USA. By using our service, you consent to international data transfer.
+
+9. CHANGES
+We'll notify you of major privacy policy changes via email.
+
+10. CONTACT
+Privacy questions: [YOUR-EMAIL]
+Data deletion requests: [YOUR-EMAIL]
+
+For GDPR/data requests, please email with subject "Data Request"

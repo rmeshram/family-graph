@@ -1,0 +1,41 @@
+FAMILY GRAPH - TERMS OF SERVICE (BETA)
+Last Updated: May 29, 2026
+
+1. ACCEPTANCE OF TERMS
+By accessing Family Graph, you agree to these terms. This is a BETA product provided "as-is."
+
+2. USER RESPONSIBILITIES
+- You are responsible for all data you upload
+- You must have permission to add family members' information
+- You will not upload illegal, offensive, or copyrighted content
+- You must be 13+ years old to use this service
+
+3. DATA & PRIVACY
+- We store your family tree data on secure servers (Supabase)
+- We use Google AI for chat features (data sent to Google)
+- We do not sell your personal data
+- You can request data deletion by emailing [YOUR-EMAIL]
+
+4. BETA LIMITATIONS
+- Service may be interrupted or discontinued
+- Features may change without notice
+- No uptime guarantees during beta period
+- Free during beta - pricing may be introduced later
+
+5. INTELLECTUAL PROPERTY
+- You retain ownership of your family data
+- You grant us license to store and display your content
+- We own the Family Graph platform and code
+
+6. DISCLAIMERS
+- NO WARRANTY - provided "as-is"
+- We are not liable for data loss, inaccuracies, or service interruptions
+- Maximum liability limited to amount you paid (currently $0)
+
+7. TERMINATION
+We reserve the right to terminate accounts that violate these terms.
+
+8. CONTACT
+For questions: [YOUR-EMAIL]
+
+By using Family Graph, you accept these terms.
