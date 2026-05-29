@@ -92,9 +92,15 @@ export async function POST(
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  // node_claim invites use /claim/[code] (identity-centric URL);
+  // family invites use /join/[code] (family-centric onboarding URL).
+  const isNodeClaim = (invite as any).invite_type === 'node_claim'
+  const link = isNodeClaim
+    ? `${appUrl}/claim/${newCode}`
+    : `${appUrl}/join/${newCode}`
   return NextResponse.json({
     code: newCode,
-    link: `${appUrl}/join/${newCode}`,
+    link,
     expiresAt: newExpiry,
   })
 }
