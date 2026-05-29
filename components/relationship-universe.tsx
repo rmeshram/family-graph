@@ -452,8 +452,10 @@ interface Props {
   onAddMember?: () => void
   /** Called when user clicks an inline add-relative action on a node */
   onAddRelative?: (anchorId: string, relType: import('@/components/quick-add-member-dialog').QuickRelType) => void
-  /** Called when user wants to invite/claim an unclaimed node */
+  /** Called when user wants to invite someone else to claim an unclaimed node */
   onInvite?: (memberId: string) => void
+  /** Called when the viewer (who has no claimed node yet) wants to claim this node as themselves */
+  onClaim?: (memberId: string) => void
   /** True while the parent is fetching members — suppresses the empty-state animation */
   loading?: boolean
 }
@@ -471,6 +473,7 @@ export function RelationshipUniverse({
   onAddMember,
   onAddRelative,
   onInvite,
+  onClaim,
   loading = false,
   isAdmin = false,
 }: Props) {
@@ -1763,6 +1766,9 @@ export function RelationshipUniverse({
               const isSelf = !!selfMemberId && selectedMemberId === selfMemberId
               const isUnclaimed = !(fullM?.isClaimed ?? false)
               const isDeceased = !!(fullM?.isDeceased ?? fullM?.deathYear)
+              // canClaim: viewer has no claimed node and wants to claim for themselves
+              const canClaim = isUnclaimed && !isDeceased && !isSelf && !selfMemberId && !!onClaim
+              // canInvite: viewer already has a claimed node and wants to invite someone else
               const canInvite = isUnclaimed && !isDeceased && !!onInvite
               const spouseIds: string[] = fullM?.spouseIds ?? []
               const spouses = spouseIds.map(id => membersById.get(id)).filter(Boolean) as FamilyMember[]
@@ -1808,14 +1814,24 @@ export function RelationshipUniverse({
                   color: 'var(--muted-foreground)',
                   action: () => onAddRelative!(selectedMemberId!, 'child'),
                 }] : []),
+                // For unclaimed nodes: always show a "Profile" secondary action so the
+                // detail panel (with Edit button) is reachable even when the primary CTA
+                // is "Invite to Join" or "Claim as myself".
+                ...((canInvite || canClaim) && onOpenMemberDetail ? [{
+                  key: 'profile', label: 'Profile', icon: '👤',
+                  color: 'var(--primary)',
+                  action: () => onOpenMemberDetail!(selectedMemberId!),
+                }] : []),
               ] as { key: string; label: string; icon: string; color: string; action: () => void }[]
 
               // ── Primary CTA ────────────────────────────────────────────────
               const primaryBtn = isSelf
                 ? { label: 'Edit My Profile', icon: '✏️', bg: 'var(--primary)', action: () => onOpenMemberDetail?.(selectedMemberId!) }
-                : canInvite
-                  ? { label: 'Invite to Join', icon: '✉️', bg: 'oklch(0.50 0.22 145)', action: () => onInvite!(selectedMemberId!) }
-                  : { label: 'View Profile', icon: '👤', bg: 'var(--primary)', action: () => onOpenMemberDetail?.(selectedMemberId!) }
+                : canClaim
+                  ? { label: 'This is me — Claim', icon: '🙋', bg: 'oklch(0.50 0.22 200)', action: () => onClaim!(selectedMemberId!) }
+                  : canInvite
+                    ? { label: 'Invite to Join', icon: '✉️', bg: 'oklch(0.50 0.22 145)', action: () => onInvite!(selectedMemberId!) }
+                    : { label: 'View Profile', icon: '👤', bg: 'var(--primary)', action: () => onOpenMemberDetail?.(selectedMemberId!) }
 
               // ── Avatar element — reused in both layouts ─────────────────────
               const AvatarEl = (
@@ -1967,6 +1983,20 @@ export function RelationshipUniverse({
                           ))}
                         </div>
                       )}
+
+                      {/* View / Edit Profile — full width */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
+                        className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl text-[11px] font-medium transition-all hover:brightness-105 active:scale-[0.98]"
+                        style={{
+                          background: 'var(--muted)',
+                          border: `1px solid var(--universe-panel-border)`,
+                          color: 'var(--muted-foreground)',
+                        }}
+                      >
+                        <span style={{ fontSize: 12 }}>👤</span>
+                        {isSelf || isUnclaimed ? 'Edit Profile' : 'View Profile'}
+                      </button>
                     </div>
                   </div>
                 )
@@ -2279,7 +2309,7 @@ export function RelationshipUniverse({
                     )}
                   </div>
 
-                  {/* ── ACTIONS (156px) — 2×2 icon+label grid + Add Memory ── */}
+                  {/* ── ACTIONS (156px) — 2×2 icon+label grid + View/Edit Profile ── */}
                   <div className="shrink-0 flex flex-col px-3 py-3 gap-2" style={{ width: 156 }}>
                     <div className="text-[9px] font-semibold uppercase tracking-[0.10em]"
                       style={{ color: 'var(--muted-foreground)' }}>Actions</div>
@@ -2313,9 +2343,9 @@ export function RelationshipUniverse({
                       ))}
                     </div>
 
-                    {/* Add Memory — full width, navigates to Memory Vault */}
+                    {/* View / Edit Profile — full width */}
                     <button
-                      onClick={(e) => { e.stopPropagation(); router.push('/memory') }}
+                      onClick={(e) => { e.stopPropagation(); onOpenMemberDetail?.(selectedMemberId!) }}
                       className="w-full flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[10px] font-medium transition-all hover:brightness-105 active:scale-[0.97]"
                       style={{
                         background: 'var(--muted)',
@@ -2323,8 +2353,8 @@ export function RelationshipUniverse({
                         color: 'var(--muted-foreground)',
                       }}
                     >
-                      <span style={{ fontSize: 11 }}>📷</span>
-                      Add Memory
+                      <span style={{ fontSize: 11 }}>👤</span>
+                      {isSelf || isUnclaimed ? 'Edit Profile' : 'View Profile'}
                     </button>
                   </div>
                 </div>
