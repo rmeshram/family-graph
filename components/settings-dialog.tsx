@@ -1000,7 +1000,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
           )}
 
           {/* ── Unlink My Profile (self-unclaim, 7-day window) ─── */}
-          {selfMember && (
+          {/* Only shown when this user is the active claimer of the node.
+              If an admin revoked the claim, selfMember.isClaimed is false
+              and selfMember.claimedByUserId is null — hide the section. */}
+          {selfMember && selfMember.isClaimed && selfMember.claimedByUserId === user?.id && (
             <Card className="bg-muted/30 border-destructive/20">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">

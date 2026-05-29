@@ -90,6 +90,17 @@ export async function POST(
 
   await admin.from('user_node_links').delete().eq('node_id', id)
 
+  // Clear profiles.member_id for the user whose claim was just revoked so the
+  // app immediately stops showing stale "Unlink My Profile" UI for that user.
+  const revokedUserId = (node as any).claimed_by_user_id as string | null
+  if (revokedUserId) {
+    await admin
+      .from('profiles')
+      .update({ member_id: null } as any)
+      .eq('id', revokedUserId)
+      .eq('member_id', id) // guard: only clear if still pointing at this node
+  }
+
   await admin.from('claim_audit_log').insert({
     node_id: id,
     family_id: (node as any).family_id,
