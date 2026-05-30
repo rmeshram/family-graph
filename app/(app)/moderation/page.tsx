@@ -41,7 +41,7 @@ interface ArchivedNode {
   name: string
   birth_year: number | null
   gender: string | null
-  relationship_to_root: string | null
+  relationship: string | null
   deleted_at: string
   deleted_by: string | null
   claim_status: string | null
@@ -336,11 +336,17 @@ export default function ModerationPage() {
     try {
       const res = await fetch('/api/nodes/archived')
       const data = await res.json()
-      if (res.ok) setArchivedNodes(data.nodes ?? [])
+      if (!res.ok) {
+        toast({ title: 'Could not load archived profiles', description: data.error ?? 'Server error', variant: 'destructive' })
+        return
+      }
+      setArchivedNodes(data.nodes ?? [])
+    } catch (e: unknown) {
+      toast({ title: 'Could not load archived profiles', description: e instanceof Error ? e.message : 'Network error', variant: 'destructive' })
     } finally {
       setLoadingArchived(false)
     }
-  }, [canAccess, role])
+  }, [canAccess, role, toast])
 
   const handleRestoreNode = useCallback(async (nodeId: string) => {
     setActionLoading(true)
@@ -472,7 +478,11 @@ export default function ModerationPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="claims" className="flex flex-col flex-1 min-h-0">
+      <Tabs
+        defaultValue="claims"
+        className="flex flex-col flex-1 min-h-0"
+        onValueChange={(v) => { if (v === 'archived') loadArchivedNodes() }}
+      >
         <TabsList className="mx-4 mt-3 h-8 w-fit">
           <TabsTrigger value="claims" className="text-xs h-7 gap-1">
             <Users className="h-3 w-3" />
@@ -499,7 +509,7 @@ export default function ModerationPage() {
             </TabsTrigger>
           )}
           {role === 'admin' && (
-            <TabsTrigger value="archived" className="text-xs h-7 gap-1" onClick={loadArchivedNodes}>
+            <TabsTrigger value="archived" className="text-xs h-7 gap-1">
               <Archive className="h-3 w-3" />
               Archived
               {archivedNodes.length > 0 && (
@@ -604,7 +614,7 @@ export default function ModerationPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate">{node.name}</p>
                         <p className="text-[11px] text-muted-foreground">
-                          {node.relationship_to_root ?? 'Unknown relation'}
+                          {node.relationship ?? 'Unknown relation'}
                           {node.birth_year ? ` · b. ${node.birth_year}` : ''}
                           {' · Archived '}
                           {new Date(node.deleted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}

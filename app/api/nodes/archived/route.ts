@@ -51,7 +51,7 @@ export async function GET(_req: NextRequest) {
 
   const { data: nodes, error } = await admin
     .from('family_members')
-    .select('id, name, birth_year, gender, relationship_to_root, deleted_at, deleted_by, claim_status')
+    .select('id, name, birth_year, gender, relationship, deleted_at, deleted_by, claim_status')
     .eq('family_id', familyId)
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false })
