@@ -243,23 +243,7 @@ export function useMembers(familyId: string | null) {
       }
     }
 
-    // 2. Singleton-relationship constraints: only one node may hold these roles
-    //    relative to a given anchor (parent of the new node or the viewer).
-    //    We check against the anchor nodes in parentIds / spouseIds.
-    const SINGLETON_RELS = ['father', 'mother', 'husband', 'wife', 'spouse'] as const
-    if (SINGLETON_RELS.includes(rel as typeof SINGLETON_RELS[number])) {
-      const existing = members.find(m =>
-        (m.relationship ?? '').toLowerCase().trim() === rel
-      )
-      if (existing) {
-        const roleLabel = rel.charAt(0).toUpperCase() + rel.slice(1)
-        throw new Error(
-          `${roleLabel} (${existing.name}) is already in your family tree. A person can only have one ${rel}. If there was a divorce/remarriage, please edit the existing entry instead.`
-        )
-      }
-    }
-
-    // 3. Structural spouse cap: the anchor node in spouseIds can only have one spouse
+    // 2. Structural spouse cap: the anchor node in spouseIds can only have one spouse
     //    (unless the family explicitly uses polygamy — not a use-case we model).
     if ((memberData.spouseIds?.length ?? 0) > 0) {
       for (const anchorId of memberData.spouseIds!) {

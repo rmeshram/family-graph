@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepare:playstore": "bash scripts/prepare-playstore.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

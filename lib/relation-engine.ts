@@ -50,11 +50,15 @@ export function enrichMembersWithDerivedEdges(
 
   const memberIdSet = new Set(members.map(m => m.id))
   const isIsolated = (m: FamilyMember): boolean => {
-    // Only count parentIds/spouseIds that actually resolve to real members in this set.
-    // Dangling references (deleted members, cross-family IDs) must not block enrichment.
-    if (m.parentIds.some(pid => memberIdSet.has(pid))) return false
-    if (m.spouseIds.some(sid => memberIdSet.has(sid))) return false
-    return !members.some(o => o.parentIds.includes(m.id) || o.spouseIds.includes(m.id))
+    // A node needs ancestry enrichment if it has NO real parent edges in this family.
+    // Having a spouse, children, or being someone's spouse does NOT block enrichment —
+    // those structural connections are irrelevant to whether the node's own ancestry
+    // virtual edge should be derived from its `relationship` label.
+    //
+    // Example: chacha (paternal uncle) has a wife and children in the tree but
+    // no parentIds — without enrichment, cousins (his children) are unreachable
+    // from the viewer via BFS.
+    return !m.parentIds.some(pid => memberIdSet.has(pid))
   }
 
   const extras = new Map<string, { parentIds: string[]; spouseIds: string[] }>()
@@ -170,9 +174,10 @@ export function enrichMembersWithDerivedEdges(
       addP(getSelfGrandparentId(), m.id)
     } else if (['grandson', 'granddaughter', 'grandchild'].includes(rel)) {
       addP(m.id, getSelfChildId())
-    } else if (rel === 'uncle' || rel === 'aunt' || rel.startsWith('uncle') || rel.startsWith('aunt')
+    } else if ((rel === 'uncle' || rel === 'aunt'
+      || ((rel.startsWith('uncle') || rel.startsWith('aunt')) && !rel.includes('in-law'))
       || rel.includes('paternal-uncle') || rel.includes('maternal-uncle')
-      || rel.includes('paternal-aunt') || rel.includes('maternal-aunt')) {
+      || rel.includes('paternal-aunt') || rel.includes('maternal-aunt'))) {
       addP(m.id, getSelfGrandparentId())
     } else if (rel === 'nephew' || rel === 'niece') {
       addP(m.id, getSelfSiblingId())

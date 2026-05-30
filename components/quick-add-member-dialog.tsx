@@ -84,6 +84,7 @@ export function QuickAddMemberDialog({
   const [birthYearError, setBirthYearError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLinking, setIsLinking] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
 
   const handleRelTypeChange = (type: QuickRelType) => {
@@ -105,6 +106,7 @@ export function QuickAddMemberDialog({
     setNameError('')
     setBirthYearError('')
     setIsSubmitting(false)
+    setSubmitError(null)
     setDuplicateWarning(null)
   }
 
@@ -137,11 +139,13 @@ export function QuickAddMemberDialog({
 
   const doAdd = async (submittedName: string) => {
     setIsSubmitting(true)
+    setSubmitError(null)
     try {
       await onAdd(submittedName, gender, birthYear, relType, anchorMember.id)
       handleOpenChange(false)
     } catch (err) {
-      console.error('[quick-add] failed:', err)
+      const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.'
+      setSubmitError(msg)
     } finally {
       setIsSubmitting(false)
     }
@@ -149,6 +153,7 @@ export function QuickAddMemberDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitError(null)
     if (!validate() || isSubmitting) return
 
     const storedName = normalizeStoredName(name)
@@ -217,8 +222,8 @@ export function QuickAddMemberDialog({
                   type="button"
                   onClick={() => handleRelTypeChange(type)}
                   className={`rounded-lg border py-2 text-xs font-medium transition-all ${relType === type
-                      ? 'border-primary bg-primary/15 text-primary'
-                      : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70 hover:text-foreground'
+                    ? 'border-primary bg-primary/15 text-primary'
+                    : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70 hover:text-foreground'
                     }`}
                 >
                   {REL_PILL_LABELS[type]}
@@ -330,6 +335,13 @@ export function QuickAddMemberDialog({
                   </Button>
                 )}
               </div>
+            </div>
+          )}
+
+          {submitError && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+              <p className="text-xs text-destructive">{submitError}</p>
             </div>
           )}
 

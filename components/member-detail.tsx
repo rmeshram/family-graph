@@ -248,9 +248,9 @@ export function MemberDetail({
                   <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
                     You
                   </Badge>
-                ) : (relationLabel || (canShowRelationshipIntelligence && member.relationship && member.relationship !== 'self')) ? (
+                ) : relationLabel ? (
                   <Badge variant="secondary" className="border" style={{ background: 'var(--glow-gold)', color: 'var(--accent)', borderColor: 'var(--border)' }}>
-                    {relationLabel ?? member.relationship}
+                    {relationLabel}
                   </Badge>
                 ) : null}
                 {member.showAsAnonymous && (
