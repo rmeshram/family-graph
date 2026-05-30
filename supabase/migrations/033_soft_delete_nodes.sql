@@ -163,3 +163,84 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.restore_family_member(UUID, UUID) TO authenticated;
+
+-- ── 7. Fix notify_on_claim_audit trigger ─────────────────────────────────────
+-- Migration 030 created this trigger with NEW.claim_request_id which is not a
+-- column on claim_audit_log — causing every INSERT into the table to fail with
+-- "record new has not field claim_request_id".
+--
+-- This replacement:
+--   • Removes the non-existent claim_request_id reference
+--   • Returns immediately (no notification) for node_archived / node_restored
+--   • Falls back to actor_id for all other actions — preserves existing behavior
+CREATE OR REPLACE FUNCTION public.notify_on_claim_audit()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_user_id  UUID;
+  v_node_name TEXT;
+  v_family_id UUID;
+BEGIN
+  -- Archive/restore events don't need user-facing notifications
+  IF NEW.action IN ('node_archived', 'node_restored') THEN
+    RETURN NEW;
+  END IF;
+
+  -- Resolve user + node details from the audit row itself
+  -- (claim_audit_log has no claim_request_id column)
+  SELECT family_id, name INTO v_family_id, v_node_name
+    FROM public.family_members WHERE id = NEW.node_id LIMIT 1;
+
+  -- For claim actions the target user is the actor; for revoke it is stored
+  -- in the related family_members.claimed_by_user_id at time of revoke —
+  -- use actor_id as the best available signal without a join
+  v_user_id := NEW.actor_id;
+
+  IF v_user_id IS NULL OR v_family_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.action = 'claim_approved' OR NEW.action = 'claim_completed' THEN
+    INSERT INTO public.notifications (user_id, family_id, type, title, body, href, metadata)
+    VALUES (
+      v_user_id, v_family_id,
+      'claim_accepted',
+      'Your claim was approved',
+      COALESCE('You are now linked to ' || v_node_name || ' in the family tree.',
+               'Your profile claim has been approved.'),
+      '/dashboard',
+      jsonb_build_object('node_id', NEW.node_id)
+    );
+
+  ELSIF NEW.action = 'claim_rejected' THEN
+    INSERT INTO public.notifications (user_id, family_id, type, title, body, href, metadata)
+    VALUES (
+      v_user_id, v_family_id,
+      'claim_revoked',
+      'Your claim was not approved',
+      'The family admin reviewed your request. Contact the tree owner for details.',
+      '/dashboard',
+      jsonb_build_object('node_id', NEW.node_id)
+    );
+
+  ELSIF NEW.action IN ('claim_revoked', 'admin_revoke') THEN
+    INSERT INTO public.notifications (user_id, family_id, type, title, body, href, metadata)
+    VALUES (
+      v_user_id, v_family_id,
+      'claim_revoked',
+      'Your profile link was revoked',
+      'A family admin has removed your account link. You may re-claim the node.',
+      '/dashboard',
+      jsonb_build_object('node_id', NEW.node_id)
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_notify_on_claim_audit ON public.claim_audit_log;
+
+CREATE TRIGGER trg_notify_on_claim_audit
+  AFTER INSERT ON public.claim_audit_log
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_on_claim_audit();
