@@ -265,9 +265,17 @@ export function computeRelationLabel(
   members: FamilyMember[],
 ): string | null {
   if (fromId === toId) return 'Self'
-  const enriched = enrichMembersWithDerivedEdges(members)
-  const result = getRelationshipBetweenPeople(enriched, fromId, toId)
-  return result.found ? result.relationship : null
+  // Try multiple enrichment anchors so label-only members (added with a relationship
+  // field but no structural parentIds/spouseIds) get virtual edges that connect them.
+  // fromId is typically the self/logged-in user whose perspective most relationship
+  // labels were recorded relative to, so try it first.
+  const anchors: Array<string | undefined> = [fromId, toId, undefined]
+  for (const anchor of anchors) {
+    const enriched = anchor ? enrichMembersWithDerivedEdges(members, anchor) : members
+    const result = getRelationshipBetweenPeople(enriched, fromId, toId)
+    if (result.found) return result.relationship
+  }
+  return null
 }
 
 export function findRelationshipPath(
