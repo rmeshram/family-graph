@@ -719,11 +719,13 @@ export default function FamilyGraphApp() {
   const hasUnclaimedProfile = !isDemoMode && !authLoading && !dbLoading && members.length > 0 &&
     !!(profile as any)?.family_id && !(profile as any)?.member_id && selfMember === null
 
-  // Relationship perspective should only be enabled when the viewer has a
-  // claimed self node. In unclaimed mode we deliberately hide personalized
-  // labels (uncle/cousin/etc.) and show a neutral tree.
-  const relationshipPerspectiveEnabled = isDemoMode || identityMode !== 'anonymous_explore'
-  const relationshipIntelligenceEnabled = isDemoMode || identityMode !== 'anonymous_explore'
+  // Relationship perspective is only meaningful when the viewer has a *claimed*
+  // self node. In soft_identified mode (joined via invite but not claimed), the
+  // tree's static relationship labels were authored from the admin's perspective
+  // and may be wrong for a different viewer. Gate to fully_claimed so unclaimed
+  // and browse users see a neutral, unlabelled tree (issues #3, #4).
+  const relationshipPerspectiveEnabled = isDemoMode || identityMode === 'fully_claimed'
+  const relationshipIntelligenceEnabled = isDemoMode || identityMode === 'fully_claimed'
   const fullRelationshipActivation = isDemoMode || identityMode === 'fully_claimed'
 
   const displayMembers = useMemo(() => {
@@ -761,7 +763,22 @@ export default function FamilyGraphApp() {
     if (r2.found) return r2
     const r3 = compute(pfTo)
     if (r3.found) return r3
-    return compute(undefined) // raw BFS, no enrichment
+    const r4 = compute(undefined) // raw BFS, no enrichment
+    if (r4.found) return r4
+
+    // 5th attempt: bidirectional enrichment — enrich from pfFrom perspective first, then
+    // re-enrich the result from pfTo perspective. Handles cases where pfFrom and pfTo are
+    // label-only members whose relationship chains were recorded from different perspectives
+    // and only connect when both virtual structures are present simultaneously.
+    const enrichedBoth = enrichMembersWithDerivedEdges(
+      enrichMembersWithDerivedEdges(base, pfFrom),
+      pfTo,
+    )
+    const fromMB = enrichedBoth.find(m => m.id === pfFrom)
+    const fromLabelB = pfFrom === selfMember?.id
+      ? 'your'
+      : `${fromMB?.name?.split(' ')[0] ?? ''}'s`
+    return getRelationshipBetweenPeople(enrichedBoth, pfFrom, pfTo, fromLabelB)
   }, [pfFrom, pfTo, isDemoMode, members, selfMember])
 
   useEffect(() => {

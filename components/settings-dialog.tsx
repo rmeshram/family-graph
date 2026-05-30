@@ -1050,53 +1050,56 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                   const daysLeft = Math.max(0, 7 - Math.floor((Date.now() - claimedAt.getTime()) / 86_400_000))
                   const inWindow = daysLeft > 0
                   return (
-                    <div className={`text-xs rounded-lg px-3 py-2 ${inWindow ? 'bg-amber-500/10 text-amber-400' : 'bg-muted text-muted-foreground'}`}>
-                      {inWindow
-                        ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining in the 7-day self-unclaim window`
-                        : 'The 7-day unclaim window has passed. Contact the tree owner to revoke.'}
-                    </div>
+                    <>
+                      <div className={`text-xs rounded-lg px-3 py-2 ${inWindow ? 'bg-amber-500/10 text-amber-400' : 'bg-muted text-muted-foreground'}`}>
+                        {inWindow
+                          ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining in the 7-day self-unclaim window`
+                          : 'The 7-day unclaim window has passed. Contact the tree owner to revoke.'}
+                      </div>
+                      {!showUnclaimConfirm ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full border-destructive/30 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          onClick={() => setShowUnclaimConfirm(true)}
+                          disabled={!inWindow}
+                        >
+                          <ShieldOff className="h-3.5 w-3.5 mr-2" />
+                          Unlink My Profile
+                        </Button>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-destructive font-medium">Are you sure? This cannot be undone without re-claiming.</p>
+                          {unclaimError && (
+                            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                              <span className="font-semibold">Error: </span>{unclaimError}
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => { setShowUnclaimConfirm(false); setUnclaimError(null) }}
+                              disabled={unclaiming}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="flex-1"
+                              onClick={handleSelfUnclaim}
+                              disabled={unclaiming}
+                            >
+                              {unclaiming ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirm Unlink'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )
                 })()}
-                {!showUnclaimConfirm ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full border-destructive/30 text-destructive hover:bg-destructive/10"
-                    onClick={() => setShowUnclaimConfirm(true)}
-                  >
-                    <ShieldOff className="h-3.5 w-3.5 mr-2" />
-                    Unlink My Profile
-                  </Button>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-destructive font-medium">Are you sure? This cannot be undone without re-claiming.</p>
-                    {unclaimError && (
-                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        <span className="font-semibold">Error: </span>{unclaimError}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => { setShowUnclaimConfirm(false); setUnclaimError(null) }}
-                        disabled={unclaiming}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="flex-1"
-                        onClick={handleSelfUnclaim}
-                        disabled={unclaiming}
-                      >
-                        {unclaiming ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirm Unlink'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}

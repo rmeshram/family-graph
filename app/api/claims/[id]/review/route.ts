@@ -115,8 +115,9 @@ export async function POST(
       return NextResponse.json({ error: 'CLAIM_ALREADY_REVIEWED' }, { status: 409 })
     }
 
-    // 1. Update node: claimed
-    const { error: fmErr } = await (admin.from('family_members') as any)
+    // 1. Update node: claimed — optimistic lock (.eq('is_claimed', false)) prevents two
+    // simultaneous admin approvals on the same node from both succeeding (CRIT-02 / issue 7).
+    const { data: fmData, error: fmErr } = await (admin.from('family_members') as any)
       .update({
         claim_status: 'claimed',
         is_claimed: true,
@@ -124,8 +125,13 @@ export async function POST(
         claimed_at: now,
       })
       .eq('id', nodeId)
+      .eq('is_claimed', false)  // race-safe: only succeeds if still unclaimed
+      .select('id')
     if (fmErr) {
       return NextResponse.json({ error: 'NODE_UPDATE_FAILED', message: fmErr.message }, { status: 500 })
+    }
+    if (!fmData?.length) {
+      return NextResponse.json({ error: 'CLAIM_ALREADY_REVIEWED' }, { status: 409 })
     }
 
     // 2. Upsert user_node_links

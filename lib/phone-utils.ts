@@ -1,45 +1,67 @@
 /**
  * Phone number utilities for Family Graph.
  *
- * All stored phones use E.164 format: +91XXXXXXXXXX
- * Only Indian numbers (+91) supported in V1.
+ * Stored phones use E.164 format: +<countryCode><subscriber>
+ * V1 focused on Indian numbers (+91). V1.1 adds pass-through for any valid
+ * E.164 input so international users are not silently dropped.
  */
 
 const INDIA_CODE = '+91'
 
 /**
- * Normalise any common Indian phone number format to E.164 (+91XXXXXXXXXX).
+ * Normalise a phone number to E.164.
  *
- * Handles:
+ * Strategy:
+ *   1. If the input is already a valid E.164 string (starts with +, 7-15 digits
+ *      total), return it as-is. This handles international numbers and numbers
+ *      already stored in the correct format.
+ *   2. Otherwise apply India-specific heuristics (10-digit, starts with 6-9)
+ *      to prepend +91.
+ *   3. Return null if no parse succeeds.
+ *
+ * Indian-format examples (backward-compatible):
  *   9876543210         → +919876543210
- *   09876543210        → +919876543210  (leading 0)
+ *   09876543210        → +919876543210
  *   +91 98765 43210    → +919876543210
  *   0091-9876543210    → +919876543210
- *   919876543210       → +919876543210  (91 prefix without +)
+ *   919876543210       → +919876543210
  *
- * Returns null for inputs that cannot be parsed as a valid 10-digit Indian number.
+ * International / already-E.164:
+ *   +14155552671       → +14155552671  (US)
+ *   +447911123456      → +447911123456 (UK)
+ *   +919876543210      → +919876543210 (already correct)
  */
 export function normalizePhone(raw: string): string | null {
-  // Strip all whitespace, dashes, dots, parentheses
-  let digits = raw.replace(/[\s\-().]/g, '')
+  if (!raw?.trim()) return null
 
-  // Remove leading 00 (international dialling prefix)
+  // Strip all whitespace, dashes, dots, parentheses for uniform processing
+  const stripped = raw.replace(/[\s\-().]/g, '')
+
+  // ── Step 1: already valid E.164 ─────────────────────────────────────────────
+  // E.164: starts with +, 7–15 digits total (ITU-T E.164 §5.1)
+  if (/^\+\d{7,15}$/.test(stripped)) return stripped
+
+  // ── Step 2: India-specific heuristics ────────────────────────────────────────
+  let digits = stripped
+
+  // Remove leading 00 (international dialling prefix without the +)
   if (digits.startsWith('00')) digits = digits.slice(2)
 
-  // Remove leading +
+  // Remove leading + (already stripped above for valid E.164 — this catches
+  // partial matches like '+9876543210' that are 10 digits without country code)
   if (digits.startsWith('+')) digits = digits.slice(1)
 
-  // Strip country code 91 if present
+  // Strip country code 91 if present (919876543210 → 9876543210)
   if (digits.startsWith('91') && digits.length === 12) {
     digits = digits.slice(2)
   }
 
-  // Strip leading 0 (domestic trunk prefix)
+  // Strip leading 0 (domestic trunk prefix: 09876543210 → 9876543210)
   if (digits.startsWith('0') && digits.length === 11) {
     digits = digits.slice(1)
   }
 
-  // We should now have exactly 10 digits
+  // We should now have exactly 10 digits for an Indian number
   if (!/^\d{10}$/.test(digits)) return null
 
   // Indian mobile numbers start with 6–9
@@ -49,18 +71,21 @@ export function normalizePhone(raw: string): string | null {
 }
 
 /**
- * Format an E.164 Indian phone number for display.
+ * Format an E.164 phone number for human-readable display.
+ * Indian numbers get the regional spacing; others are returned verbatim.
  * +919876543210 → +91 98765 43210
  */
 export function formatPhoneDisplay(e164: string): string {
-  if (!e164.startsWith('+91') || e164.length !== 13) return e164
-  const local = e164.slice(3)
-  return `+91 ${local.slice(0, 5)} ${local.slice(5)}`
+  if (e164.startsWith('+91') && e164.length === 13) {
+    const local = e164.slice(3)
+    return `+91 ${local.slice(0, 5)} ${local.slice(5)}`
+  }
+  return e164
 }
 
 /**
  * Quick validity check on a raw phone string (before normalisation).
- * Does NOT require E.164 — just checks we can produce a valid Indian number.
+ * Returns true if normalizePhone can produce a valid E.164 number.
  */
 export function isValidIndianPhone(raw: string): boolean {
   return normalizePhone(raw) !== null

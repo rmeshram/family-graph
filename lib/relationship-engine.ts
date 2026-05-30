@@ -278,13 +278,89 @@ function resolveLabel(
   }
 
   const entry = RELATIONSHIP_MAP[normalized]
-  if (!entry) {
-    const hops = normalized.split('>').length
-    return `${hops}-step relative`
+  if (entry) {
+    if (male && entry.male) return entry.male
+    if (female && entry.female) return entry.female
+    return entry.neutral
   }
-  if (male && entry.male) return entry.male
-  if (female && entry.female) return entry.female
-  return entry.neutral
+
+  // ── Dynamic label derivation for paths not in the static map ──────────────
+  // Derive semantically accurate labels rather than a generic "N-step relative".
+  return deriveDynamicLabel(normalized, male, female)
+}
+
+/**
+ * Derives a human-readable relationship label from an edge-path sequence
+ * that isn't present in RELATIONSHIP_MAP.  Handles:
+ *   • Pure ancestor chains (all PARENT)  → "Nth Great-grandparent"
+ *   • Pure descendant chains (all CHILD) → "Nth Great-grandchild"
+ *   • General cousin formula             → "Kth Cousin, M times removed"
+ *   • Arbitrary long paths               → "N-step relative" (final fallback)
+ */
+function deriveDynamicLabel(normalized: string, male: boolean, female: boolean): string {
+  const edges = normalized.split('>')
+
+  // Pure ancestor chain: PARENT×n
+  if (edges.every(e => e === 'PARENT')) {
+    const n = edges.length
+    if (n === 2) return male ? 'Grandfather' : female ? 'Grandmother' : 'Grandparent'
+    if (n === 3) return male ? 'Great-grandfather' : female ? 'Great-grandmother' : 'Great-grandparent'
+    const greats = 'Great-'.repeat(n - 2)
+    return male ? `${greats}grandfather` : female ? `${greats}grandmother` : `${greats}grandparent`
+  }
+
+  // Pure descendant chain: CHILD×n
+  if (edges.every(e => e === 'CHILD')) {
+    const n = edges.length
+    if (n === 2) return male ? 'Grandson' : female ? 'Granddaughter' : 'Grandchild'
+    if (n === 3) return male ? 'Great-grandson' : female ? 'Great-granddaughter' : 'Great-grandchild'
+    const greats = 'Great-'.repeat(n - 2)
+    return male ? `${greats}grandson` : female ? `${greats}granddaughter` : `${greats}grandchild`
+  }
+
+  // General cousin formula: any path containing exactly one SIBLING edge
+  // and at least one PARENT and one CHILD on either side.
+  // Pattern: PARENT×p > SIBLING > CHILD×c (virtual SIBLING may also appear mid-path)
+  const sibIdx = edges.indexOf('SIBLING')
+  if (sibIdx !== -1) {
+    const up = edges.slice(0, sibIdx)
+    const down = edges.slice(sibIdx + 1)
+    const allUp = up.every(e => e === 'PARENT')
+    const allDown = down.every(e => e === 'CHILD')
+    if (allUp && allDown && up.length >= 1 && down.length >= 1) {
+      const degree = Math.min(up.length, down.length)          // cousin degree
+      const removed = Math.abs(up.length - down.length)        // times removed
+      const ordinal = ['First', 'Second', 'Third', 'Fourth', 'Fifth'][degree - 1] ?? `${degree}th`
+      const base = `${ordinal} Cousin`
+      return removed === 0 ? base : `${base}, ${removed} time${removed > 1 ? 's' : ''} removed`
+    }
+  }
+
+  // Ancestor-then-descendant without SIBLING (PARENT×p > CHILD×c, p≠c)
+  const firstChild = edges.indexOf('CHILD')
+  if (firstChild > 0 && edges.slice(firstChild).every(e => e === 'CHILD') &&
+    edges.slice(0, firstChild).every(e => e === 'PARENT')) {
+    const upCount = firstChild
+    const downCount = edges.length - firstChild
+    if (upCount === downCount) {
+      // Same-generation across branches — generic sibling-like
+      return `${upCount + downCount}-step relative`
+    }
+    if (downCount > upCount) {
+      const n = downCount - upCount
+      const greats = n > 2 ? 'Great-'.repeat(n - 2) : ''
+      if (n === 1) return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
+      return male ? `${greats}Grand-nephew` : female ? `${greats}Grand-niece` : `${greats}Grand-nephew/niece`
+    }
+    // upCount > downCount
+    const n = upCount - downCount
+    const greats = n > 2 ? 'Great-'.repeat(n - 2) : ''
+    if (n === 1) return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
+    return male ? `${greats}Grand-uncle` : female ? `${greats}Grand-aunt` : `${greats}Grand-uncle/aunt`
+  }
+
+  // Final fallback
+  return `${edges.length}-step relative`
 }
 
 // ── Chain builders ────────────────────────────────────────────────────────────

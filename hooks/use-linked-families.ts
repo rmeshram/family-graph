@@ -41,6 +41,8 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
   const linkedFamilyIdsRef = useRef<string[]>([])
   const linkedMembersRef = useRef<FamilyMember[]>([])
   const familyNamesRef = useRef<Record<string, string>>({})
+  // Drives per-family subscription setup — updated after each successful fetch.
+  const [subscribedFamilyIds, setSubscribedFamilyIds] = useState<string[]>([])
 
   const fetchLinkedMembers = useCallback(async () => {
     if (!familyId) return
@@ -52,11 +54,14 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
       const data = await res.json()
       setLinkedMembers(data.linkedMembers ?? [])
       setLinkedFamilies(data.linkedFamilies ?? [])
-      linkedFamilyIdsRef.current = (data.linkedFamilies ?? []).map((f: LinkedFamily) => f.id)
+      const ids = (data.linkedFamilies ?? []).map((f: LinkedFamily) => f.id)
+      linkedFamilyIdsRef.current = ids
       linkedMembersRef.current = data.linkedMembers ?? []
       familyNamesRef.current = Object.fromEntries(
         (data.linkedFamilies ?? []).map((f: LinkedFamily) => [f.id, f.name])
       )
+      // Update subscription targets after fetch completes
+      setSubscribedFamilyIds(ids)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
@@ -69,63 +74,67 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
     fetchLinkedMembers()
   }, [fetchLinkedMembers])
 
-  // ── Supabase Realtime: watch family_members INSERT on linked families ──────
-  // When any linked family adds a new member, it pops up as an alert in the tree.
+  // ── Supabase Realtime: one subscription per linked family ─────────────────
+  // Creates a server-filtered channel for each linked family ID so only
+  // relevant INSERT events are delivered (no client-side fan-out of all
+  // family_members inserts from the entire database).
   useEffect(() => {
-    if (!familyId) return
+    if (!familyId || subscribedFamilyIds.length === 0) return
 
     const supabase = createClient()
 
-    const channel = supabase
-      .channel(`linked-family-members:${familyId}:${crypto.randomUUID()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'family_members',
-        },
-        (payload) => {
-          const row = payload.new as any
-          // Only react if the new member belongs to one of our linked families
-          if (!linkedFamilyIdsRef.current.includes(row.family_id)) return
+    const handleInsert = (linkedFamilyId: string) => (payload: any) => {
+      const row = payload.new as any
+      if (row.family_id !== linkedFamilyId) return // defensive double-check
 
-          const newMember: FamilyMember = {
-            id: row.id,
-            name: row.name,
-            birthYear: row.birth_year ?? undefined,
-            generation: row.generation ?? 3,
-            parentIds: row.parent_ids ?? [],
-            spouseIds: row.spouse_ids ?? [],
-            gender: row.gender ?? undefined,
-            currentPlace: row.current_place ?? undefined,
-            birthPlace: row.birth_place ?? undefined,
-            isAlive: row.is_alive ?? true,
-            networkGroup: 'affiliated',
-            affiliatedFamilyId: row.family_id,
-            affiliatedFamilyName: familyNamesRef.current[row.family_id] ?? 'Linked Family',
-          }
+      const newMember: FamilyMember = {
+        id: row.id,
+        name: row.name,
+        birthYear: row.birth_year ?? undefined,
+        generation: row.generation ?? 3,
+        parentIds: row.parent_ids ?? [],
+        spouseIds: row.spouse_ids ?? [],
+        gender: row.gender ?? undefined,
+        currentPlace: row.current_place ?? undefined,
+        birthPlace: row.birth_place ?? undefined,
+        isAlive: row.is_alive ?? true,
+        networkGroup: 'affiliated',
+        affiliatedFamilyId: row.family_id,
+        affiliatedFamilyName: familyNamesRef.current[row.family_id] ?? 'Linked Family',
+      }
 
-          // Add to linked members list
-          setLinkedMembers(prev => {
-            const updated = [...prev, newMember]
-            linkedMembersRef.current = updated
-            return updated
-          })
+      setLinkedMembers(prev => {
+        const updated = [...prev, newMember]
+        linkedMembersRef.current = updated
+        return updated
+      })
 
-          // Show the "their tree just grew" alert
-          setNewMemberAlert({
-            member: newMember,
-            familyName: familyNamesRef.current[row.family_id] ?? 'Linked Family',
-          })
-        }
-      )
-      .subscribe()
+      setNewMemberAlert({
+        member: newMember,
+        familyName: familyNamesRef.current[row.family_id] ?? 'Linked Family',
+      })
+    }
+
+    const channels = subscribedFamilyIds.map(linkedFamilyId =>
+      supabase
+        .channel(`linked-fam-members:${linkedFamilyId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'family_members',
+            filter: `family_id=eq.${linkedFamilyId}`,
+          },
+          handleInsert(linkedFamilyId)
+        )
+        .subscribe()
+    )
 
     return () => {
-      supabase.removeChannel(channel)
+      channels.forEach(ch => supabase.removeChannel(ch))
     }
-  }, [familyId])
+  }, [familyId, subscribedFamilyIds])
 
   const sendLinkRequest = useCallback(async (
     inviteCode: string,

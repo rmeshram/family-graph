@@ -28,7 +28,7 @@ export const FEATURE_FLAGS = {
   enableFullGraphPdfExport: false,
   /** Asks "how are you related to the inviter?" during the /join flow. */
   /** Per DECISION 1 (claim = join) this step is removed; relationship is set during node creation. */
-  enableInviteRelationshipStep: true,
+  enableInviteRelationshipStep: false,  // HIGH-08: was true, conflicts with DECISION 1 comment
   /** Admin review queue for low-confidence claims. ON — already shipped in settings dialog. */
   enableClaimReviewQueue: true,
   /** Moderator role: dedicated claim review + conflict resolution UI (/admin/moderation). */

@@ -22,7 +22,6 @@ const PRIORITY_MAP: Record<string, NotifPriority> = {
   relationship_updated: 'medium',
   visibility_changed: 'medium',
   birthday_today: 'medium',
-  anniversary: 'medium',
   memorial: 'medium',
   // LOW — passive / scheduled
   birthday_upcoming: 'low',
