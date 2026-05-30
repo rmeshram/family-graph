@@ -1070,9 +1070,9 @@ export default function FamilyGraphApp() {
       await dbDeleteMember(selectedMemberId)
       setSelectedMemberId(null)
       setIsDeleteDialogOpen(false)
-      toast({ title: 'Member removed', description: `${memberToDelete?.name} has been removed.` })
+      toast({ title: 'Profile archived', description: `${memberToDelete?.name} has been hidden from the tree. Restore them from the admin panel.` })
     } catch (e: unknown) {
-      toast({ title: 'Could not delete', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+      toast({ title: 'Could not archive', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
       setIsDeleteDialogOpen(false)
     }
   }, [selectedMemberId, members, familyId, dbDeleteMember, toast])
@@ -2089,12 +2089,14 @@ export default function FamilyGraphApp() {
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedMember?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently remove {selectedMember?.name} and all their connections.</AlertDialogDescription>
+            <AlertDialogTitle>Archive {selectedMember?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will hide {selectedMember?.name} from the family tree. Their connections and memories are preserved — a family admin can restore them at any time.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteMember} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteMember} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Archive</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -380,53 +380,35 @@ export function useMembers(familyId: string | null) {
   }, [supabase, members])
 
   const deleteMember = useCallback(async (id: string) => {
-    // If this node is claimed, clear the claimer's profile.member_id first so
-    // their session no longer references a deleted node. Best-effort — we proceed
-    // even if this update fails (the node is still removed below).
-    const targetMember = members.find(m => m.id === id)
-    if (targetMember?.isClaimed && targetMember.claimedByUserId) {
-      await supabase
-        .from('profiles')
-        .update({ member_id: null } as any)
-        .eq('id', targetMember.claimedByUserId)
-        .eq('member_id' as any, id) // guard: only clear if still pointing at this node
-    }
-
-    // Optimistically remove from local state first so UI responds immediately.
-    // Realtime will also fire but the filter below deduplicates.
-    setMembers(prev => {
-      const updated = prev
-        .filter(m => m.id !== id)
-        .map(m => ({
-          ...m,
-          parentIds: ((m.parentIds as string[]) ?? []).filter(pid => pid !== id),
-          spouseIds: ((m.spouseIds as string[]) ?? []).filter(sid => sid !== id),
-        }))
-      return updated
+    // ── Soft delete via server API route ────────────────────────────────────────
+    // Physical DELETE is irreversible and dangerous:
+    //   • Cascades away milestones and memories permanently
+    //   • Severs graph connectivity: sibling rows' parent_ids/spouse_ids that
+    //     reference this ID break — entire descendant branches lose their BFS path
+    //   • Cannot be undone without a DB restore
+    //
+    // The API route calls the archive_family_member RPC (migration 033) which:
+    //   1. Sets deleted_at/deleted_by on the node (invisible via RLS immediately)
+    //   2. Clears the claimer's profile.member_id → dashboard shows node_deleted banner
+    //   3. Does NOT touch sibling parent_ids/spouse_ids — graph topology preserved
+    //   4. Memories and milestones survive (FK changed to ON DELETE SET NULL)
+    //   5. Admin can restore the node from the archived members panel
+    const res = await fetch(`/api/nodes/${id}/revoke-claim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'archive' }),
     })
-    setTotalCount(c => Math.max(0, c - 1))
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.message ?? data.error ?? 'Archive failed')
 
-    // Remove from other members' parent_ids/spouse_ids in DB
-    for (const m of members) {
-      if (m.id === id) continue
-      const pids: string[] = (m.parentIds as string[]) ?? []
-      const sids: string[] = (m.spouseIds as string[]) ?? []
-      const needsUpdate = pids.includes(id) || sids.includes(id)
-      if (needsUpdate) {
-        await supabase.from('family_members').update({
-          parent_ids: pids.filter(pid => pid !== id),
-          spouse_ids: sids.filter(sid => sid !== id),
-        }).eq('id', m.id)
-      }
-    }
-    // Use count to detect RLS silent block (0 rows deleted = permission denied)
-    const { error, count } = await supabase
-      .from('family_members')
-      .delete({ count: 'exact' })
-      .eq('id', id)
-    if (error) throw new Error(error.message)
-    if ((count ?? 0) === 0) throw new Error('Permission denied: only family admins can delete members')
-  }, [supabase, members])
+    // Optimistically remove from local UI state (Realtime DELETE event will also fire
+    // once RLS excludes the archived row — both paths converge on the same result).
+    // Do NOT strip the ID from sibling parentIds/spouseIds in local state — those
+    // dangling refs are harmless in the UI (the member simply won't render) and
+    // keeping them means a restore brings the node back with all edges intact.
+    setMembers(prev => prev.filter(m => m.id !== id))
+    setTotalCount(c => Math.max(0, c - 1))
+  }, [])
 
   const claimMember = useCallback(async (
     memberId: string,
