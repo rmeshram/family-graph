@@ -260,6 +260,10 @@ interface LCAResult {
   lcaId: string
   depthA: number  // hops from fromId to LCA
   depthB: number  // hops from toId to LCA
+  /** Full ancestor set of fromId (id → hops). Carried so classifyFromLCA can
+   *  find the "pathway parent" — fromId's direct parent that lies on the path
+   *  to the LCA — and use its gender for paternal/maternal disambiguation. */
+  ancestorsA: Map<string, number>
 }
 
 /**
@@ -302,7 +306,7 @@ function findLCA(
   const ancestorsA = buildAncestorSet(graph, fromId)
   const ancestorsB = buildAncestorSet(graph, toId)
 
-  let best: LCAResult | null = null
+  let best: { lcaId: string; depthA: number; depthB: number } | null = null
   for (const [id, dA] of ancestorsA) {
     const dB = ancestorsB.get(id)
     if (dB === undefined) continue
@@ -311,18 +315,66 @@ function findLCA(
       best = { lcaId: id, depthA: dA, depthB: dB }
     }
   }
-  return best
+  return best ? { ...best, ancestorsA } : null
 }
 
 /**
  * Derives a precise relationship label from LCA depths.
+ *
  * `male`/`female` refer to the gender of `toId` (the relationship target).
+ *
+ * `memberMap` is optional — when supplied it enables:
+ *   • Paternal/Maternal uncle-aunt disambiguation by looking up the gender of
+ *     fromId's direct parent (the "pathway parent" between fromId and the LCA).
+ *   • Gendered first-cousin labels ("First Cousin (Bhai)" / "First Cousin (Behen)")
+ *     that are recognised by the cultural-terms lookup.
+ *
+ * Classification table:
+ *   depthA>0, depthB=0  → toId is fromId's ancestor
+ *   depthA=0, depthB>0  → toId is fromId's descendant
+ *   d1=1, d2=1          → Sibling
+ *   d1=2, d2=1          → Uncle / Aunt  (+ paternal/maternal if memberMap available)
+ *   d1=1, d2=2          → Nephew / Niece
+ *   d1=3, d2=1 / d1=1, d2=3 → Great-uncle/aunt / Grand-nephew/niece
+ *   d1≥2, d2≥2         → First/Second… Cousin [, N times removed]
  */
-function classifyFromLCA(depthA: number, depthB: number, male: boolean, female: boolean): string {
+function classifyFromLCA(
+  lca: LCAResult,
+  male: boolean,
+  female: boolean,
+  memberMap?: Map<string, FamilyMember>,
+): string {
+  const { depthA, depthB, lcaId, ancestorsA } = lca
+
+  /**
+   * Locate fromId's direct parent (depth-1 in ancestorsA) that lies on the
+   * path toward the LCA.  For the uncle/aunt case (depthA=2), the pathway
+   * parent P satisfies: P.parentIds.includes(lcaId).
+   * Virtual nodes (__virt_*) have no gender and are treated as unknown.
+   */
+  const pathwayParent = (): FamilyMember | null => {
+    if (!memberMap) return null
+    for (const [pid, depth] of ancestorsA) {
+      if (depth !== 1) continue
+      const p = memberMap.get(pid)
+      // Only count real members with gender — virtual nodes are genderless
+      if (!p || p.id.startsWith('__virt_')) continue
+      if (p.parentIds.includes(lcaId)) return p
+    }
+    return null
+  }
+
   // ── toId is an ancestor of fromId ──────────────────────────────────────────
   if (depthA > 0 && depthB === 0) {
     if (depthA === 1) return male ? 'Father' : female ? 'Mother' : 'Parent'
-    if (depthA === 2) return male ? 'Grandfather' : female ? 'Grandmother' : 'Grandparent'
+    if (depthA === 2) {
+      // Grandparent — use pathway parent gender for paternal/maternal
+      const pp = pathwayParent()
+      const pM = pp ? isMale(pp) : false, pF = pp ? isFemale(pp) : false
+      if (male) return pM ? 'Paternal Grandfather' : pF ? 'Maternal Grandfather' : 'Grandfather'
+      if (female) return pM ? 'Paternal Grandmother' : pF ? 'Maternal Grandmother' : 'Grandmother'
+      return 'Grandparent'
+    }
     const greats = 'Great-'.repeat(depthA - 2)
     return male ? `${greats}grandfather` : female ? `${greats}grandmother` : `${greats}grandparent`
   }
@@ -340,15 +392,23 @@ function classifyFromLCA(depthA: number, depthB: number, male: boolean, female: 
     return male ? 'Brother' : female ? 'Sister' : 'Sibling'
   }
 
-  // ── Uncle / Aunt — fromId's parent is a sibling of toId ───────────────────
-  // depthA=2 means fromId → parent → grandparent (=LCA)
-  // depthB=1 means toId → parent (=LCA) → that grandparent is also toId's parent
-  // So toId is fromId's parent's sibling → Uncle/Aunt
+  // ── Uncle / Aunt ───────────────────────────────────────────────────────────
+  // depthA=2: fromId → parent (pathway parent) → LCA (grandparent)
+  // depthB=1: toId   → LCA (parent of toId)
+  // ∴ toId is a child of LCA, i.e. toId is fromId's parent's sibling → Uncle/Aunt.
+  // Paternal/Maternal: determined by the gender of fromId's pathway parent.
   if (depthA === 2 && depthB === 1) {
-    return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
+    const pp = pathwayParent()
+    const pM = pp ? isMale(pp) : false, pF = pp ? isFemale(pp) : false
+    if (male) return pM ? 'Paternal Uncle (Chacha/Tau)' : pF ? 'Maternal Uncle (Mama)' : 'Uncle'
+    if (female) return pM ? 'Paternal Aunt (Bua)' : pF ? 'Maternal Aunt (Mausi/Mami)' : 'Aunt'
+    return 'Uncle/Aunt'
   }
 
-  // ── Nephew / Niece — inverse of Uncle/Aunt ─────────────────────────────────
+  // ── Nephew / Niece ─────────────────────────────────────────────────────────
+  // depthA=1: fromId → LCA (fromId's parent)
+  // depthB=2: toId   → sibling of fromId → LCA
+  // ∴ toId is a child of fromId's sibling → Nephew/Niece.
   if (depthA === 1 && depthB === 2) {
     return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
   }
@@ -360,7 +420,7 @@ function classifyFromLCA(depthA: number, depthB: number, male: boolean, female: 
   if (depthA === 1 && depthB === 3) {
     return male ? 'Grand-nephew' : female ? 'Grand-niece' : 'Grand-nephew/niece'
   }
-  // Deeper great-uncle/aunt variants
+  // Deeper great-uncle/aunt / grand-nephew/niece chains
   if (depthB === 1 && depthA > 3) {
     const greats = 'Great-'.repeat(depthA - 2)
     return male ? `${greats}uncle` : female ? `${greats}aunt` : `${greats}uncle/aunt`
@@ -370,14 +430,21 @@ function classifyFromLCA(depthA: number, depthB: number, male: boolean, female: 
     return male ? `${greats}nephew` : female ? `${greats}niece` : `${greats}nephew/niece`
   }
 
-  // ── Cousin formula (general case) ─────────────────────────────────────────
-  // Both depthA ≥ 2 and depthB ≥ 2.
+  // ── Cousin formula (general case, depthA≥2 and depthB≥2) ─────────────────
   // Cousin degree = min(depthA, depthB) − 1
   // Times removed = |depthA − depthB|
   const degree = Math.min(depthA, depthB) - 1
   const removed = Math.abs(depthA - depthB)
   const ordinals = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh']
   const ordinal = ordinals[degree - 1] ?? `${degree}th`
+
+  if (degree === 1) {
+    // Use gendered label for first cousins — these are pre-mapped in LABEL_TO_KEY
+    // ('First Cousin (Bhai)' → 'first_cousin', 'First Cousin (Behen)' → 'first_cousin')
+    const base = male ? 'First Cousin (Bhai)' : female ? 'First Cousin (Behen)' : 'First Cousin'
+    return removed === 0 ? base : `${base}, ${removed} time${removed > 1 ? 's' : ''} removed`
+  }
+
   const base = `${ordinal} Cousin`
   return removed === 0 ? base : `${base}, ${removed} time${removed > 1 ? 's' : ''} removed`
 }
@@ -406,12 +473,14 @@ function edgeArrowLabel(type: EdgeType): string {
  * Resolves the final human-readable label from the normalized edge sequence.
  *
  * Resolution order:
- *   1. Special-case paternal/maternal uncle-aunt disambiguation (uses peoplePath gender).
+ *   1. Special-case paternal/maternal uncle-aunt from BFS path (uses intermediate
+ *      node gender directly from peoplePath, fastest and most accurate).
  *   2. LCA-based structural classification — derives the label purely from ancestry
- *      graph position (depthA to LCA, depthB to LCA). This correctly handles all
- *      cousin degrees, removed cousins, uncle/aunt/nephew/niece, and ancestor/
- *      descendant chains even when SIBLING edges are absent (virtual nodes).
- *      Only fires when the path contains no SPOUSE edge (blood-line only).
+ *      graph position (depthA/depthB). Correctly handles all cousin degrees, removed
+ *      cousins, uncle/aunt/nephew/niece, and ancestor/descendant chains even when
+ *      SIBLING edges are absent (virtual-node paths). Fires only on blood-line paths
+ *      (no SPOUSE edge). Ancestor set carried in `lca.ancestorsA` enables
+ *      paternal/maternal disambiguation for uncle/aunt and grandparent cases.
  *   3. Static RELATIONSHIP_MAP lookup for exact canonical labels.
  *   4. deriveDynamicLabel as structural fallback.
  */
@@ -419,13 +488,13 @@ function resolveLabel(
   normalized: string,
   peoplePath: string[],
   memberMap: Map<string, FamilyMember>,
-  graph?: RelationshipGraph,
+  lca?: LCAResult | null,
 ): string {
   const target = memberMap.get(peoplePath[peoplePath.length - 1])
   const male = isMale(target)
   const female = isFemale(target)
 
-  // 1. Paternal/maternal uncle-aunt disambiguation (needs intermediate gender)
+  // 1. Paternal/maternal uncle-aunt from BFS path (intermediate node gender available)
   if (normalized === 'PARENT>SIBLING' || normalized === 'PARENT>PARENT>CHILD') {
     const intermediateParent = memberMap.get(peoplePath[1])
     if (intermediateParent) {
@@ -436,17 +505,14 @@ function resolveLabel(
     return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
   }
 
-  // 2. LCA-based classification — only for blood-line paths (no SPOUSE edges)
+  // 2. LCA-based classification — only for blood-line paths (no SPOUSE edges).
+  //    The pre-computed `lca` (with ancestorsA) is passed in from getRelationshipBetweenPeople,
+  //    avoiding a redundant findLCA call here.
   const hasSpouse = normalized.includes('SPOUSE')
-  if (!hasSpouse && graph) {
-    const fromId = peoplePath[0]
-    const toId = peoplePath[peoplePath.length - 1]
-    const lca = findLCA(graph, fromId, toId)
-    if (lca) {
-      const label = classifyFromLCA(lca.depthA, lca.depthB, male, female)
-      dbg(`LCA: ${lca.lcaId} depthA=${lca.depthA} depthB=${lca.depthB} → "${label}"`)
-      return label
-    }
+  if (!hasSpouse && lca) {
+    const label = classifyFromLCA(lca, male, female, memberMap)
+    dbg(`LCA: ${lca.lcaId} depthA=${lca.depthA} depthB=${lca.depthB} → "${label}"`)
+    return label
   }
 
   // 3. Static map
@@ -694,10 +760,11 @@ export function getRelationshipBetweenPeople(
   dbg('normalized:', normalized)
 
   // Run LCA once here so both resolveLabel and computeMetadata can share it.
+  // resolveLabel no longer calls findLCA itself — it receives the pre-computed result.
   const hasSpousePath = normalized.includes('SPOUSE')
   const lca = !hasSpousePath ? findLCA(graph, fromId, toId) : null
 
-  const relationship = resolveLabel(normalized, pathResult.peoplePath, memberMap, graph)
+  const relationship = resolveLabel(normalized, pathResult.peoplePath, memberMap, lca)
   dbg('relationship:', relationship)
 
   const effectiveFromLabel = fromLabel ?? (memberMap.get(fromId)?.name?.split(' ')[0] ?? 'their')

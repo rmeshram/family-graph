@@ -118,8 +118,28 @@ const LABEL_TO_KEY: Record<string, string> = {
   'First Cousin (Behen)': 'first_cousin',
   'First Cousin': 'first_cousin',
   'Second Cousin': 'second_cousin',
+  // Nephew / Niece — plain labels produced by LCA classifier
+  'Nephew': 'nephew',
+  'Niece': 'niece',
+  'Nephew/Niece': 'nephew',
   'Nephew (Bhatija/Bhanja)': 'nephew',
   'Niece (Bhatiji/Bhanji)': 'niece',
+  // Uncle / Aunt — plain and directional labels
+  'Uncle': 'paternal_uncle',
+  'Aunt': 'paternal_aunt',
+  'Uncle/Aunt': 'paternal_uncle',
+  // Grandparent — directional labels produced by LCA classifier
+  // Note: 'Maternal Grandfather' and 'Maternal Grandmother' already mapped above.
+  'Paternal Grandfather': 'paternal_grandfather',
+  'Paternal Grandmother': 'paternal_grandmother',
+  'Grandparent': 'grandfather',
+  // Great-uncle/aunt and grand-nephew/niece
+  'Great-uncle': 'paternal_uncle',
+  'Great-aunt': 'paternal_aunt',
+  'Great-uncle/aunt': 'paternal_uncle',
+  'Grand-nephew': 'nephew',
+  'Grand-niece': 'niece',
+  'Grand-nephew/niece': 'nephew',
   "Brother's Wife / Bhabhi": 'sibling_wife',
   "Brother's Husband / Jija": 'sibling_husband',
   "Sibling's Spouse": 'sibling_wife',
