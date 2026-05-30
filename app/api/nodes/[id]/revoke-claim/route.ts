@@ -65,7 +65,25 @@ export async function POST(
 
   // Route to archive/restore before the claim-specific checks below
   if (body.action === 'archive') {
-    if (!isAdmin) return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+    const isContributor = !isAdmin && (profile as any)?.role !== 'viewer' && isSameFamily
+    if (!isAdmin && !isContributor)
+      return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+
+    if (isContributor) {
+      // Contributors can archive unclaimed nodes OR nodes they themselves claimed.
+      // They may NOT archive a node claimed by a different user — that requires an admin.
+      const nodeIsClaimed = (node as any).is_claimed === true
+      const claimedByOther = nodeIsClaimed && (node as any).claimed_by_user_id !== user.id
+      if (claimedByOther)
+        return NextResponse.json(
+          { error: 'FORBIDDEN', message: 'This profile is claimed by another member. Ask a family admin to archive it.' },
+          { status: 403 }
+        )
+      // Perform soft-delete directly — the RPC enforces admin-only in SQL so
+      // we replicate its three steps here using the service-role client.
+      return handleArchiveContributor(id, user.id, (node as any).family_id, admin)
+    }
+
     return handleArchive(id, user.id, (profile as any)?.family_id, (node as any).family_id, admin)
   }
   if (body.action === 'restore') {
@@ -131,6 +149,44 @@ export async function POST(
   })
 
   return NextResponse.json({ status: 'revoked', revokedAt })
+}
+
+/**
+ * Soft-archive for contributors (non-admin members in the same family).
+ * Replicates the archive_family_member RPC steps using the service-role client
+ * because the RPC enforces admin-only at the SQL level.
+ *
+ * Allowed: unclaimed nodes, or nodes claimed by the contributor themselves.
+ * Denied:  nodes claimed by a different user (guarded upstream in the route handler).
+ */
+async function handleArchiveContributor(
+  nodeId: string,
+  actorId: string,
+  nodeFamilyId: string,
+  adm: ReturnType<typeof adminClient>
+): Promise<NextResponse> {
+  // 1. Soft-delete (idempotent)
+  const { error: updateErr } = await adm
+    .from('family_members')
+    .update({ deleted_at: new Date().toISOString(), deleted_by: actorId } as any)
+    .eq('id', nodeId)
+    .is('deleted_at', null)
+  if (updateErr)
+    return NextResponse.json({ error: 'ARCHIVE_FAILED', message: updateErr.message }, { status: 500 })
+
+  // 2. Clear claimer's profile link → triggers node_deleted identity state in the UI
+  await adm.from('profiles').update({ member_id: null } as any).eq('member_id', nodeId)
+
+  // 3. Audit trail
+  await (adm as any).from('claim_audit_log').insert({
+    node_id: nodeId,
+    family_id: nodeFamilyId,
+    actor_id: actorId,
+    action: 'node_archived',
+    metadata: { archived_by: actorId, archived_at: new Date().toISOString(), role: 'contributor' },
+  })
+
+  return NextResponse.json({ status: 'archived', nodeId })
 }
 
 /**

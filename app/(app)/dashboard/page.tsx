@@ -856,6 +856,10 @@ export default function FamilyGraphApp() {
 
   const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
   const isViewer = !isDemoMode && (profile as any)?.role === 'viewer'
+  // Contributors (non-viewer, non-admin logged-in users) can add AND delete unclaimed nodes.
+  // Admins can delete any node (including claimed ones). Contributors are blocked from
+  // archiving a node that is claimed by a different user — that requires an admin.
+  const canDelete = !isDemoMode && !isViewer && !!user
 
   // ── Progressive onboarding checklist data ────────────────────────────────────
   const checklistHasStories = useMemo(() =>
@@ -1115,16 +1119,22 @@ export default function FamilyGraphApp() {
       return
     }
     const memberToDelete = members.find(m => m.id === selectedMemberId)
+    // Contributors may not archive a node claimed by a different user
+    if (!isAdmin && memberToDelete?.isClaimed && memberToDelete?.claimedByUserId !== user?.id) {
+      toast({ title: 'Cannot archive', description: 'This profile is claimed by another member. Ask a family admin to archive it.', variant: 'destructive' })
+      setIsDeleteDialogOpen(false)
+      return
+    }
     try {
       await dbDeleteMember(selectedMemberId)
       setSelectedMemberId(null)
       setIsDeleteDialogOpen(false)
-      toast({ title: 'Profile archived', description: `${memberToDelete?.name} has been hidden from the tree. Restore them from the admin panel.` })
+      toast({ title: 'Profile archived', description: `${memberToDelete?.name} has been hidden from the tree. A family admin can restore them at any time.` })
     } catch (e: unknown) {
       toast({ title: 'Could not archive', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
       setIsDeleteDialogOpen(false)
     }
-  }, [selectedMemberId, members, familyId, dbDeleteMember, toast])
+  }, [selectedMemberId, members, familyId, isAdmin, user?.id, dbDeleteMember, toast])
 
   const handleRevokeClaim = useCallback(async (memberId: string) => {
     try {
@@ -1746,7 +1756,7 @@ export default function FamilyGraphApp() {
                   if (m && !m.isClaimed) setInviteToClaimTarget(m)
                 } : undefined}
                 onClaimNode={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
-                onDelete={isAdmin ? (memberId) => { setSelectedMemberId(memberId); setIsDeleteDialogOpen(true) } : undefined}
+                onDelete={canDelete ? (memberId) => { setSelectedMemberId(memberId); setIsDeleteDialogOpen(true) } : undefined}
                 onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 isAdmin={isAdmin}
               />
@@ -2000,7 +2010,7 @@ export default function FamilyGraphApp() {
                   !isViewer &&
                   (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                 ) ? () => setEditingMember(selectedMember) : undefined}
-                onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
+                onDelete={canDelete ? () => setIsDeleteDialogOpen(true) : undefined}
                 onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                 onInvite={!isDemoMode && !isViewer && !selectedMemberDisplay.isClaimed
                   ? () => setInviteToClaimTarget(selectedMember)
@@ -2057,7 +2067,7 @@ export default function FamilyGraphApp() {
                 setLongPressMemberId(null)
                 handleOpenPathFinder(id)
               } : undefined}
-              onDelete={!isDemoMode && isAdmin ? (id) => {
+              onDelete={canDelete ? (id) => {
                 setSelectedMemberId(id)
                 setMobileMenuMemberId(null)
                 setLongPressMemberId(null)
@@ -2104,7 +2114,7 @@ export default function FamilyGraphApp() {
                         !isViewer &&
                         (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                       ) ? () => setEditingMember(selectedMember) : undefined}
-                      onDelete={isAdmin ? () => setIsDeleteDialogOpen(true) : undefined}
+                      onDelete={canDelete ? () => setIsDeleteDialogOpen(true) : undefined}
                       onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                       onInvite={!isDemoMode && !isViewer && selectedMember && !selectedMemberDisplay.isClaimed
                         ? () => setInviteToClaimTarget(selectedMember)
