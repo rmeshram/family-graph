@@ -16,7 +16,22 @@
 --     BFS won't traverse archived nodes because they don't appear in queries
 --   • archive_family_member + restore_family_member RPCs for the API routes
 
--- ── 1. Soft-delete columns ────────────────────────────────────────────────────
+-- ── 1. Extend claim_audit_log_action check constraint ────────────────────────
+-- Done FIRST so the RPCs below can INSERT with node_archived/node_restored.
+ALTER TABLE public.claim_audit_log
+  DROP CONSTRAINT IF EXISTS claim_audit_log_action_check;
+
+ALTER TABLE public.claim_audit_log
+  ADD CONSTRAINT claim_audit_log_action_check
+  CHECK (action IN (
+    'claim_initiated','claim_verified','claim_completed','claim_rejected',
+    'claim_abandoned','claim_revoked','claim_unclaimed','match_dismissed',
+    'invite_sent','invite_expired','invite_refreshed','nodes_merged',
+    'guardian_claimed','merge_claim_transfer','claim_transferred',
+    'node_archived','node_restored'
+  ));
+
+-- ── 2. Soft-delete columns ────────────────────────────────────────────────────
 ALTER TABLE public.family_members
   ADD COLUMN IF NOT EXISTS deleted_at  TIMESTAMPTZ DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS deleted_by  UUID        DEFAULT NULL
@@ -27,12 +42,12 @@ COMMENT ON COLUMN public.family_members.deleted_at IS
 COMMENT ON COLUMN public.family_members.deleted_by IS
   'Admin user who archived this node.';
 
--- ── 2. Partial index for fast active-node queries ─────────────────────────────
+-- ── 3. Partial index for fast active-node queries ─────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_family_members_active
   ON public.family_members (family_id)
   WHERE deleted_at IS NULL;
 
--- ── 3. RLS: exclude soft-deleted rows from SELECT ─────────────────────────────
+-- ── 4. RLS: exclude soft-deleted rows from SELECT ─────────────────────────────
 -- Drop all known existing names for the SELECT policy and recreate with predicate.
 DROP POLICY IF EXISTS "members: family members can read"                 ON public.family_members;
 DROP POLICY IF EXISTS "members: authenticated users can read own family" ON public.family_members;
@@ -148,18 +163,3 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.restore_family_member(UUID, UUID) TO authenticated;
-
--- ── 7. Extend claim_audit_log_action check constraint ────────────────────────
--- Add node_archived and node_restored to the allowed set.
-ALTER TABLE public.claim_audit_log
-  DROP CONSTRAINT IF EXISTS claim_audit_log_action_check;
-
-ALTER TABLE public.claim_audit_log
-  ADD CONSTRAINT claim_audit_log_action_check
-  CHECK (action IN (
-    'claim_initiated','claim_verified','claim_completed','claim_rejected',
-    'claim_abandoned','claim_revoked','claim_unclaimed','match_dismissed',
-    'invite_sent','invite_expired','invite_refreshed','nodes_merged',
-    'guardian_claimed','merge_claim_transfer','claim_transferred',
-    'node_archived','node_restored'
-  ));
