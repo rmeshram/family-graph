@@ -264,6 +264,10 @@ interface LCAResult {
    *  find the "pathway parent" — fromId's direct parent that lies on the path
    *  to the LCA — and use its gender for paternal/maternal disambiguation. */
   ancestorsA: Map<string, number>
+  /** Full ancestor set of toId (id → hops). Used together with ancestorsA to
+   *  identify which of fromId's parents is the CORRECT pathway parent toward
+   *  the LCA, avoiding the wrong pick when both parents are in the tree. */
+  ancestorsB: Map<string, number>
 }
 
 /**
@@ -315,7 +319,7 @@ function findLCA(
       best = { lcaId: id, depthA: dA, depthB: dB }
     }
   }
-  return best ? { ...best, ancestorsA } : null
+  return best ? { ...best, ancestorsA, ancestorsB } : null
 }
 
 /**
@@ -347,17 +351,34 @@ function classifyFromLCA(
   const { depthA, depthB, lcaId, ancestorsA } = lca
 
   /**
-   * Locate fromId's direct parent (depth-1 in ancestorsA) that lies on the
-   * path toward the LCA.  For the uncle/aunt case (depthA=2), the pathway
-   * parent P satisfies: P.parentIds.includes(lcaId).
-   * Virtual nodes (__virt_*) have no gender and are treated as unknown.
+   * Locate fromId's depth-1 ancestor (direct parent) that lies on the
+   * actual path toward the LCA.
+   *
+   * When both parents are in the tree, ancestorsA at depth=1 has two entries.
+   * We disambiguate by finding which one is ALSO an ancestor of toId:
+   *   - ancestorsB contains all ancestors of toId (with their depths)
+   *   - A depth-1 ancestor P of fromId is on the correct path iff
+   *     ancestorsB.has(P) — i.e. P lies between fromId and toId in ancestry
+   *
+   * This prevents the paternal/maternal flip that occurred when the loop
+   * happened to pick the wrong parent (e.g. mother instead of father for a
+   * paternal uncle query).
    */
   const pathwayParent = (): FamilyMember | null => {
     if (!memberMap) return null
+    // First pass: prefer a depth-1 ancestor of fromId that is also an ancestor
+    // of toId (meaning it lies on the blood-line path to the LCA).
     for (const [pid, depth] of ancestorsA) {
       if (depth !== 1) continue
       const p = memberMap.get(pid)
-      // Only count real members with gender — virtual nodes are genderless
+      if (!p || p.id.startsWith('__virt_')) continue
+      if (lca.ancestorsB.has(pid)) return p
+    }
+    // Second pass: fall back to the old heuristic (parent whose parentIds
+    // include the LCA) for cases where toId's ancestry doesn't help.
+    for (const [pid, depth] of ancestorsA) {
+      if (depth !== 1) continue
+      const p = memberMap.get(pid)
       if (!p || p.id.startsWith('__virt_')) continue
       if (p.parentIds.includes(lcaId)) return p
     }
