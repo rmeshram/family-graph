@@ -187,9 +187,18 @@ export function AddMemberDialog({
   const [bypassDuplicate, setBypassDuplicate] = useState(false)
 
   // Real-time exact-name duplicate detection — updates as the user types.
+  // Only fires when birth years are NOT clearly different (same name + same/no DOB = likely duplicate).
   // Skips the member currently being edited so renaming with the same name is OK.
   const exactNameMatch = !editingMember
-    ? findExactNameMatch(existingMembers, name, undefined)
+    ? (() => {
+      const match = findExactNameMatch(existingMembers, name, undefined)
+      if (!match) return null
+      // Both sides have birth years and they differ → different people with same name
+      const newBY = birthYear ? parseInt(birthYear) : null
+      const existBY = match.birthYear ?? null
+      if (newBY !== null && existBY !== null && newBY !== existBY) return null
+      return match
+    })()
     : null
 
   // ── Smart co-parent auto-fill ───────────────────────────────────────────
@@ -327,15 +336,19 @@ export function AddMemberDialog({
     if (!editingMember) {
       const storedName = normalizeStoredName(name)
 
-      // 1. Hard block: exact name match — no bypass allowed.
+      // 1. Hard block: exact name match — only blocked when birth years are NOT clearly different.
+      // Two people can share a name if they have verifiably distinct birth years (e.g., father & son namesake).
       const exactMatch = findExactNameMatch(existingMembers, storedName)
       if (exactMatch) {
-        setDuplicateWarning({ member: exactMatch as FamilyMember, score: 100, tier: 'high' })
-        return
-      }
-
-      // 2. Soft warning: fuzzy / contact-info match — user may bypass.
-      if (!bypassDuplicate) {
+        const newBY = birthYear ? parseInt(birthYear) : null
+        const existBY = exactMatch.birthYear ?? null
+        const differentBirthYear = newBY !== null && existBY !== null && newBY !== existBY
+        if (!differentBirthYear) {
+          setDuplicateWarning({ member: exactMatch as FamilyMember, score: 100, tier: 'high' })
+          return
+        }
+        // Different birth year — genuinely different person; skip fuzzy check and continue
+      } else if (!bypassDuplicate) {
         let bestMatch: DuplicateWarning | null = null
         for (const m of existingMembers) {
           const result = scoreCandidate(
@@ -560,9 +573,8 @@ export function AddMemberDialog({
                       if (duplicateWarning) { setDuplicateWarning(null); setBypassDuplicate(false) }
                     }}
                     placeholder="e.g., John Smith"
-                    className={`bg-muted/30 border-border/50 ${
-                      errors.name ? 'border-destructive' : exactNameMatch ? 'border-amber-500/60' : ''
-                    }`}
+                    className={`bg-muted/30 border-border/50 ${errors.name ? 'border-destructive' : exactNameMatch ? 'border-amber-500/60' : ''
+                      }`}
                     required
                   />
                   {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}

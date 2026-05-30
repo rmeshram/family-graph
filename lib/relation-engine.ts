@@ -270,16 +270,20 @@ export function computeRelationLabel(
   members: FamilyMember[],
 ): string | null {
   if (fromId === toId) return 'Self'
-  // Try multiple enrichment anchors so label-only members (added with a relationship
-  // field but no structural parentIds/spouseIds) get virtual edges that connect them.
-  // fromId is typically the self/logged-in user whose perspective most relationship
-  // labels were recorded relative to, so try it first.
-  const anchors: Array<string | undefined> = [fromId, toId, undefined]
-  for (const anchor of anchors) {
-    const enriched = anchor ? enrichMembersWithDerivedEdges(members, anchor) : members
-    const result = getRelationshipBetweenPeople(enriched, fromId, toId)
-    if (result.found) return result.relationship
-  }
+  // The `relationship` field on every node is stored relative to the tree creator,
+  // who is always `fromId` (the authenticated viewer). Enriching with `toId` as anchor
+  // would mis-apply those labels from the target's perspective, e.g. SUKHDEO's stored
+  // "father" label would make him Maya's father too → BFS returns "Sister" instead of
+  // "Cousin-in-law". Only enrich from `fromId` so virtual edges always point correctly.
+  const enrichedFromSelf = enrichMembersWithDerivedEdges(members, fromId)
+  const resultFromSelf = getRelationshipBetweenPeople(enrichedFromSelf, fromId, toId)
+  if (resultFromSelf.found) return resultFromSelf.relationship
+
+  // Final fallback: raw structural edges only (no virtual enrichment).
+  // Handles trees where every member has explicit parentIds/spouseIds.
+  const resultRaw = getRelationshipBetweenPeople(members, fromId, toId)
+  if (resultRaw.found) return resultRaw.relationship
+
   return null
 }
 

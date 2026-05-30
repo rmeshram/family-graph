@@ -47,6 +47,10 @@ export const FEATURE_FLAGS = {
   enablePhoneOtpAuth: false,
   /** Email + password authentication. Disable only if switching 100% to phone OTP. */
   enableEmailPasswordAuth: true,
+  /** Hierarchical family tree view — screenshot-faithful layout (grandparents → parents → You → children).
+   *  Includes ghost-slot onboarding guide for 2-minute family setup.
+   *  Set to true to show the "Tree" tab in the dashboard view switcher. */
+  enableHierarchicalTreeView: true,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS

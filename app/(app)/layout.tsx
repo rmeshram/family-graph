@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ErrorBoundary } from '@/components/error-boundary'
@@ -8,7 +8,19 @@ import { useAuth } from '@/hooks/use-auth'
 import { DEMO_SESSION_KEY } from '@/hooks/use-demo-mode'
 import { Loader2 } from 'lucide-react'
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+// ── Focus-mode context ─────────────────────────────────────────────────────────
+// When focusMode=true the sidebar is hidden so new users see only the canvas.
+// The dashboard page sets this to true when members.length === 0.
+const FocusModeCtx = createContext<{
+  focusMode: boolean
+  setFocusMode: (v: boolean) => void
+}>({ focusMode: false, setFocusMode: () => { } })
+
+export function useFocusMode() { return useContext(FocusModeCtx) }
+
+// ── Inner shell — reads context, owns the auth gate ───────────────────────────
+function AppShell({ children }: { children: React.ReactNode }) {
+  const { focusMode } = useFocusMode()
   const { user, loading } = useAuth()
   const router = useRouter()
 
@@ -51,12 +63,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <AppSidebar />
+      {!focusMode && <AppSidebar />}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
       </div>
     </div>
+  )
+}
+
+// ── Layout — provides context, wraps shell ────────────────────────────────────
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const [focusMode, setFocusMode] = useState(false)
+
+  return (
+    <FocusModeCtx.Provider value={{ focusMode, setFocusMode }}>
+      <AppShell>{children}</AppShell>
+    </FocusModeCtx.Provider>
   )
 }

@@ -310,15 +310,15 @@ export default function MarketingPage() {
           </p>
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" />Free forever · up to 50 members</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" />No credit card</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" />5-minute setup</span>
+            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" />Free forever · no credit card</span>
+            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" />30-second signup</span>
+            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" />Tree visible in under a minute</span>
           </div>
 
           <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link href="/auth/signup">
               <Button size="lg" className="h-14 px-8 text-base bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all">
-                Build Your Family Tree — Free
+                See your family tree in 30 seconds
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
