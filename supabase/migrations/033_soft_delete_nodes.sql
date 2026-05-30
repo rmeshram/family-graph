@@ -148,3 +148,18 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.restore_family_member(UUID, UUID) TO authenticated;
+
+-- ── 7. Extend claim_audit_log_action check constraint ────────────────────────
+-- Add node_archived and node_restored to the allowed set.
+ALTER TABLE public.claim_audit_log
+  DROP CONSTRAINT IF EXISTS claim_audit_log_action_check;
+
+ALTER TABLE public.claim_audit_log
+  ADD CONSTRAINT claim_audit_log_action_check
+  CHECK (action IN (
+    'claim_initiated','claim_verified','claim_completed','claim_rejected',
+    'claim_abandoned','claim_revoked','claim_unclaimed','match_dismissed',
+    'invite_sent','invite_expired','invite_refreshed','nodes_merged',
+    'guardian_claimed','merge_claim_transfer','claim_transferred',
+    'node_archived','node_restored'
+  ));
