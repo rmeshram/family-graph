@@ -48,11 +48,14 @@ CREATE INDEX IF NOT EXISTS idx_family_members_active
   WHERE deleted_at IS NULL;
 
 -- ── 4. RLS: exclude soft-deleted rows from SELECT ─────────────────────────────
--- Drop all known existing names for the SELECT policy and recreate with predicate.
-DROP POLICY IF EXISTS "members: family members can read"                 ON public.family_members;
+-- Drop every name this SELECT policy has ever had across all migrations
+-- (002, 008, 018, 033) so exactly one policy remains after this runs.
+DROP POLICY IF EXISTS "Members are viewable by family"               ON public.family_members;
+DROP POLICY IF EXISTS "members: family can read"                     ON public.family_members;
+DROP POLICY IF EXISTS "members: family members can read"             ON public.family_members;
 DROP POLICY IF EXISTS "members: authenticated users can read own family" ON public.family_members;
-DROP POLICY IF EXISTS "members: family read"                             ON public.family_members;
-DROP POLICY IF EXISTS "members: family read active only"                 ON public.family_members;
+DROP POLICY IF EXISTS "members: family read"                         ON public.family_members;
+DROP POLICY IF EXISTS "members: family read active only"             ON public.family_members;
 
 CREATE POLICY "members: family read active only"
   ON public.family_members FOR SELECT
