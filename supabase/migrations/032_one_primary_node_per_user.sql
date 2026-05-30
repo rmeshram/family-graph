@@ -19,3 +19,6 @@ UPDATE public.user_node_links ul
   FROM ranked r
  WHERE ul.id = r.id
    AND r.rn > 1;
+
+-- Soft delete schema (columns, RLS policy, FK changes, RPCs) is in migration 033.
+

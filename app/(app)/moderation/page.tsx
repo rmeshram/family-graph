@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   ArrowLeft, Shield, CheckCircle2, XCircle, AlertTriangle,
-  Clock, RefreshCw, Loader2, ArrowRightLeft, Users
+  Clock, RefreshCw, Loader2, ArrowRightLeft, Users, Archive, RotateCcw
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
@@ -34,6 +34,17 @@ interface ClaimRequest {
   node_name?: string
   claimant_display_name?: string
   claimant_email?: string
+}
+
+interface ArchivedNode {
+  id: string
+  name: string
+  birth_year: number | null
+  gender: string | null
+  relationship: string | null
+  deleted_at: string
+  deleted_by: string | null
+  claim_status: string | null
 }
 
 // ─── Conflict Severity Badge ──────────────────────────────────────────────────
@@ -231,7 +242,9 @@ export default function ModerationPage() {
 
   const [claims, setClaims] = useState<ClaimRequest[]>([])
   const [conflicts, setConflicts] = useState<PendingConflict[]>([])
+  const [archivedNodes, setArchivedNodes] = useState<ArchivedNode[]>([])
   const [loadingData, setLoadingData] = useState(true)
+  const [loadingArchived, setLoadingArchived] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -316,6 +329,43 @@ export default function ModerationPage() {
   }, [familyId, canAccess, supabase])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const loadArchivedNodes = useCallback(async () => {
+    if (!canAccess || role !== 'admin') return
+    setLoadingArchived(true)
+    try {
+      const res = await fetch('/api/nodes/archived')
+      const data = await res.json()
+      if (!res.ok) {
+        toast({ title: 'Could not load archived profiles', description: data.error ?? 'Server error', variant: 'destructive' })
+        return
+      }
+      setArchivedNodes(data.nodes ?? [])
+    } catch (e: unknown) {
+      toast({ title: 'Could not load archived profiles', description: e instanceof Error ? e.message : 'Network error', variant: 'destructive' })
+    } finally {
+      setLoadingArchived(false)
+    }
+  }, [canAccess, role, toast])
+
+  const handleRestoreNode = useCallback(async (nodeId: string) => {
+    setActionLoading(true)
+    try {
+      const res = await fetch(`/api/nodes/${nodeId}/revoke-claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'restore' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message ?? data.error ?? 'Restore failed')
+      toast({ title: 'Profile restored', description: 'The node is visible in the family tree again.' })
+      setArchivedNodes(prev => prev.filter(n => n.id !== nodeId))
+    } catch (e: unknown) {
+      toast({ title: 'Restore failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+    } finally {
+      setActionLoading(false)
+    }
+  }, [toast])
 
   const handleReviewClaim = useCallback(async (id: string, action: 'approve' | 'reject', reason?: string) => {
     setActionLoading(true)
@@ -428,7 +478,11 @@ export default function ModerationPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="claims" className="flex flex-col flex-1 min-h-0">
+      <Tabs
+        defaultValue="claims"
+        className="flex flex-col flex-1 min-h-0"
+        onValueChange={(v) => { if (v === 'archived') loadArchivedNodes() }}
+      >
         <TabsList className="mx-4 mt-3 h-8 w-fit">
           <TabsTrigger value="claims" className="text-xs h-7 gap-1">
             <Users className="h-3 w-3" />
@@ -452,6 +506,17 @@ export default function ModerationPage() {
             <TabsTrigger value="transfer" className="text-xs h-7 gap-1">
               <ArrowRightLeft className="h-3 w-3" />
               Transfer
+            </TabsTrigger>
+          )}
+          {role === 'admin' && (
+            <TabsTrigger value="archived" className="text-xs h-7 gap-1">
+              <Archive className="h-3 w-3" />
+              Archived
+              {archivedNodes.length > 0 && (
+                <span className="ml-1 rounded-full bg-slate-500/20 text-slate-400 text-[9px] font-bold px-1.5 py-px">
+                  {archivedNodes.length}
+                </span>
+              )}
             </TabsTrigger>
           )}
         </TabsList>
@@ -516,6 +581,60 @@ export default function ModerationPage() {
         {role === 'admin' && (
           <TabsContent value="transfer" className="flex-1 min-h-0 mt-0">
             <ClaimTransferPanel familyId={familyId} />
+          </TabsContent>
+        )}
+
+        {/* Archived Nodes Tab (admin only) */}
+        {role === 'admin' && (
+          <TabsContent value="archived" className="flex-1 min-h-0 mt-0">
+            <ScrollArea className="h-full px-4 py-3">
+              {loadingArchived ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : archivedNodes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                  <Archive className="h-10 w-10 text-muted-foreground/30" />
+                  <p className="text-sm font-medium text-muted-foreground">No archived profiles</p>
+                  <p className="text-xs text-muted-foreground/60">Archived nodes will appear here and can be restored.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  <p className="text-[11px] text-muted-foreground pb-1">
+                    These profiles are hidden from the tree but can be restored at any time.
+                    Connections and memories are fully preserved.
+                  </p>
+                  {archivedNodes.map(node => (
+                    <div key={node.id} className="flex items-center gap-3 rounded-2xl border border-border/50 bg-card p-3">
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarFallback className="bg-slate-500/10 text-slate-400 text-xs font-bold">
+                          {node.name.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{node.name}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {node.relationship ?? 'Unknown relation'}
+                          {node.birth_year ? ` · b. ${node.birth_year}` : ''}
+                          {' · Archived '}
+                          {new Date(node.deleted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1 shrink-0"
+                        disabled={actionLoading}
+                        onClick={() => handleRestoreNode(node.id)}
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Restore
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </TabsContent>
         )}
       </Tabs>

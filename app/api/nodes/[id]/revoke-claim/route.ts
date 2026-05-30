@@ -27,7 +27,10 @@ async function authedClient() {
 }
 
 // POST /api/nodes/[id]/revoke-claim
-// Tree admin or family owner only.
+// Handles three actions:
+//   (default)             → revoke the user's claim (admin only)
+//   { action: 'archive' } → soft-delete the node (admin only; NEVER hard-deletes)
+//   { action: 'restore' } → un-archive a soft-deleted node (admin only)
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -37,16 +40,18 @@ export async function POST(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
 
-  let body: { reason?: string }
+  let body: { reason?: string; action?: 'archive' | 'restore' }
   try { body = await req.json() } catch { body = {} }
 
   const admin = adminClient()
 
+  // Use maybeSingle so restore works even when the node is soft-deleted
+  // (service-role bypasses the deleted_at IS NULL RLS predicate).
   const { data: node } = await admin
     .from('family_members')
     .select('id, claim_status, is_claimed, claimed_by_user_id, family_id')
     .eq('id', id)
-    .single()
+    .maybeSingle()
   if (!node) return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
 
   const { data: profile } = await admin
@@ -57,6 +62,17 @@ export async function POST(
 
   const isAdmin = (profile as any)?.role === 'admin'
   const isSameFamily = (profile as any)?.family_id === (node as any).family_id
+
+  // Route to archive/restore before the claim-specific checks below
+  if (body.action === 'archive') {
+    if (!isAdmin) return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+    return handleArchive(id, user.id, (profile as any)?.family_id, (node as any).family_id, admin)
+  }
+  if (body.action === 'restore') {
+    if (!isAdmin) return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+    return handleRestore(id, user.id, admin)
+  }
+
   // Both conditions must be true: caller must be an admin AND belong to the same family.
   if (!isAdmin || !isSameFamily)
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
@@ -115,4 +131,64 @@ export async function POST(
   })
 
   return NextResponse.json({ status: 'revoked', revokedAt })
+}
+
+/**
+ * POST /api/nodes/[id]/revoke-claim  { action: 'archive' }
+ *
+ * Soft-deletes a family_members node (admin only).
+ * Physical DELETE is never performed — see migration 032/033 for the schema.
+ *
+ * What this does:
+ *   • Sets deleted_at / deleted_by on the node → invisible via RLS immediately
+ *   • Clears the claimer's profile.member_id → node_deleted identity state
+ *   • Does NOT touch sibling parent_ids/spouse_ids → graph topology preserved
+ *   • Memories (milestones/voice_notes) survive (FK = ON DELETE SET NULL)
+ *   • Audit log entry written for observability
+ *
+ * The node can be restored by a family admin via { action: 'restore' }.
+ */
+async function handleArchive(
+  nodeId: string,
+  adminUserId: string,
+  adminFamilyId: string,
+  nodeFamilyId: string,
+  adm: ReturnType<typeof adminClient>
+): Promise<NextResponse> {
+  if (adminFamilyId !== nodeFamilyId)
+    return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+
+  const { error: rpcErr } = await (adm as any).rpc('archive_family_member', {
+    p_node_id: nodeId,
+    p_admin_id: adminUserId,
+  })
+
+  if (rpcErr) {
+    if (rpcErr.message?.includes('PERMISSION_DENIED'))
+      return NextResponse.json({ error: 'FORBIDDEN', message: rpcErr.message }, { status: 403 })
+    if (rpcErr.message?.includes('NODE_NOT_FOUND'))
+      return NextResponse.json({ error: 'NODE_NOT_FOUND' }, { status: 404 })
+    return NextResponse.json({ error: 'ARCHIVE_FAILED', message: rpcErr.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ status: 'archived', nodeId })
+}
+
+async function handleRestore(
+  nodeId: string,
+  adminUserId: string,
+  adm: ReturnType<typeof adminClient>
+): Promise<NextResponse> {
+  const { error: rpcErr } = await (adm as any).rpc('restore_family_member', {
+    p_node_id: nodeId,
+    p_admin_id: adminUserId,
+  })
+
+  if (rpcErr) {
+    if (rpcErr.message?.includes('PERMISSION_DENIED'))
+      return NextResponse.json({ error: 'FORBIDDEN', message: rpcErr.message }, { status: 403 })
+    return NextResponse.json({ error: 'RESTORE_FAILED', message: rpcErr.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ status: 'restored', nodeId })
 }
