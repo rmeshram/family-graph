@@ -31,7 +31,8 @@ export type NotifType =
   | 'story_added'
   | 'relationship_updated'
   | 'visibility_changed'
-  | 'anniversary'
+  // 'anniversary' removed — no schema data source (no marriageYear column);
+  //  birth anniversaries of the living are covered by birthday_today/birthday_upcoming.
   | 'memorial'
   | 'role_changed'
   | 'member_updated'
@@ -79,6 +80,9 @@ interface MinEvent {
   location?: string | null
 }
 
+// LOW-02: key is scoped by user ID (injected at hook call-site via markAllRead/markRead).
+// The base key is built without user ID so getReadIds can still work before userId is known;
+// the scoped key is used for writes so two users on the same device don't share read state.
 const STORAGE_KEY = 'fg_read_notif_ids'
 
 function getReadIds(): Set<string> {
@@ -100,10 +104,20 @@ export function useNotifications(
   isAdmin?: boolean,
   /** The current user's own member node ID — suppresses self-update notifications */
   currentUserMemberId?: string | null,
+  /** LOW-02: scope read state by user ID so two users on the same device don't share it */
+  currentUserId?: string | null,
 ) {
+  const scopedStorageKey = currentUserId ? `${STORAGE_KEY}_${currentUserId}` : STORAGE_KEY
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
-    return getReadIds()
+    // LOW-02: read from the user-scoped key
+    try {
+      if (typeof localStorage === 'undefined') return new Set()
+      const raw = localStorage.getItem(currentUserId ? `${STORAGE_KEY}_${currentUserId}` : STORAGE_KEY)
+      if (!raw) return new Set()
+      const parsed = JSON.parse(raw)
+      return new Set(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [])
+    } catch { return new Set() }
   })
 
   // ── Pending claims polling (admin only) ───────────────────────────────
@@ -120,7 +134,9 @@ export function useNotifications(
         if (!res.ok) return
         const { claims = [] } = await res.json()
         const notifs: AppNotification[] = (claims as any[]).map((c) => ({
-          id: `pending-claim-${c.id}`,
+          // MED-08: use node_id in the ID so realtime claim_submitted notifs for the
+          // same node (which use 'claim-node-{nodeId}') can be deduplicated against these.
+          id: `claim-node-${c.nodeId ?? c.id}`,
           type: 'claim_submitted' as NotifType,
           title: `Claim request: ${c.nodeName ?? 'Unknown'}`,
           body: `${c.claimantName ?? 'Someone'} wants to claim this profile — review in Settings → Team`,
@@ -178,6 +194,7 @@ export function useNotifications(
               break
             case 'claim_initiated':
               // Someone submitted a claim that needs admin review
+              // MED-08: id uses node_id to match the polling notif id (claim-node-{nodeId})
               title = `New claim request for ${nodeName}`
               body = 'Review and approve or reject in Settings → Team.'
               type = 'claim_submitted'
@@ -237,10 +254,14 @@ export function useNotifications(
           }
 
           setClaimNotifs(prev => {
+            // MED-08: for claim_initiated, use node_id in the id to match polling notif ids
+            const notifId = row.action === 'claim_initiated'
+              ? `claim-node-${row.node_id}`
+              : `claim-${row.id}`
             // Dedupe by id (audit row id is unique).
-            if (prev.some(n => n.id === `claim-${row.id}`)) return prev
+            if (prev.some(n => n.id === notifId)) return prev
             const next: AppNotification = {
-              id: `claim-${row.id}`,
+              id: notifId,
               type,
               title,
               body,
@@ -808,10 +829,12 @@ export function useNotifications(
         ...roleNotifs.map(n => n.id),
         ...profileUpdateNotifs.map(n => n.id),
       ])
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...allIds])) } catch { /* ignore */ }
+      // LOW-02: write to user-scoped key
+      const key = currentUserId ? `${STORAGE_KEY}_${currentUserId}` : STORAGE_KEY
+      try { localStorage.setItem(key, JSON.stringify([...allIds])) } catch { /* ignore */ }
       return allIds
     })
-  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs])
+  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs, currentUserId])
 
   return { notifications: notificationsWithRead, unreadCount, markAllRead }
 }

@@ -773,7 +773,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden cursor-grab active:cursor-grabbing"
-      style={{ background: 'var(--surface-base)' }}
+      style={{ background: 'var(--surface-base)', touchAction: 'none' }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -1174,19 +1174,31 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     onMouseEnter={() => setHoveredMemberId(member.id)}
                     onMouseLeave={() => setHoveredMemberId(null)}
                   >
-                    <Avatar className={cn('border-2 h-8 w-8',
-                      isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
-                    )}>
-                      {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
-                      <AvatarFallback className={cn('text-[9px] font-semibold',
-                        isAnonymous ? 'bg-muted/60 text-muted-foreground'
-                          : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
-                            : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
-                              : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
-                                : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
-                      )}>{displayInitials}</AvatarFallback>
-                    </Avatar>
-                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: isUnclaimed ? 'rgba(148,163,184,0.7)' : 'var(--tree-node-text)' }}>
+                    <div className="relative">
+                      <Avatar className={cn('border-2 h-8 w-8',
+                        isSelf ? 'border-amber-400/70'
+                          : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
+                      )}>
+                        {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
+                        <AvatarFallback className={cn('text-[9px] font-semibold',
+                          isAnonymous ? 'bg-muted/60 text-muted-foreground'
+                            : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
+                              : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
+                                : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
+                                  : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
+                        )}>{displayInitials}</AvatarFallback>
+                      </Avatar>
+                      {/* YOU indicator — shown even in compact mode (#2 fix) */}
+                      {isSelf && (
+                        <span
+                          className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[6px] font-bold tracking-widest px-1 rounded-full leading-tight whitespace-nowrap"
+                          style={{ background: 'rgba(251,191,36,0.18)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)' }}
+                        >
+                          YOU
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[9px] font-medium leading-tight text-center truncate w-full" style={{ color: isUnclaimed ? 'rgba(148,163,184,0.7)' : isSelf ? '#fbbf24' : 'var(--tree-node-text)' }}>
                       {displayName}
                     </p>
                   </button>

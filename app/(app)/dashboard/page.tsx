@@ -719,11 +719,13 @@ export default function FamilyGraphApp() {
   const hasUnclaimedProfile = !isDemoMode && !authLoading && !dbLoading && members.length > 0 &&
     !!(profile as any)?.family_id && !(profile as any)?.member_id && selfMember === null
 
-  // Relationship perspective should only be enabled when the viewer has a
-  // claimed self node. In unclaimed mode we deliberately hide personalized
-  // labels (uncle/cousin/etc.) and show a neutral tree.
-  const relationshipPerspectiveEnabled = isDemoMode || identityMode !== 'anonymous_explore'
-  const relationshipIntelligenceEnabled = isDemoMode || identityMode !== 'anonymous_explore'
+  // Relationship perspective is only meaningful when the viewer has a *claimed*
+  // self node. In soft_identified mode (joined via invite but not claimed), the
+  // tree's static relationship labels were authored from the admin's perspective
+  // and may be wrong for a different viewer. Gate to fully_claimed so unclaimed
+  // and browse users see a neutral, unlabelled tree (issues #3, #4).
+  const relationshipPerspectiveEnabled = isDemoMode || identityMode === 'fully_claimed'
+  const relationshipIntelligenceEnabled = isDemoMode || identityMode === 'fully_claimed'
   const fullRelationshipActivation = isDemoMode || identityMode === 'fully_claimed'
 
   const displayMembers = useMemo(() => {

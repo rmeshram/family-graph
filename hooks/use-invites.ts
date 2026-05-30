@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { levenshtein } from '@/lib/utils'
 
 function getOrigin(): string {
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
@@ -18,19 +19,6 @@ function randomCode(len = 8) {
 
 function normalizeNameForDup(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ')
-}
-
-function levenshteinDist(a: string, b: string): number {
-  const m = a.length, n = b.length
-  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-  )
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
-  return dp[m][n]
 }
 
 export function useInvites(familyId: string | null) {
@@ -87,6 +75,17 @@ export function useInvites(familyId: string | null) {
     if (callerRole === 'viewer') {
       throw new Error('Permission denied: viewers cannot create claim invites')
     }
+
+    // Guard: only allow sending a node-claim invite for nodes that are not yet claimed.
+    const { data: targetNode } = await supabase
+      .from('family_members')
+      .select('is_claimed, claim_status')
+      .eq('id', nodeId)
+      .single()
+    if ((targetNode as any)?.is_claimed) {
+      throw new Error('This profile is already claimed. Revoke the existing claim before sending a new invite.')
+    }
+
     const code = randomCode(8)
     const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
 
@@ -116,18 +115,24 @@ export function useInvites(familyId: string | null) {
 
   const getActiveLinks = useCallback(async () => {
     if (!familyId) return []
+    // LOW-03: filter out expired and consumed invites so callers never see
+    // stale links as valid. Expired = expires_at in the past. Consumed = consumed_at set.
     const { data } = await supabase
       .from('invite_links')
       .select('*')
       .eq('family_id', familyId)
+      .is('consumed_at', null)
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .order('created_at', { ascending: false })
     return data ?? []
   }, [familyId, supabase])
 
   const revokeInvite = useCallback(async (id: string) => {
     if (!familyId) return
+    // LOW-04: use consumed_at (not expires_at) so a revoked invite is
+    // distinguishable from a naturally-expired one in the audit log.
     await supabase.from('invite_links')
-      .update({ expires_at: new Date().toISOString() })
+      .update({ consumed_at: new Date().toISOString() } as any)
       .eq('id', id)
       .eq('family_id', familyId)
   }, [familyId, supabase])
@@ -162,7 +167,7 @@ export function useInviteByPhone(familyId: string | null) {
     const e164 = normalizePhone(phone)
     if (!e164) throw new Error('Invalid phone number')
 
-    const code = Math.random().toString(36).substring(2, 10).toUpperCase()
+    const code = randomCode(8)
     const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
 
     const insertData: Record<string, unknown> = {
@@ -298,9 +303,12 @@ export function useJoinFamily() {
       if (existingMember && existingMember.family_id !== invite.family_id) {
         // Cap at contributor — joining via invite never grants admin
         const safeRole = invite.role === 'admin' ? 'contributor' : invite.role
+        // Clear member_id so self-resolution recalculates in the new family context.
+        // The user will be prompted to claim a node in the new family.
         await supabase.from('profiles').update({
           family_id: invite.family_id,
           role: safeRole,
+          member_id: null,
           ...(opts?.displayName ? { display_name: opts.displayName } : {}),
         }).eq('id', userId)
         const incrQ = supabase.from('invite_links') as any
@@ -349,6 +357,7 @@ export function useJoinFamily() {
 
       await supabase.from('profiles').update({
         member_id: opts.claimMemberId,
+        family_id: invite.family_id,
         display_name: opts.displayName || undefined,
       }).eq('id', userId)
 
@@ -543,19 +552,34 @@ export function useJoinFamily() {
       // can still bypass a MEDIUM match, and a direct API call bypasses the UI
       // entirely.  Check for collisions here as a hard server-side guard.
       const normNew = normalizeNameForDup(opts.displayName)
+      // #12: include normalized_phone in SELECT so E.164 comparison works even when
+      // the raw phone field was stored in a non-normalized format.
+      // #1: no pagination cap here — use service-role pattern via server API for large
+      // families. For now raise the limit to 5000 to reduce the miss window.
       const { data: existingMembers } = await supabase
         .from('family_members')
-        .select('id, name, phone, email, is_claimed, claimed_by_user_id')
+        .select('id, name, phone, normalized_phone, email, is_claimed, claimed_by_user_id')
         .eq('family_id', invite.family_id)
-        .limit(500)
+        .limit(5000)
 
       // If a strong exact signal exists, ALWAYS reuse the existing node.
       // This prevents accidental duplicate nodes during invite onboarding.
       const normalizedPhone = profile?.phone?.trim() || null
       const normalizedEmail = userEmail?.trim().toLowerCase() || null
+
+      // Normalize the joining user's phone to E.164 for consistent comparison
+      const { normalizePhone: normalizePh } = await import('@/lib/phone-utils')
+      const e164Phone = normalizedPhone ? normalizePh(normalizedPhone) : null
+
       const reusableStrongMatch = (existingMembers ?? []).find((m: any) => {
         if ((m as any).is_claimed) return false
-        const samePhone = normalizedPhone && (m.phone?.trim() === normalizedPhone)
+        // Compare against normalized_phone first (E.164), fall back to raw phone field
+        const nodeNormPhone: string | null = (m as any).normalized_phone ?? null
+        const nodeRawPhone: string | null = (m.phone as string | null)?.trim() ?? null
+        const samePhone = e164Phone && (
+          (nodeNormPhone && nodeNormPhone === e164Phone) ||
+          (!nodeNormPhone && nodeRawPhone === e164Phone)
+        )
         const sameEmail = normalizedEmail && (m.email?.trim().toLowerCase() === normalizedEmail)
         return !!(samePhone || sameEmail)
       }) as any
@@ -587,8 +611,13 @@ export function useJoinFamily() {
         return invite.family_id
       }
 
-      const exactPhoneDup = normalizedPhone
-        ? (existingMembers ?? []).find((m: any) => m.phone?.trim() === normalizedPhone)
+      const exactPhoneDup = e164Phone
+        ? (existingMembers ?? []).find((m: any) => {
+          const nodeNormPhone: string | null = (m as any).normalized_phone ?? null
+          const nodeRawPhone: string | null = (m.phone as string | null)?.trim() ?? null
+          return (nodeNormPhone && nodeNormPhone === e164Phone) ||
+            (!nodeNormPhone && nodeRawPhone === e164Phone)
+        })
         : null
       if (exactPhoneDup) {
         throw new Error(
@@ -620,7 +649,7 @@ export function useJoinFamily() {
       if (normNew.length >= 4) {
         const fuzzyDup = (existingMembers ?? []).find(m => {
           const norm = normalizeNameForDup((m as any).name)
-          return norm.length >= 4 && levenshteinDist(norm, normNew) <= 2
+          return norm.length >= 4 && levenshtein(norm, normNew) <= 2
         })
         if (fuzzyDup) {
           throw new Error(
@@ -629,25 +658,34 @@ export function useJoinFamily() {
           )
         }
       }
-      // ── End duplicate prevention ─────────────────────────────────────────────
+      // ── End duplicate prevention (client-side pre-check, 5000-row) ─────────────
+      // A server-side authoritative check with no row cap is performed by
+      // POST /api/families/join-create, which also does the actual INSERT.
+      // This prevents duplicate creation even for large families (> 5000 members)
+      // and for direct API calls that bypass the client-side UI guards (#1).
+      const joinCreateRes = await fetch('/api/families/join-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inviteCode: code.toUpperCase(),
+          displayName: opts.displayName,
+          relationship: relationshipLabel[relToInviter],
+          generation,
+          parentIds,
+          spouseIds,
+          gender: opts.gender ?? null,
+          networkGroup,
+        }),
+      })
+      const joinCreateData = await joinCreateRes.json().catch(() => ({}))
+      if (!joinCreateRes.ok) {
+        const msg: string = joinCreateData.message ?? `Failed to create profile (${joinCreateRes.status})`
+        throw new Error(msg)
+      }
+      const newMemberId: string = joinCreateData.memberId
 
-      const { data: newMember, error: memberErr } = await supabase.from('family_members').insert({
-        family_id: invite.family_id,
-        name: opts.displayName,
-        relationship: relationshipLabel[relToInviter],
-        generation,
-        is_alive: true,
-        parent_ids: parentIds,
-        spouse_ids: spouseIds,
-        gender: opts.gender ?? null,
-        phone: profile?.phone ?? null,
-        email: userEmail,
-        network_group: networkGroup,
-        added_by: userId,
-      } as any).select().single()
-      if (memberErr) throw new Error(memberErr.message)
-
-      if (newMember && relToInviter !== 'skip') {
+      // Bidirectional back-link to inviter (spouse/parent)
+      if (relToInviter !== 'skip') {
         const { data: inviterProfile } = await supabase
           .from('profiles').select('member_id').eq('id', invite.created_by).single()
         const inviterMemberId = inviterProfile?.member_id as string | null
@@ -657,28 +695,25 @@ export function useJoinFamily() {
             const { data: inv } = await supabase.from('family_members')
               .select('spouse_ids').eq('id', inviterMemberId).single()
             const existing = ((inv?.spouse_ids ?? []) as string[])
-            if (!existing.includes(newMember.id)) {
+            if (!existing.includes(newMemberId)) {
               await supabase.from('family_members')
-                .update({ spouse_ids: [...existing, newMember.id] }).eq('id', inviterMemberId)
+                .update({ spouse_ids: [...existing, newMemberId] }).eq('id', inviterMemberId)
             }
           } else if (relToInviter === 'parent') {
             const { data: inv } = await supabase.from('family_members')
               .select('parent_ids').eq('id', inviterMemberId).single()
             const existing = ((inv?.parent_ids ?? []) as string[])
-            if (!existing.includes(newMember.id)) {
+            if (!existing.includes(newMemberId)) {
               await supabase.from('family_members')
-                .update({ parent_ids: [...existing, newMember.id] }).eq('id', inviterMemberId)
+                .update({ parent_ids: [...existing, newMemberId] }).eq('id', inviterMemberId)
             }
           }
         }
       }
 
-      if (newMember) {
-        await supabase.from('profiles').update({
-          member_id: newMember.id,
-          display_name: opts.displayName,
-        }).eq('id', userId)
-      }
+      await supabase.from('profiles').update({
+        display_name: opts.displayName,
+      }).eq('id', userId)
     }
 
     // 5. Atomic increment with boundary check (A6) to prevent over-consumption

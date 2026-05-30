@@ -182,7 +182,14 @@ function OnboardingContent() {
       }
 
       // 1. Create the family — try server route first (bypasses RLS), fall back to direct insert
-      const nameParts = userData.name.trim().split(" ")
+      // MED-10: validate name before any DB writes so an empty name never reaches the insert.
+      const trimmedUserName = userData.name.trim()
+      if (!trimmedUserName) {
+        setIsLoading(false)
+        setErrorMsg('Please enter your name before continuing.')
+        return
+      }
+      const nameParts = trimmedUserName.split(" ")
       const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]
       const familyName = `${lastName || "My"} Family`
       const inviteCode = (() => {

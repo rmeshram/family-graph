@@ -1,13 +1,14 @@
 // lib/claim-state-machine.ts
 // Claim status state machine. Used in both API routes (server) and UI (client).
 
-export type ClaimStatus =
-  | 'unclaimed'
-  | 'invite_sent'
-  | 'claim_pending'
-  | 'claimed'
-  | 'rejected'
-  | 'revoked'
+// MED-01: re-export from types.ts as the single source of truth to prevent drift.
+export type { ClaimStatus } from './types'
+import type { ClaimStatus } from './types'
+
+// HIGH-01: encode the unclaim grace period here so UI code can read it from
+// the state machine rather than hard-coding 7 days in multiple places.
+// The API route (/api/nodes/[id]/unclaim) enforces this server-side.
+export const UNCLAIM_GRACE_PERIOD_DAYS = 7
 
 export type ClaimActor = 'user' | 'owner' | 'admin'
 
@@ -23,7 +24,10 @@ const TRANSITIONS: Transition[] = [
   [['claim_pending'], 'claimed', 'any'],
   [['claim_pending'], 'rejected', 'any'],
   [['rejected'], 'unclaimed', 'owner'],
-  [['claimed'], 'unclaimed', 'user'],
+  // NOTE: self-unclaim is intentionally removed from the state machine.
+  // The API route (/api/nodes/[id]/unclaim) enforces a 7-day grace window
+  // and then delegates to the owner/admin path. Client UI must not rely on
+  // canTransition() to decide unclaim eligibility — check claimedAt instead.
   [['claimed', 'claim_pending'], 'revoked', 'owner'],
   [['revoked'], 'unclaimed', 'admin'],
 ]

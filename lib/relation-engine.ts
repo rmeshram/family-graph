@@ -184,9 +184,11 @@ export function enrichMembersWithDerivedEdges(
       addP(m.id, getSpouseParentId())
     } else if (['cousin', 'first-cousin', 'second-cousin'].includes(rel)) {
       addP(m.id, getSelfUncleId())
-    } else {
-      addP(m.id, getSelfParentId())
     }
+    // Members with unrecognised or empty relationship labels (e.g. 'member', 'relative', 'skip')
+    // are intentionally left unconnected. Forcing a virtual edge would produce an incorrect
+    // sibling label for every "Other Relative" joiner. The BFS engine returns `found:false`
+    // for disconnected nodes, which is correct — labels surface only once structural edges exist.
   }
 
   if (extras.size === 0 && virtuals.length === 0) return members

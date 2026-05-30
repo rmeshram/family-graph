@@ -56,8 +56,9 @@ export async function POST(
     .single()
 
   const isAdmin = (profile as any)?.role === 'admin'
-  const isFamilyOwner = (profile as any)?.family_id === (node as any).family_id
-  if (!isAdmin && !isFamilyOwner)
+  const isSameFamily = (profile as any)?.family_id === (node as any).family_id
+  // Both conditions must be true: caller must be an admin AND belong to the same family.
+  if (!isAdmin || !isSameFamily)
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
 
   const revocableStatuses = ['claimed', 'claim_pending', 'invite_sent']
@@ -69,13 +70,11 @@ export async function POST(
 
   const revokedAt = new Date().toISOString()
 
-  // If an invite was sent, also expire the pending invite_links row
-  if ((node as any).claim_status === 'invite_sent') {
-    await admin.from('invite_links')
-      .update({ consumed_at: revokedAt } as any)
-      .eq('node_id', id)
-      .is('consumed_at', null)
-  }
+  // Expire any outstanding invite_links for this node regardless of claim state.
+  await admin.from('invite_links')
+    .update({ consumed_at: revokedAt } as any)
+    .eq('node_id', id)
+    .is('consumed_at', null)
 
   await admin.from('family_members').update({
     claim_status: 'revoked',

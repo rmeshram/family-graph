@@ -216,29 +216,30 @@ export function useMembers(familyId: string | null) {
   const addMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>, userId: string) => {
     if (!familyId) return null
 
+    // Guard: name is required and must be within a safe length
+    const trimmedName = memberData.name?.trim() ?? ''
+    if (!trimmedName) throw new Error('Name is required.')
+    if (trimmedName.length > 200) throw new Error('Name is too long (max 200 characters).')
+
     // Guard: max 2 biological parents (mirrors DB trigger in migration 021)
     if ((memberData.parentIds?.length ?? 0) > 2) {
       throw new Error('A person cannot have more than 2 biological parents. Use step-parent relationships for additional parents.')
     }
 
-    const insert = memberToInsert(memberData, familyId, userId)
+    const insert = memberToInsert({ ...memberData, name: trimmedName }, familyId, userId)
     const { data, error } = await supabase.from('family_members').insert(insert).select().single()
     if (error) throw new Error(error.message)
 
-    // Update spouse bidirectional
+    // Update spouse bidirectional — uses atomic RPC (migration 031)
     const newMember = dbToMember(data)
     if (newMember.spouseIds.length > 0) {
       for (const spouseId of newMember.spouseIds) {
-        const spouse = members.find(m => m.id === spouseId)
-        if (spouse && !spouse.spouseIds.includes(newMember.id)) {
-          await supabase.from('family_members').update({
-            spouse_ids: [...spouse.spouseIds, newMember.id] as string[],
-          }).eq('id', spouseId)
-          // Optimistically reflect on the spouse side too
-          setMembers(prev => prev.map(m =>
-            m.id === spouseId ? { ...m, spouseIds: [...m.spouseIds, newMember.id] } : m
-          ))
-        }
+        await (supabase as any).rpc('link_spouses', { member_a: newMember.id, member_b: spouseId })
+        setMembers(prev => prev.map(m =>
+          m.id === spouseId && !m.spouseIds.includes(newMember.id)
+            ? { ...m, spouseIds: [...m.spouseIds, newMember.id] }
+            : m
+        ))
       }
     }
 
@@ -306,6 +307,20 @@ export function useMembers(familyId: string | null) {
         throw new Error('A person cannot have more than 2 biological parents.')
       }
       patch.parent_ids = updates.parentIds
+      // MED-05: auto-recalculate generation when parentIds changes.
+      // Use the max generation of the new parents + 1. If parents are unknown,
+      // keep the existing generation. This prevents stale generation values from
+      // breaking the generational row layout in the family tree.
+      if (!('generation' in updates) && updates.parentIds && updates.parentIds.length > 0) {
+        const parentGenerations = updates.parentIds
+          .map(pid => members.find(m => m.id === pid)?.generation)
+          .filter((g): g is number => typeof g === 'number')
+        if (parentGenerations.length > 0) {
+          patch.generation = Math.max(...parentGenerations) + 1
+            // Also apply optimistically for the setMembers call below
+            ; (updates as Partial<FamilyMember>).generation = patch.generation as number
+        }
+      }
     }
     if ('spouseIds' in updates) patch.spouse_ids = updates.spouseIds
     if ('generation' in updates) patch.generation = updates.generation
@@ -336,36 +351,47 @@ export function useMembers(familyId: string | null) {
     }
 
     // ── Bidirectional spouse sync ────────────────────────────────────────────
-    // When spouseIds changes on this member, mirror the change on the other side.
+    // Uses atomic DB RPCs (link_spouses / unlink_spouses from migration 031)
+    // so both sides of the relationship are updated in a single transaction.
     if ('spouseIds' in updates) {
       const prevSpouseIds = target?.spouseIds ?? []
       const nextSpouseIds = updates.spouseIds ?? []
 
-      // Newly added spouses → add this member to their spouseIds
+      // Newly added spouses → link atomically
       const added = nextSpouseIds.filter(sid => !prevSpouseIds.includes(sid))
       for (const sid of added) {
-        const spouse = previous.find(m => m.id === sid)
-        if (spouse && !spouse.spouseIds.includes(id)) {
-          const updated = [...spouse.spouseIds, id]
-          await supabase.from('family_members').update({ spouse_ids: updated as string[] }).eq('id', sid)
-          setMembers(prev => prev.map(m => m.id === sid ? { ...m, spouseIds: updated } : m))
-        }
+        await (supabase as any).rpc('link_spouses', { member_a: id, member_b: sid })
+        setMembers(prev => prev.map(m => {
+          if (m.id === sid && !m.spouseIds.includes(id)) return { ...m, spouseIds: [...m.spouseIds, id] }
+          return m
+        }))
       }
 
-      // Removed spouses → remove this member from their spouseIds
+      // Removed spouses → unlink atomically
       const removed = prevSpouseIds.filter(sid => !nextSpouseIds.includes(sid))
       for (const sid of removed) {
-        const spouse = previous.find(m => m.id === sid)
-        if (spouse && spouse.spouseIds.includes(id)) {
-          const updated = spouse.spouseIds.filter(s => s !== id)
-          await supabase.from('family_members').update({ spouse_ids: updated as string[] }).eq('id', sid)
-          setMembers(prev => prev.map(m => m.id === sid ? { ...m, spouseIds: updated } : m))
-        }
+        await (supabase as any).rpc('unlink_spouses', { member_a: id, member_b: sid })
+        setMembers(prev => prev.map(m => {
+          if (m.id === sid) return { ...m, spouseIds: m.spouseIds.filter(s => s !== id) }
+          return m
+        }))
       }
     }
   }, [supabase, members])
 
   const deleteMember = useCallback(async (id: string) => {
+    // If this node is claimed, clear the claimer's profile.member_id first so
+    // their session no longer references a deleted node. Best-effort — we proceed
+    // even if this update fails (the node is still removed below).
+    const targetMember = members.find(m => m.id === id)
+    if (targetMember?.isClaimed && targetMember.claimedByUserId) {
+      await supabase
+        .from('profiles')
+        .update({ member_id: null } as any)
+        .eq('id', targetMember.claimedByUserId)
+        .eq('member_id' as any, id) // guard: only clear if still pointing at this node
+    }
+
     // Optimistically remove from local state first so UI responds immediately.
     // Realtime will also fire but the filter below deduplicates.
     setMembers(prev => {

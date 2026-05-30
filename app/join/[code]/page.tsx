@@ -95,27 +95,10 @@ export default function JoinPage() {
         setDisplayName(prefillName)
       }
 
-      // Re-validate expiry every time init runs (initial load + auth state changes).
-      // This catches the edge case where the invite expires while the user is in
-      // the middle of the auth flow (e.g., slow signup form fill).
-      const { data: freshInvite } = await supabase
-        .from('invite_links')
-        .select('expires_at, consumed_at, max_uses, used_count')
-        .eq('code', code.toUpperCase())
-        .single()
-      if (freshInvite) {
-        const fi = freshInvite as any
-        if (fi.expires_at && new Date(fi.expires_at) < new Date()) {
-          setStatus('error'); setMessage('This invite link has expired. Ask the sender for a new one.'); return
-        }
-        if (fi.consumed_at) {
-          setStatus('error'); setMessage('This invite has already been used.'); return
-        }
-        if (fi.max_uses && fi.used_count >= fi.max_uses) {
-          setStatus('error'); setMessage('This invite has reached its user limit.'); return
-        }
-      }
-
+      // HIGH-05: combined single read — validates and routes in one fetch.
+      // The original two-read pattern (freshInvite check then full invite fetch) had a
+      // TOCTOU gap: another user could consume the invite between the two reads.
+      // Now we do one authoritative read and validate from that single snapshot.
       const { data: invite } = await supabase
         .from('invite_links')
         .select('*, families(name)')
@@ -166,6 +149,42 @@ export default function JoinPage() {
         setNcBirthYear(String(birthYear ?? birthYearHint ?? ''))
         setStatus('node_claim')
         return
+      }
+
+      // Phone-invite auto-match: if the invite has an invited_phone and the
+      // current user's verified phone matches it, treat this as a node_claim
+      // invite and route directly to the claim flow for the linked node (if any).
+      if (inv.invited_phone && inv.node_id) {
+        const { data: { user: currentUser } } = await supabase.auth.getUser()
+        const userPhone = currentUser?.phone ?? null
+        // Compare E.164 values — both Supabase OTP and our normalizer produce E.164
+        if (userPhone && userPhone === inv.invited_phone) {
+          let birthYear: number | null = null
+          let birthYearHint: number | null = null
+          let parentNames: string[] = []
+          try {
+            const previewRes = await fetch(`/api/invite/${code.toUpperCase()}/unclaimed`)
+            if (previewRes.ok) {
+              const previewData = await previewRes.json()
+              if (previewData.nodePreview) {
+                birthYear = previewData.nodePreview.birthYear ?? null
+                parentNames = previewData.nodePreview.parentNames ?? []
+              }
+              birthYearHint = previewData.inviteBirthYearHint ?? null
+            }
+          } catch { /* non-fatal */ }
+          setNodeClaim({
+            nodeId: inv.node_id,
+            identityHint: inv.identity_hint ?? null,
+            familyId: inv.family_id,
+            birthYear,
+            birthYearHint,
+            parentNames,
+          })
+          setNcBirthYear(String(birthYear ?? birthYearHint ?? ''))
+          setStatus('node_claim')
+          return
+        }
       }
 
       const familyName = inv.families?.name ?? 'this family'
@@ -1015,8 +1034,11 @@ export default function JoinPage() {
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Birth year</label>
                 <Input
+                  type="number"
                   placeholder={String(nodeClaim.birthYear ?? nodeClaim.birthYearHint ?? 'e.g. 1985')}
                   inputMode="numeric"
+                  min={1800}
+                  max={new Date().getFullYear()}
                   maxLength={4}
                   value={ncBirthYear}
                   onChange={e => { setNcBirthYear(e.target.value.replace(/\D/g, '')); setMessage('') }}

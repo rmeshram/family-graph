@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { ClaimStatus } from '@/lib/claim-state-machine'
+import { levenshtein } from '@/lib/utils'
 
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
@@ -55,20 +56,6 @@ async function authedClient() {
 }
 
 // ─── Identity scoring ────────────────────────────────────────────────────────
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length
-  const n = b.length
-  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-  )
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
-  return dp[m][n]
-}
 
 function scoreIdentity(
   nodeName: string,
@@ -390,6 +377,12 @@ export async function POST(
     if ((node as any).is_deceased) {
       return NextResponse.json(
         { error: 'NODE_DECEASED', message: 'This profile is marked as deceased. Contact the tree owner.' },
+        { status: 409 }
+      )
+    }
+    if (ns === 'revoked') {
+      return NextResponse.json(
+        { error: 'NODE_REVOKED', message: 'This profile was revoked by an admin. Contact the family admin to have access reinstated.' },
         { status: 409 }
       )
     }

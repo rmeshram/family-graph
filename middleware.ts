@@ -59,6 +59,7 @@ export async function middleware(request: NextRequest) {
     '/migration',
     '/today',
     '/invite',
+    '/moderation',
   ]
   const isProtected = protectedPrefixes.some(p => pathname === p || pathname.startsWith(p + '/'))
 
