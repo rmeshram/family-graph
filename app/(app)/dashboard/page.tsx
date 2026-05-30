@@ -656,77 +656,95 @@ export default function FamilyGraphApp() {
   // Canonical self resolver: exactly one source of truth at a time.
   // Priority: profiles.member_id -> unique claimed_by_user_id mapping.
   // We never infer self from static relationship labels in production data.
+  // ── Identity resolution ─────────────────────────────────────────────────────
+  //
+  // Identity (YOU binding) is a SEPARATE layer from the graph.
+  //
+  //  Three distinct states that must NEVER be collapsed into a fallback:
+  //
+  //   access_revoked  — admin removed access; node still exists; YOU removed.
+  //                     Do NOT fall through to another node.
+  //
+  //   node_deleted    — admin deleted the node from the graph; profile.member_id
+  //                     is set but points nowhere; YOU removed.
+  //                     Do NOT fall through to claimedByUserId scan.
+  //
+  //   unlinked        — user is in a family but has no member_id at all;
+  //                     they haven't claimed/created a node yet.
+  //
+  // Rule: "YOU is never inferred — it is always explicitly bound."
+  // → system must enter UNBOUND USER STATE after revoke / unclaim / deletion.
+  // → NEVER auto-assign another node as YOU.
+
+  type IdentityState =
+    | 'fully_claimed'    // profile.member_id → node exists, is_claimed=true, claimedByUserId=user
+    | 'soft_identified'  // profile.member_id → node exists, but not formally claimed (joined via invite)
+    | 'access_revoked'   // profile.member_id → node exists, but claim_status='revoked'
+    | 'node_deleted'     // profile.member_id set, but no matching node in this family's member list
+    | 'unlinked'         // family joined but no member_id — needs to claim/create a node
+    | 'anonymous_explore'// no family or no member_id, just browsing
+
   const selfResolution = useMemo(() => {
     const profileMemberId = (profile as any)?.member_id as string | null | undefined
-    const claimedMatches = user?.id
-      ? members.filter((m) => m.claimedByUserId === user.id)
-      : []
 
     if (isDemoMode) {
       const demoSelf = members.find((m) => m.relationship === 'self')?.id ?? null
-      return { id: demoSelf, warning: null as string | null }
+      return { id: demoSelf, state: 'fully_claimed' as IdentityState }
     }
 
     if (profileMemberId) {
-      const profileNodeExists = members.some((m) => m.id === profileMemberId)
-      if (profileNodeExists) {
-        return { id: profileMemberId, warning: null as string | null }
+      const boundNode = members.find((m) => m.id === profileMemberId)
+
+      if (!boundNode) {
+        // Node was deleted from the graph by an admin.
+        // DO NOT fall through to claimedByUserId scan — that would auto-assign
+        // a different node as YOU, violating the identity separation principle.
+        return { id: null, state: 'node_deleted' as IdentityState }
       }
-      if (claimedMatches.length === 1) {
-        return {
-          id: claimedMatches[0].id,
-          warning: 'Your profile mapping was stale, so we recovered your self node from claim ownership.',
-        }
+
+      // Node exists — check access state.
+      if (boundNode.claimStatus === 'revoked') {
+        // Admin revoked this user's access to the node.
+        // The node still exists in the graph but this user no longer owns it.
+        // YOU must be removed. DO NOT fall through to another node.
+        return { id: null, state: 'access_revoked' as IdentityState }
       }
+
+      // Node exists and access is not revoked — bind as YOU.
+      const isFullyClaimed = boundNode.isClaimed && boundNode.claimedByUserId === user?.id
       return {
-        id: null,
-        warning: 'Your linked profile node could not be found. Ask an admin to re-link your account.',
+        id: profileMemberId,
+        state: isFullyClaimed ? 'fully_claimed' as IdentityState : 'soft_identified' as IdentityState,
       }
     }
 
-    if (claimedMatches.length === 1) {
-      return { id: claimedMatches[0].id, warning: null as string | null }
-    }
-    if (claimedMatches.length > 1) {
-      return {
-        id: null,
-        warning: 'Multiple nodes are linked to this account. Ask an admin to resolve duplicate claims.',
-      }
-    }
-
-    return { id: null, warning: null as string | null }
+    // No member_id in profile.
+    const hasFamilyId = !!(profile as any)?.family_id
+    return { id: null, state: hasFamilyId ? 'unlinked' as IdentityState : 'anonymous_explore' as IdentityState }
   }, [isDemoMode, members, profile, user?.id])
 
   const selfMember = selfResolution.id
     ? (members.find((m) => m.id === selfResolution.id) ?? null)
     : null
 
-  const identityMode = useMemo<'anonymous_explore' | 'soft_identified' | 'fully_claimed'>(() => {
-    if (isDemoMode) return 'fully_claimed'
-    if (!selfMember) return 'anonymous_explore'
-    return (selfMember.isClaimed && selfMember.claimedByUserId === user?.id)
-      ? 'fully_claimed'
-      : 'soft_identified'
-  }, [isDemoMode, selfMember, user?.id])
+  const identityState = isDemoMode ? 'fully_claimed' : selfResolution.state
 
-  // Detect if the user's previously claimed node was deleted from the tree.
-  // profile.member_id is set but no matching node exists → node was removed by admin.
-  const selfNodeDeleted = !isDemoMode && !authLoading && !dbLoading && members.length > 0 &&
-    !!(profile as any)?.member_id && selfMember === null
+  // Legacy alias — components still reference identityMode; keep in sync.
+  const identityMode = (identityState === 'fully_claimed' || identityState === 'soft_identified')
+    ? identityState
+    : 'anonymous_explore'
 
-  // Detect if the user is in a family but hasn't linked their profile to any node yet.
-  // Common for users who joined via a general invite and got routed incorrectly.
-  const hasUnclaimedProfile = !isDemoMode && !authLoading && !dbLoading && members.length > 0 &&
-    !!(profile as any)?.family_id && !(profile as any)?.member_id && selfMember === null
+  // Only used to drive banners — computed after auth + db have settled.
+  const settled = !authLoading && !dbLoading && !isDemoMode && members.length > 0
 
   // Relationship perspective is only meaningful when the viewer has a *claimed*
   // self node. In soft_identified mode (joined via invite but not claimed), the
   // tree's static relationship labels were authored from the admin's perspective
   // and may be wrong for a different viewer. Gate to fully_claimed so unclaimed
   // and browse users see a neutral, unlabelled tree (issues #3, #4).
-  const relationshipPerspectiveEnabled = isDemoMode || identityMode === 'fully_claimed'
-  const relationshipIntelligenceEnabled = isDemoMode || identityMode === 'fully_claimed'
-  const fullRelationshipActivation = isDemoMode || identityMode === 'fully_claimed'
+  const relationshipPerspectiveEnabled = isDemoMode || identityState === 'fully_claimed'
+  const relationshipIntelligenceEnabled = isDemoMode || identityState === 'fully_claimed'
+  const fullRelationshipActivation = isDemoMode || identityState === 'fully_claimed'
 
   const displayMembers = useMemo(() => {
     if (relationshipPerspectiveEnabled) return members
@@ -1213,16 +1231,34 @@ export default function FamilyGraphApp() {
           </div>
         )}
 
-        {/* Orphaned node banner — the node this user claimed was deleted by an admin */}
-        {selfNodeDeleted && (
+        {/* ── Identity state banners ── three distinct states, never collapsed ── */}
+
+        {/* access_revoked: admin removed this user's access to their node */}
+        {settled && identityState === 'access_revoked' && (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              <span>You no longer have access to this profile — an admin has removed your claim.</span>
+            </div>
+            <button
+              onClick={() => setIsRelOnboardingOpen(true)}
+              className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-[11px] font-medium hover:bg-destructive/20 transition-colors whitespace-nowrap"
+            >
+              Claim another profile →
+            </button>
+          </div>
+        )}
+
+        {/* node_deleted: the node this user claimed was deleted from the graph */}
+        {settled && identityState === 'node_deleted' && (
           <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive">
             <AlertTriangle className="h-3 w-3 shrink-0" />
             <span>Your profile node was removed from the family tree. Ask the family admin to re-add you, then claim your new profile.</span>
           </div>
         )}
 
-        {/* Unclaimed profile banner — user is in a family but has no linked node yet */}
-        {hasUnclaimedProfile && (
+        {/* unlinked: in a family but no node claimed/created yet */}
+        {settled && identityState === 'unlinked' && (
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-[11px] text-blue-400">
             <div className="flex items-center gap-2">
               <UserCheck className="h-3 w-3 shrink-0" />
@@ -1237,14 +1273,7 @@ export default function FamilyGraphApp() {
           </div>
         )}
 
-        {!isDemoMode && selfResolution.warning && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/25 bg-amber-500/8 px-3 py-1.5 text-[11px] text-amber-300">
-            <AlertTriangle className="h-3 w-3 shrink-0" />
-            <span>{selfResolution.warning}</span>
-          </div>
-        )}
-
-        {!isDemoMode && identityMode === 'anonymous_explore' && (
+        {!isDemoMode && identityMode === 'anonymous_explore' && identityState === 'anonymous_explore' && (
           <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/20 bg-sky-500/5 px-3 py-1.5 text-[11px] text-sky-300">
             <Shield className="h-3 w-3 shrink-0" />
             <span>Explore mode: relationship intelligence is hidden until your identity is verified.</span>

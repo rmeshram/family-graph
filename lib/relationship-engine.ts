@@ -232,6 +232,156 @@ export function normalizeEdgePath(edgePath: EdgeType[]): string {
   return edgePath.join('>')
 }
 
+// ── LCA-based structural classifier ──────────────────────────────────────────
+//
+// Pure ancestry analysis: ignores SPOUSE edges entirely and only traverses
+// the parent-child hierarchy. This lets us classify blood relationships with
+// exact degree precision from graph position alone, independent of whether
+// SIBLING edges were explicitly derived or the relationship label was set.
+//
+// Key concepts:
+//   depthA = hops from `fromId` UP to the LCA (via PARENT-only BFS)
+//   depthB = hops from `toId`   UP to the LCA (via PARENT-only BFS)
+//   LCA itself = the shallowest ancestor shared by both nodes.
+//
+// Classification table:
+//   depthA=0, depthB=0  → same person (should have been caught earlier)
+//   depthA=0, depthB>0  → toId is a descendant: Child / Grandchild / Great-grandchild…
+//   depthA>0, depthB=0  → toId is an ancestor: Parent / Grandparent…
+//   depthA=1, depthB=1  → Sibling (same parent)
+//   depthA=2, depthB=1  → Uncle / Aunt  (fromId's grandparent = toId's parent)
+//   depthA=1, depthB=2  → Nephew / Niece (inverse)
+//   depthA≥2, depthB≥2  → Cousin:
+//                           degree   = min(depthA, depthB) − 1
+//                           removed  = |depthA − depthB|
+//                           degree=1 → First Cousin; degree=2 → Second Cousin…
+
+interface LCAResult {
+  lcaId: string
+  depthA: number  // hops from fromId to LCA
+  depthB: number  // hops from toId to LCA
+}
+
+/**
+ * BFS upward through PARENT-only edges from `startId`.
+ * Returns a Map<ancestorId, depth> where depth is the number of hops.
+ * Depth 0 = the node itself.
+ * Caps at 20 generations to guard against circular references in bad data.
+ */
+function buildAncestorSet(graph: RelationshipGraph, startId: string): Map<string, number> {
+  const ancestors = new Map<string, number>([[startId, 0]])
+  const queue = [startId]
+  let head = 0
+  while (head < queue.length) {
+    const cur = queue[head++]
+    const depth = ancestors.get(cur)!
+    if (depth >= 20) continue
+    for (const { to, type } of (graph.get(cur) ?? [])) {
+      if (type !== 'PARENT') continue
+      if (ancestors.has(to)) continue
+      ancestors.set(to, depth + 1)
+      queue.push(to)
+    }
+  }
+  return ancestors
+}
+
+/**
+ * Finds the Lowest Common Ancestor of two nodes in the PARENT-only ancestry
+ * graph. "Lowest" means the shallowest combined depth (depthA + depthB),
+ * which corresponds to the most recent common ancestor.
+ *
+ * Returns null when no common ancestor exists (disconnected nodes or
+ * relationship only through marriage/SPOUSE edges).
+ */
+function findLCA(
+  graph: RelationshipGraph,
+  fromId: string,
+  toId: string,
+): LCAResult | null {
+  const ancestorsA = buildAncestorSet(graph, fromId)
+  const ancestorsB = buildAncestorSet(graph, toId)
+
+  let best: LCAResult | null = null
+  for (const [id, dA] of ancestorsA) {
+    const dB = ancestorsB.get(id)
+    if (dB === undefined) continue
+    // Prefer the candidate with lowest combined depth (closest LCA)
+    if (!best || (dA + dB) < (best.depthA + best.depthB)) {
+      best = { lcaId: id, depthA: dA, depthB: dB }
+    }
+  }
+  return best
+}
+
+/**
+ * Derives a precise relationship label from LCA depths.
+ * `male`/`female` refer to the gender of `toId` (the relationship target).
+ */
+function classifyFromLCA(depthA: number, depthB: number, male: boolean, female: boolean): string {
+  // ── toId is an ancestor of fromId ──────────────────────────────────────────
+  if (depthA > 0 && depthB === 0) {
+    if (depthA === 1) return male ? 'Father' : female ? 'Mother' : 'Parent'
+    if (depthA === 2) return male ? 'Grandfather' : female ? 'Grandmother' : 'Grandparent'
+    const greats = 'Great-'.repeat(depthA - 2)
+    return male ? `${greats}grandfather` : female ? `${greats}grandmother` : `${greats}grandparent`
+  }
+
+  // ── toId is a descendant of fromId ─────────────────────────────────────────
+  if (depthA === 0 && depthB > 0) {
+    if (depthB === 1) return male ? 'Son' : female ? 'Daughter' : 'Child'
+    if (depthB === 2) return male ? 'Grandson' : female ? 'Granddaughter' : 'Grandchild'
+    const greats = 'Great-'.repeat(depthB - 2)
+    return male ? `${greats}grandson` : female ? `${greats}granddaughter` : `${greats}grandchild`
+  }
+
+  // ── Sibling ────────────────────────────────────────────────────────────────
+  if (depthA === 1 && depthB === 1) {
+    return male ? 'Brother' : female ? 'Sister' : 'Sibling'
+  }
+
+  // ── Uncle / Aunt — fromId's parent is a sibling of toId ───────────────────
+  // depthA=2 means fromId → parent → grandparent (=LCA)
+  // depthB=1 means toId → parent (=LCA) → that grandparent is also toId's parent
+  // So toId is fromId's parent's sibling → Uncle/Aunt
+  if (depthA === 2 && depthB === 1) {
+    return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
+  }
+
+  // ── Nephew / Niece — inverse of Uncle/Aunt ─────────────────────────────────
+  if (depthA === 1 && depthB === 2) {
+    return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
+  }
+
+  // ── Great-uncle / Great-aunt ───────────────────────────────────────────────
+  if (depthA === 3 && depthB === 1) {
+    return male ? 'Great-uncle' : female ? 'Great-aunt' : 'Great-uncle/aunt'
+  }
+  if (depthA === 1 && depthB === 3) {
+    return male ? 'Grand-nephew' : female ? 'Grand-niece' : 'Grand-nephew/niece'
+  }
+  // Deeper great-uncle/aunt variants
+  if (depthB === 1 && depthA > 3) {
+    const greats = 'Great-'.repeat(depthA - 2)
+    return male ? `${greats}uncle` : female ? `${greats}aunt` : `${greats}uncle/aunt`
+  }
+  if (depthA === 1 && depthB > 3) {
+    const greats = 'Great-'.repeat(depthB - 2)
+    return male ? `${greats}nephew` : female ? `${greats}niece` : `${greats}nephew/niece`
+  }
+
+  // ── Cousin formula (general case) ─────────────────────────────────────────
+  // Both depthA ≥ 2 and depthB ≥ 2.
+  // Cousin degree = min(depthA, depthB) − 1
+  // Times removed = |depthA − depthB|
+  const degree = Math.min(depthA, depthB) - 1
+  const removed = Math.abs(depthA - depthB)
+  const ordinals = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh']
+  const ordinal = ordinals[degree - 1] ?? `${degree}th`
+  const base = `${ordinal} Cousin`
+  return removed === 0 ? base : `${base}, ${removed} time${removed > 1 ? 's' : ''} removed`
+}
+
 // ── Label helpers ─────────────────────────────────────────────────────────────
 
 function isMale(m?: FamilyMember) { return m?.gender === 'male' }
@@ -254,19 +404,28 @@ function edgeArrowLabel(type: EdgeType): string {
 
 /**
  * Resolves the final human-readable label from the normalized edge sequence.
- * Applies paternal/maternal uncle-aunt disambiguation using the gender of the
- * intermediate parent node.
+ *
+ * Resolution order:
+ *   1. Special-case paternal/maternal uncle-aunt disambiguation (uses peoplePath gender).
+ *   2. LCA-based structural classification — derives the label purely from ancestry
+ *      graph position (depthA to LCA, depthB to LCA). This correctly handles all
+ *      cousin degrees, removed cousins, uncle/aunt/nephew/niece, and ancestor/
+ *      descendant chains even when SIBLING edges are absent (virtual nodes).
+ *      Only fires when the path contains no SPOUSE edge (blood-line only).
+ *   3. Static RELATIONSHIP_MAP lookup for exact canonical labels.
+ *   4. deriveDynamicLabel as structural fallback.
  */
 function resolveLabel(
   normalized: string,
   peoplePath: string[],
   memberMap: Map<string, FamilyMember>,
+  graph?: RelationshipGraph,
 ): string {
   const target = memberMap.get(peoplePath[peoplePath.length - 1])
   const male = isMale(target)
   const female = isFemale(target)
 
-  // Paternal/maternal uncle-aunt disambiguation
+  // 1. Paternal/maternal uncle-aunt disambiguation (needs intermediate gender)
   if (normalized === 'PARENT>SIBLING' || normalized === 'PARENT>PARENT>CHILD') {
     const intermediateParent = memberMap.get(peoplePath[1])
     if (intermediateParent) {
@@ -277,6 +436,20 @@ function resolveLabel(
     return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
   }
 
+  // 2. LCA-based classification — only for blood-line paths (no SPOUSE edges)
+  const hasSpouse = normalized.includes('SPOUSE')
+  if (!hasSpouse && graph) {
+    const fromId = peoplePath[0]
+    const toId = peoplePath[peoplePath.length - 1]
+    const lca = findLCA(graph, fromId, toId)
+    if (lca) {
+      const label = classifyFromLCA(lca.depthA, lca.depthB, male, female)
+      dbg(`LCA: ${lca.lcaId} depthA=${lca.depthA} depthB=${lca.depthB} → "${label}"`)
+      return label
+    }
+  }
+
+  // 3. Static map
   const entry = RELATIONSHIP_MAP[normalized]
   if (entry) {
     if (male && entry.male) return entry.male
@@ -284,8 +457,7 @@ function resolveLabel(
     return entry.neutral
   }
 
-  // ── Dynamic label derivation for paths not in the static map ──────────────
-  // Derive semantically accurate labels rather than a generic "N-step relative".
+  // 4. Dynamic derivation fallback
   return deriveDynamicLabel(normalized, male, female)
 }
 
@@ -401,6 +573,7 @@ function computeMetadata(
   edgePath: EdgeType[],
   peoplePath: string[],
   memberMap: Map<string, FamilyMember>,
+  lca?: LCAResult | null,
 ): RelationMetadata {
   const from = memberMap.get(peoplePath[0])
   const to = memberMap.get(peoplePath[peoplePath.length - 1])
@@ -421,17 +594,26 @@ function computeMetadata(
 
   const generationDelta = (to?.generation ?? 0) - (from?.generation ?? 0)
 
-  // Cousin degree: PARENT×n > SIBLING > CHILD×m
-  const upCount = edgePath.filter(e => e === 'PARENT').length
-  const downCount = edgePath.filter(e => e === 'CHILD').length
-  const sibCount = edgePath.filter(e => e === 'SIBLING').length
-
+  // Cousin degree: prefer LCA-derived depths (structurally accurate) over edge-pattern counting.
+  // Edge-pattern counting can miscount when SIBLING edges route through virtual nodes.
   let cousinDegree: number | null = null
   let removedLevel: number | null = null
-  if (sibCount === 1 && upCount >= 1 && downCount >= 1) {
-    cousinDegree = upCount
-    const diff = Math.abs(upCount - downCount)
+
+  if (lca && lca.depthA >= 2 && lca.depthB >= 2) {
+    // Both nodes share an ancestor at depth ≥ 2 → cousin relationship
+    cousinDegree = Math.min(lca.depthA, lca.depthB) - 1
+    const diff = Math.abs(lca.depthA - lca.depthB)
     removedLevel = diff > 0 ? diff : null
+  } else {
+    // Fallback to edge counting when LCA not available (e.g. marriage path)
+    const upCount = edgePath.filter(e => e === 'PARENT').length
+    const downCount = edgePath.filter(e => e === 'CHILD').length
+    const sibCount = edgePath.filter(e => e === 'SIBLING').length
+    if (sibCount === 1 && upCount >= 1 && downCount >= 1) {
+      cousinDegree = upCount
+      const diff = Math.abs(upCount - downCount)
+      removedLevel = diff > 0 ? diff : null
+    }
   }
 
   return { side, type, generationDelta, cousinDegree, removedLevel, hopCount: edgePath.length }
@@ -439,7 +621,14 @@ function computeMetadata(
 
 // ── Confidence ────────────────────────────────────────────────────────────────
 
-function computeConfidence(normalized: string, edgePath: EdgeType[]): number {
+function computeConfidence(normalized: string, edgePath: EdgeType[], lca?: LCAResult | null): number {
+  // LCA-derived labels have structural certainty — boost their confidence.
+  const hasSpouse = normalized.includes('SPOUSE')
+  if (!hasSpouse && lca) {
+    // Structurally confirmed via LCA: scale confidence by combined depth (closer = higher)
+    const totalDepth = lca.depthA + lca.depthB
+    return Math.max(0.72, 1 - totalDepth * 0.04)
+  }
   const inDict = normalized in RELATIONSHIP_MAP
   if (!inDict) return Math.max(0.3, 1 - edgePath.length * 0.08)
   return Math.max(0.72, 1 - edgePath.length * 0.04)
@@ -504,14 +693,18 @@ export function getRelationshipBetweenPeople(
   const normalized = normalizeEdgePath(pathResult.edgePath)
   dbg('normalized:', normalized)
 
-  const relationship = resolveLabel(normalized, pathResult.peoplePath, memberMap)
+  // Run LCA once here so both resolveLabel and computeMetadata can share it.
+  const hasSpousePath = normalized.includes('SPOUSE')
+  const lca = !hasSpousePath ? findLCA(graph, fromId, toId) : null
+
+  const relationship = resolveLabel(normalized, pathResult.peoplePath, memberMap, graph)
   dbg('relationship:', relationship)
 
   const effectiveFromLabel = fromLabel ?? (memberMap.get(fromId)?.name?.split(' ')[0] ?? 'their')
   const semanticChain = buildSemanticChain(pathResult.edgePath, pathResult.peoplePath, memberMap)
   const chainSentence = buildChainSentence(pathResult.edgePath, pathResult.peoplePath, memberMap, effectiveFromLabel)
-  const metadata = computeMetadata(pathResult.edgePath, pathResult.peoplePath, memberMap)
-  const confidence = computeConfidence(normalized, pathResult.edgePath)
+  const metadata = computeMetadata(pathResult.edgePath, pathResult.peoplePath, memberMap, lca)
+  const confidence = computeConfidence(normalized, pathResult.edgePath, lca)
 
   return {
     found: true,
