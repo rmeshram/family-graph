@@ -1917,9 +1917,11 @@ export function RelationshipUniverse({
                         <div className="font-semibold text-[14px] truncate leading-tight"
                           style={{ color: 'var(--foreground)' }}>{selectedPerson.name}</div>
                         <div className="text-[11px] font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
-                          <span style={{ color: catColor }}>
-                            {selectedPerson.relation || selectedPerson.category.replace(/-/g, ' ')}
-                          </span>
+                          {selectedPerson.relation && (
+                            <span style={{ color: catColor }}>
+                              {selectedPerson.relation}
+                            </span>
+                          )}
                           {age && <span style={{ color: 'var(--muted-foreground)' }}>· {age} yrs</span>}
                           {selectedPerson.city && <span style={{ color: 'var(--muted-foreground)' }}>· {selectedPerson.city}</span>}
                         </div>
@@ -2111,10 +2113,12 @@ export function RelationshipUniverse({
                         )}
                       </div>
                       {/* Relation */}
-                      <div className="text-[11px] font-medium mt-0.5 truncate" style={{ color: catColor }}>
-                        {selectedPerson.relation || selectedPerson.category.replace(/-/g, ' ')}
-                        {isSelf && <span className="ml-1 font-bold" style={{ color: 'var(--primary)' }}>· You</span>}
-                      </div>
+                      {(selectedPerson.relation || isSelf) && (
+                        <div className="text-[11px] font-medium mt-0.5 truncate" style={{ color: catColor }}>
+                          {selectedPerson.relation}
+                          {isSelf && <span className="ml-1 font-bold" style={{ color: 'var(--primary)' }}>· You</span>}
+                        </div>
+                      )}
                       {/* Location */}
                       {selectedPerson.city && (
                         <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--muted-foreground)' }}>
