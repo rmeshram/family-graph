@@ -347,35 +347,30 @@ function classifyFromLCA(
   male: boolean,
   female: boolean,
   memberMap?: Map<string, FamilyMember>,
+  peoplePath?: string[],
 ): string {
   const { depthA, depthB, lcaId, ancestorsA } = lca
 
   /**
-   * Locate fromId's depth-1 ancestor (direct parent) that lies on the
-   * actual path toward the LCA.
+   * Returns fromId's direct parent that lies on the BFS path toward toId.
    *
-   * When both parents are in the tree, ancestorsA at depth=1 has two entries.
-   * We disambiguate by finding which one is ALSO an ancestor of toId:
-   *   - ancestorsB contains all ancestors of toId (with their depths)
-   *   - A depth-1 ancestor P of fromId is on the correct path iff
-   *     ancestorsB.has(P) — i.e. P lies between fromId and toId in ancestry
-   *
-   * This prevents the paternal/maternal flip that occurred when the loop
-   * happened to pick the wrong parent (e.g. mother instead of father for a
-   * paternal uncle query).
+   * Priority order:
+   *   1. peoplePath[1] — the exact node BFS traversed as the first hop.
+   *      This is always correct and requires no heuristic.
+   *      peoplePath is available when resolveLabel passes it through.
+   *   2. Ancestor-set heuristic (fallback for call sites without peoplePath):
+   *      find the depth-1 ancestor of fromId whose parentIds include the LCA.
+   *      When both parents are in the tree this can still be ambiguous, but
+   *      peoplePath should always be provided so this is only a safety net.
    */
   const pathwayParent = (): FamilyMember | null => {
     if (!memberMap) return null
-    // First pass: prefer a depth-1 ancestor of fromId that is also an ancestor
-    // of toId (meaning it lies on the blood-line path to the LCA).
-    for (const [pid, depth] of ancestorsA) {
-      if (depth !== 1) continue
-      const p = memberMap.get(pid)
-      if (!p || p.id.startsWith('__virt_')) continue
-      if (lca.ancestorsB.has(pid)) return p
+    // Primary: use the exact BFS intermediate node
+    if (peoplePath && peoplePath.length >= 2) {
+      const p = memberMap.get(peoplePath[1])
+      if (p && !p.id.startsWith('__virt_')) return p
     }
-    // Second pass: fall back to the old heuristic (parent whose parentIds
-    // include the LCA) for cases where toId's ancestry doesn't help.
+    // Fallback: ancestor-set heuristic
     for (const [pid, depth] of ancestorsA) {
       if (depth !== 1) continue
       const p = memberMap.get(pid)
@@ -527,11 +522,11 @@ function resolveLabel(
   }
 
   // 2. LCA-based classification — only for blood-line paths (no SPOUSE edges).
-  //    The pre-computed `lca` (with ancestorsA) is passed in from getRelationshipBetweenPeople,
-  //    avoiding a redundant findLCA call here.
+  //    peoplePath is forwarded so classifyFromLCA can use peoplePath[1] as the
+  //    exact pathway parent instead of relying on the ancestor-set heuristic.
   const hasSpouse = normalized.includes('SPOUSE')
   if (!hasSpouse && lca) {
-    const label = classifyFromLCA(lca, male, female, memberMap)
+    const label = classifyFromLCA(lca, male, female, memberMap, peoplePath)
     dbg(`LCA: ${lca.lcaId} depthA=${lca.depthA} depthB=${lca.depthB} → "${label}"`)
     return label
   }
