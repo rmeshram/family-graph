@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useFocusMode } from '@/app/(app)/layout'
 import { FamilyMember, Story, FamilyEvent } from '@/lib/types'
 import { sampleFamilyMembers } from '@/lib/sample-data'
 import { filterByDegree, computeProfileCompleteness, copyToClipboard } from '@/lib/utils'
@@ -27,9 +29,11 @@ import { RelationshipOnboardingDialog } from '@/components/relationship-onboardi
 import { InviteToClaimDialog } from '@/components/invite-to-claim-dialog'
 import { SuggestedNodesBanner } from '@/components/suggested-nodes-banner'
 import { RelationshipUniverse } from '@/components/relationship-universe'
+import { HierarchicalTree } from '@/components/hierarchical-tree'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
+import { OnboardingChecklist } from '@/components/onboarding-checklist'
 import { computePostAddSuggestions, getRelationshipBetweenPeople, type RelationshipSuggestion, type RelationshipAction, type RelationshipResult } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -97,7 +101,7 @@ function FamilyTreeSkeleton() {
 }
 
 
-type TreeViewMode = 'graph' | 'orgchart' | 'list' | 'universe'
+type TreeViewMode = 'graph' | 'orgchart' | 'list' | 'universe' | 'tree'
 
 // ─── AI Quick-response engine ──────────────────────────────────────────────────
 
@@ -513,6 +517,8 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 export default function FamilyGraphApp() {
   const isMobile = useIsMobile()
   const { user, familyId, profile, loading: authLoading, refreshProfile } = useAuth()
+  const router = useRouter()
+  const { setFocusMode } = useFocusMode()
   const { members: dbMembers, loading: dbLoading, error: dbError, totalCount: dbTotalCount, addMember: dbAddMember, updateMember: dbUpdateMember, deleteMember: dbDeleteMember, claimMember, setVisibility, setAnonymous, refetch: refetchMembers } = useMembers(familyId)
   const { storiesByMember, addStory: dbAddStory } = useStories(familyId)
 
@@ -541,6 +547,29 @@ export default function FamilyGraphApp() {
     const claimedId = new URLSearchParams(window.location.search).get('claimed')
     if (claimedId) setSelectedMemberId(claimedId)
   }, [])
+
+  // ?welcome=1 is appended by onboarding — show first-step overlay once
+  const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('welcome') === '1') {
+      setShowWelcomeOverlay(true)
+      // Clean the param from URL without a page reload
+      const url = new URL(window.location.href)
+      url.searchParams.delete('welcome')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [])
+
+  // Guard: if the user has no family_id yet, they skipped onboarding — send them back.
+  // This handles back-button bypasses and direct /dashboard navigation after email signup.
+  useEffect(() => {
+    if (authLoading || isDemoMode) return
+    if (user && !(profile as any)?.family_id) {
+      router.replace('/onboarding')
+    }
+  }, [authLoading, isDemoMode, user, profile, router])
+
   // Mobile-only: tracks which node was tapped to show the compact context menu.
   // The full MemberDetail drawer only opens after the user taps "View Full Profile".
   const [mobileMenuMemberId, setMobileMenuMemberId] = useState<string | null>(null)
@@ -576,7 +605,10 @@ export default function FamilyGraphApp() {
   const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
-  const [viewMode, setViewMode] = useState<TreeViewMode>('universe')
+  const [viewMode, setViewMode] = useState<TreeViewMode>(
+    FEATURE_FLAGS.enableHierarchicalTreeView ? 'tree' : 'universe'
+  )
+  const [forceSpeedWizard, setForceSpeedWizard] = useState(false)
   const [showAIWidget, setShowAIWidget] = useState(false)
   const [showInviteWidget, setShowInviteWidget] = useState(false)
   const [memberListOpen, setMemberListOpen] = useState(false)
@@ -618,6 +650,13 @@ export default function FamilyGraphApp() {
     // Merge linked family members as affiliated nodes (shown as Community cluster)
     return [...core, ...linkedMembers]
   }, [isDemoMode, authLoading, familyId, dbLoading, dbMembers, storiesByMember, linkedMembers])
+
+  // Focus mode: hide sidebar when user has 0 members (new user, nothing to navigate to).
+  // Restore sidebar when they leave the dashboard or add their first member.
+  useEffect(() => {
+    setFocusMode(!isDemoMode && !dbLoading && !authLoading && members.length === 0)
+    return () => setFocusMode(false)
+  }, [isDemoMode, dbLoading, authLoading, members.length, setFocusMode])
 
   // ── Activity feed — derived from real member + story data for logged-in users ─
   const feedItems = useMemo<FamilyEvent[]>(() => {
@@ -817,6 +856,16 @@ export default function FamilyGraphApp() {
 
   const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
   const isViewer = !isDemoMode && (profile as any)?.role === 'viewer'
+
+  // ── Progressive onboarding checklist data ────────────────────────────────────
+  const checklistHasStories = useMemo(() =>
+    Object.values(storiesByMember).some(stories => stories.length > 0),
+    [storiesByMember]
+  )
+  const checklistHasOtherClaims = useMemo(() =>
+    members.some(m => m.isClaimed && m.claimedByUserId && m.claimedByUserId !== user?.id),
+    [members, user?.id]
+  )
 
   // Account-level privacy settings for the current user — used for contact info masking
   const { settings: myPrivacySettings } = usePrivacySettings(isDemoMode ? undefined : user?.id)
@@ -1172,6 +1221,7 @@ export default function FamilyGraphApp() {
   }, [viewMode, selectedMemberId, isDemoMode, isViewer, members])
 
   const VIEW_MODES: { key: TreeViewMode; label: string; icon: React.ElementType }[] = [
+    ...(FEATURE_FLAGS.enableHierarchicalTreeView ? [{ key: 'tree' as TreeViewMode, label: 'Tree', icon: TreePine }] : []),
     { key: 'graph', label: 'Graph', icon: Network },
     { key: 'orgchart', label: 'Org Chart', icon: GitBranch },
     { key: 'list', label: 'List', icon: List },
@@ -1514,6 +1564,139 @@ export default function FamilyGraphApp() {
             )}
             {/* Progressive skeleton while data loads */}
             {!isDemoMode && (dbLoading || authLoading) && <FamilyTreeSkeleton />}
+
+            {/* ── Empty-canvas state — shown when family has no members at all ─────
+                Handles: new admin, unlinked user, viewer on empty family.
+                This is the highest-priority overlay — prevents blank screen. */}
+            {!isDemoMode && !dbLoading && !authLoading && members.length === 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8 text-center z-20">
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 border border-primary/20">
+                  <TreePine className="h-10 w-10 text-primary/50" />
+                </div>
+
+                {isViewer ? (
+                  <>
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground mb-2">This family tree is empty</h2>
+                      <p className="text-muted-foreground text-sm max-w-xs">
+                        You joined as a <strong>viewer</strong>. Ask the family admin to add members, or request contributor access so you can build the tree yourself.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsSettingsOpen(true)}
+                      className="h-11 px-6 gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Request access
+                    </Button>
+                  </>
+                ) : (identityState === 'unlinked' || !selfMember) ? (
+                  <>
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Let's build your tree 🌱</h2>
+                      <p className="text-muted-foreground text-sm max-w-xs">
+                        Your account is set up — now add yourself to see your family tree come alive.
+                      </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <Button
+                        size="lg"
+                        onClick={() => setIsAddDialogOpen(true)}
+                        className="h-12 px-8 gap-2 text-base font-semibold"
+                      >
+                        <UserPlus className="h-5 w-5" />
+                        Add yourself first
+                      </Button>
+                      <Link href="/onboarding">
+                        <Button variant="outline" className="h-12 px-6 gap-1.5 text-sm">
+                          Or redo setup →
+                        </Button>
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground mb-2">Your tree starts here 🌱</h2>
+                      <p className="text-muted-foreground text-sm max-w-xs">
+                        Add your father or mother — two taps and your tree comes alive.
+                      </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <Button
+                        size="lg"
+                        onClick={() => setIsAddDialogOpen(true)}
+                        className="h-12 px-8 gap-2 text-base font-semibold"
+                      >
+                        <UserPlus className="h-5 w-5" />
+                        Add a family member
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => { setShowInviteWidget(true); setShowAIWidget(false) }}
+                        className="h-12 px-6 gap-1.5 text-sm"
+                      >
+                        Invite family instead →
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step hint */}
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-[11px] text-muted-foreground/60">
+                  <span className="flex items-center gap-1"><span className="text-green-400">①</span> Add yourself</span>
+                  <span>→</span>
+                  <span className="flex items-center gap-1"><span className="text-primary/60">②</span> Add parents</span>
+                  <span>→</span>
+                  <span className="flex items-center gap-1"><span className="text-violet-400/60">③</span> Invite relatives</span>
+                </div>
+              </div>
+            )}
+
+            {/* Ghost-slot parent guide — shown when user has their own node but no parents added */}
+            {!isDemoMode && !dbLoading && !authLoading && selfMember &&
+              members.length <= 1 && (selfMember.parentIds ?? []).length === 0 &&
+              !isViewer && viewMode === 'graph' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 pointer-events-none select-none z-10">
+                  {/* Ghost parents */}
+                  <div className="flex items-end gap-12">
+                    {[{ label: 'Add Father', rel: 'father', color: 'blue' }, { label: 'Add Mother', rel: 'mother', color: 'pink' }].map(slot => (
+                      <div key={slot.rel} className="flex flex-col items-center gap-2 pointer-events-auto">
+                        <button
+                          onClick={() => setIsAddDialogOpen(true)}
+                          className={`flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed transition-all hover:scale-105 ${slot.color === 'blue' ? 'border-blue-500/40 bg-blue-500/5 hover:border-blue-500/70 hover:bg-blue-500/10' : 'border-pink-500/40 bg-pink-500/5 hover:border-pink-500/70 hover:bg-pink-500/10'}`}
+                        >
+                          <span className="text-xl">＋</span>
+                        </button>
+                        <p className={`text-xs font-medium ${slot.color === 'blue' ? 'text-blue-400/70' : 'text-pink-400/70'}`}>{slot.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Connector lines from parents to self */}
+                  <div className="flex items-start gap-12">
+                    <div className="w-px h-8 bg-border/30" />
+                    <div className="w-px h-8 bg-border/30" />
+                  </div>
+
+                  {/* Self node (real, centred) */}
+                  <div className="flex flex-col items-center gap-1.5">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary/60 bg-primary/10 shadow-lg shadow-primary/10">
+                      {selfMember.photoUrl
+                        ? <img src={selfMember.photoUrl} alt={selfMember.name} className="h-full w-full rounded-full object-cover" />
+                        : <span className="text-lg font-bold text-primary">{selfMember.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</span>
+                      }
+                    </div>
+                    <p className="text-sm font-semibold text-foreground">{selfMember.name.split(' ')[0]}</p>
+                    <p className="text-[10px] text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-full">You</p>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground/60 text-center max-w-xs mt-2">
+                    Tap a slot above to add your parents and start growing the tree
+                  </p>
+                </div>
+              )}
             {viewMode === 'graph' && (
               <FamilyTree
                 members={filteredDisplayMembers}
@@ -1546,6 +1729,27 @@ export default function FamilyGraphApp() {
             )}
             {viewMode === 'list' && (
               <ListView members={filteredDisplayMembers} onSelect={handleSelectMember} selectedId={selectedMemberId} />
+            )}
+            {viewMode === 'tree' && FEATURE_FLAGS.enableHierarchicalTreeView && (
+              <HierarchicalTree
+                members={filteredDisplayMembers}
+                selfMemberId={selfMember?.id ?? null}
+                selectedMemberId={selectedMemberId}
+                onSelectMember={handleSelectMember}
+                onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
+                onQuickAdd={!isDemoMode && !isViewer ? handleQuickAddSubmit : undefined}
+                forceWizard={forceSpeedWizard}
+                onOpenProfile={handleOpenProfileFromRing}
+                onFindRelationship={relationshipIntelligenceEnabled ? handleOpenPathFinder : undefined}
+                onInviteNode={!isDemoMode && !isViewer ? (memberId) => {
+                  const m = members.find(m => m.id === memberId)
+                  if (m && !m.isClaimed) setInviteToClaimTarget(m)
+                } : undefined}
+                onClaimNode={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
+                onDelete={isAdmin ? (memberId) => { setSelectedMemberId(memberId); setIsDeleteDialogOpen(true) } : undefined}
+                onOpenMemberDetail={handleOpenSelectedMemberDetail}
+                isAdmin={isAdmin}
+              />
             )}
             {viewMode === 'universe' && (
               <RelationshipUniverse
@@ -2101,6 +2305,84 @@ export default function FamilyGraphApp() {
         </AlertDialogContent>
       </AlertDialog>
       <Toaster />
+
+      {/* ── Welcome overlay — fires once after onboarding (?welcome=1) */}
+      {showWelcomeOverlay && !isDemoMode && !dbLoading && !authLoading && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setShowWelcomeOverlay(false)}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close */}
+            <button
+              onClick={() => setShowWelcomeOverlay(false)}
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="text-center mb-5">
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 mb-3">
+                <TreePine className="h-7 w-7 text-primary" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Your tree is ready! 🎉</h2>
+              <p className="text-sm text-muted-foreground mt-1">3 quick steps to bring it to life</p>
+            </div>
+
+            <ol className="space-y-3 mb-6">
+              {[
+                { n: 1, icon: '👨', title: 'Add your father or mother', detail: 'Tap "Add" → choose Father or Mother' },
+                { n: 2, icon: '💌', title: 'Invite a family member', detail: 'Share the link on WhatsApp' },
+                { n: 3, icon: '📸', title: 'Add a memory', detail: 'A photo, story, or voice note' },
+              ].map(step => (
+                <li key={step.n} className="flex items-start gap-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">{step.n}</div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{step.icon} {step.title}</p>
+                    <p className="text-xs text-muted-foreground">{step.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+
+            <Button
+              className="w-full h-11 text-sm font-semibold gap-2"
+              onClick={() => {
+                setShowWelcomeOverlay(false)
+                setViewMode('tree')
+                setForceSpeedWizard(true)
+              }}
+            >
+              <UserPlus className="h-4 w-4" />
+              Add first family member
+            </Button>
+            <button
+              onClick={() => setShowWelcomeOverlay(false)}
+              className="mt-3 w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors"
+            >
+              I'll explore first
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Progressive onboarding checklist — visible to fully_claimed users only */}
+      {!isDemoMode && !isViewer && identityState === 'fully_claimed' && selfMember && (
+        <OnboardingChecklist
+          selfMember={selfMember}
+          members={members}
+          hasStories={checklistHasStories}
+          hasOtherClaims={checklistHasOtherClaims}
+          onAddMember={() => setIsAddDialogOpen(true)}
+          onInvite={() => setShowInviteWidget(true)}
+          onAddStory={() => setIsStoryDialogOpen(true)}
+          userId={user?.id}
+        />
+      )}
     </TooltipProvider>
   )
 }
