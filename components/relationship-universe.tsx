@@ -83,22 +83,32 @@ const HUE: Record<UCategory, number> = {
 }
 
 // ─── Sector arc ranges [startRad, endRad] ─────────────────────────────────
-// SVG convention: 0=right, π/2=down(visual), -π/2=up(visual), π=left
-// Paternal → upper-left sector, Maternal → upper-right, Marriage → right,
-// Community → outer-left (separate from core family)
+// SVG: 0=right, +π/2=down(screen), −π/2=up(screen), ±π=left
+//
+// Sectors are deliberately non-overlapping with ≥35° gap at every shared boundary:
+//   Paternal  120°→240°  (left half, centered at 180°)
+//   Maternal  −90°→−31°  (upper-right)
+//   Marriage   18°→85°   (lower-right)
+//   Community            (outer-left cluster, depth-4 only — no depth-1 collision)
+//
+// Boundary gaps at depth-1 ring (r≈395px, node⌀≈87px):
+//   Maternal end (−31°) → Marriage start (18°) : 49° → 338px gap ✓
+//   Marriage end  (85°) → Paternal start (120°): 35° → 242px gap ✓
+//   Paternal end (240°) → Maternal start (270°): 30° → 207px gap ✓
 
 const SECTOR_ARC: Record<UCategory, [number, number]> = {
   self: [0, 0],
-  paternal: [Math.PI * 0.42, Math.PI * 1.48],   // ~76° → ~266°  (wider left arc)
-  maternal: [-Math.PI * 0.42, Math.PI * 0.42],   // ~-76° → ~76°  (wider right arc)
-  marriage: [-Math.PI * 0.38, Math.PI * 0.38],    // right side (wider)
-  community: [Math.PI * 0.60, Math.PI * 1.60],    // outer left cluster
+  paternal: [Math.PI * 0.67, Math.PI * 1.33],  // 120.6° → 239.4° (left half)
+  maternal: [-Math.PI * 0.50, -Math.PI * 0.17], // −90° → −30.6° (upper-right)
+  marriage: [Math.PI * 0.10, Math.PI * 0.47],   // 18° → 84.6° (lower-right)
+  community: [Math.PI * 0.70, Math.PI * 1.55],   // outer-left cluster
 }
 
-const BASE_RING_RADIUS = 210   // depth-1 ring radius (px in graph space)
-const RING_STEP = 160   // extra radius per depth level
-const MIN_ANG_GAP = 0.26  // min radians between nodes in same ring (~15°) — prevents node overlap
-const JITTER_SCALE = 14    // px of deterministic position jitter (kept < half MIN_ANG_GAP arc-length)
+const BASE_RING_RADIUS = 220   // depth-1 ring radius (px in graph space)
+const RING_STEP = 175          // extra radius per depth level
+const MIN_ANG_GAP = 0.24       // min radians between node centres in same ring
+const ARC_EDGE_PAD = 0.12      // radians of inward padding per sector edge (keeps nodes away from boundaries)
+const JITTER_SCALE = 6         // px of deterministic radial jitter (reduced — sector gaps handle separation)
 
 // ─── Layout engine ─────────────────────────────────────────────────────────
 
@@ -302,8 +312,14 @@ export function buildUniverse(
     const [arcStart, arcEnd] = SECTOR_ARC[cat]
     const arcSpan = arcEnd - arcStart   // radians
 
+    // Shrink usable arc inward from each edge so no node sits on a sector boundary.
+    // This prevents overlap with the closest node in the adjacent sector.
+    const pad = ARC_EDGE_PAD
+    const usableSpan = Math.max(0, arcSpan - 2 * pad)
+    const usableStart = arcStart + pad
+
     // How many nodes fit per ring given minimum angular gap?
-    const maxPerRing = Math.max(1, Math.floor(Math.abs(arcSpan) / MIN_ANG_GAP))
+    const maxPerRing = Math.max(1, Math.floor(usableSpan / MIN_ANG_GAP))
 
     // Split slots across sub-rings at this depth
     const rings: RingSlot[][] = []
@@ -312,14 +328,15 @@ export function buildUniverse(
     }
 
     rings.forEach((ring, ringIdx) => {
-      // Each overflow sub-ring adds 80 px outward
-      const r = BASE_RING_RADIUS + d * RING_STEP + ringIdx * 85
+      // Each overflow sub-ring steps outward by RING_STEP/1.35 to keep rings visually distinct
+      const r = BASE_RING_RADIUS + d * RING_STEP + ringIdx * 130
       const n = ring.length
 
       ring.forEach(({ id }, i) => {
-        // Distribute evenly within the arc, with edge padding
+        // Distribute evenly within the usable (padded) arc
         const fraction = n === 1 ? 0.5 : i / (n - 1)
-        const angle = arcStart + fraction * arcSpan
+        const angle = usableStart + fraction * usableSpan
+        // Jitter is radial-only so angular separation is preserved
         const jitter = deterministicJitter(id)
         positions.set(id, {
           x: Math.cos(angle) * (r + jitter),
