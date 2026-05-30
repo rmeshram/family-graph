@@ -380,7 +380,11 @@ export async function POST(
         { status: 409 }
       )
     }
-    if (ns === 'revoked') {
+    // Only block re-claim on revoked nodes when there is no valid node_claim invite.
+    // When an admin re-sends an invite after revoking, authorizedViaNodeClaimInvite
+    // is true — that explicit act of re-inviting means the admin wants to allow
+    // the person to reclaim, so we skip the revoke wall.
+    if (ns === 'revoked' && !authorizedViaNodeClaimInvite) {
       return NextResponse.json(
         { error: 'NODE_REVOKED', message: 'This profile was revoked by an admin. Contact the family admin to have access reinstated.' },
         { status: 409 }

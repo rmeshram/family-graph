@@ -198,10 +198,22 @@ export function buildUniverse(
   }
 
   // ── 2. Assign categories ──────────────────────────────────────────────────
-  const category = new Map<string, UCategory>([[anchorId, 'self']])
+  // 'self' belongs EXCLUSIVELY to the authenticated viewer's node (perspectiveSelfId).
+  // The layout anchor (anchorId) may be a different node when the viewer is unlinked
+  // (no claimed profile). Assigning 'self' to the anchor would show "You" on another
+  // person's node — the exact bug seen when Shubham unclaims: Motiram (members[0])
+  // becomes the anchor and was incorrectly labelled "You".
+  const category = new Map<string, UCategory>()
+  if (perspectiveSelfId && memberMap.has(perspectiveSelfId)) {
+    category.set(perspectiveSelfId, 'self')
+  }
+  // When perspectiveSelfId === anchorId, it is already set above and the loop
+  // guard below will skip it. When they differ, anchorId gets a regular category
+  // via the `category.get(m.id) ?? 'paternal'` fallback in the UPerson builder.
 
   for (const m of members) {
-    if (m.id === anchorId) continue
+    if (m.id === anchorId) continue  // anchor is always placed at center (0, 0); no sector needed
+    if (category.has(m.id)) continue // 'self' already set — do not override
 
     let cat: UCategory
     if (m.networkGroup === 'affiliated') {
