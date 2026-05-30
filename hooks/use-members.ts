@@ -226,6 +226,68 @@ export function useMembers(familyId: string | null) {
       throw new Error('A person cannot have more than 2 biological parents. Use step-parent relationships for additional parents.')
     }
 
+    // ── Uniqueness guards against the current in-memory members list ─────────
+    const normName = trimmedName.toLowerCase().replace(/\s+/g, ' ')
+    const rel = (memberData.relationship ?? '').toLowerCase().trim()
+
+    // 1. Exact-same name + relationship already exists in this family
+    if (rel) {
+      const dupByNameRel = members.find(m =>
+        m.name.toLowerCase().replace(/\s+/g, ' ') === normName &&
+        (m.relationship ?? '').toLowerCase().trim() === rel
+      )
+      if (dupByNameRel) {
+        throw new Error(
+          `"${trimmedName}" is already in your family tree as ${rel.replace(/-/g, ' ')}. If this is a different person, please use a distinguishing name (e.g. add a middle name or suffix).`
+        )
+      }
+    }
+
+    // 2. Singleton-relationship constraints: only one node may hold these roles
+    //    relative to a given anchor (parent of the new node or the viewer).
+    //    We check against the anchor nodes in parentIds / spouseIds.
+    const SINGLETON_RELS = ['father', 'mother', 'husband', 'wife', 'spouse'] as const
+    if (SINGLETON_RELS.includes(rel as typeof SINGLETON_RELS[number])) {
+      const existing = members.find(m =>
+        (m.relationship ?? '').toLowerCase().trim() === rel
+      )
+      if (existing) {
+        const roleLabel = rel.charAt(0).toUpperCase() + rel.slice(1)
+        throw new Error(
+          `${roleLabel} (${existing.name}) is already in your family tree. A person can only have one ${rel}. If there was a divorce/remarriage, please edit the existing entry instead.`
+        )
+      }
+    }
+
+    // 3. Structural spouse cap: the anchor node in spouseIds can only have one spouse
+    //    (unless the family explicitly uses polygamy — not a use-case we model).
+    if ((memberData.spouseIds?.length ?? 0) > 0) {
+      for (const anchorId of memberData.spouseIds!) {
+        const anchor = members.find(m => m.id === anchorId)
+        if (anchor && anchor.spouseIds.length > 0) {
+          throw new Error(
+            `${anchor.name} already has a spouse (${members.find(m => m.id === anchor.spouseIds[0])?.name ?? 'another member'}). Remove the existing spouse link before adding a new one.`
+          )
+        }
+      }
+    }
+
+    // 4. Structural parent cap: each anchor in parentIds can have at most 2 children
+    //    with the exact same name — almost certainly a data entry error.
+    if ((memberData.parentIds?.length ?? 0) > 0) {
+      for (const pid of memberData.parentIds!) {
+        const siblings = members.filter(m => m.parentIds.includes(pid))
+        const dupSibling = siblings.find(s =>
+          s.name.toLowerCase().replace(/\s+/g, ' ') === normName
+        )
+        if (dupSibling) {
+          throw new Error(
+            `A child named "${trimmedName}" already exists under the same parent. If this is a different person, use a distinguishing name.`
+          )
+        }
+      }
+    }
+
     const insert = memberToInsert({ ...memberData, name: trimmedName }, familyId, userId)
     const { data, error } = await supabase.from('family_members').insert(insert).select().single()
     if (error) throw new Error(error.message)
