@@ -215,7 +215,7 @@ export function buildUniverse(
     if (m.id === anchorId) continue  // anchor is always placed at center (0, 0); no sector needed
     if (category.has(m.id)) continue // 'self' already set — do not override
 
-    let cat: UCategory
+    let cat: UCategory | null = null
     if (m.networkGroup === 'affiliated') {
       cat = 'community'
     } else if (
@@ -232,20 +232,44 @@ export function buildUniverse(
       const rel = (m.relationship ?? '').toLowerCase()
       if (rel.includes('maternal') || rel === 'mother' || rel === 'mother-in-law') {
         cat = 'maternal'
+      } else if (
+        rel.includes('paternal') || rel === 'father' || rel.includes('grandfather') ||
+        rel === 'uncle' || rel === 'aunt' || rel === 'brother' || rel === 'sister' || rel === 'sibling'
+      ) {
+        // Explicitly paternal-side terms — includes 'paternal-uncle', 'paternal-aunt', etc.
+        cat = 'paternal'
       } else if (rel.includes('in-law') || rel === 'spouse' || rel === 'husband' || rel === 'wife') {
         cat = 'marriage'
       } else if (['son', 'daughter', 'child', 'grandson', 'granddaughter', 'grandchild',
         'nephew', 'niece', 'son-in-law', 'daughter-in-law'].includes(rel)) {
         // Descendants go in paternal sector but at deeper positive ring
         cat = 'paternal'
-      } else {
-        // For members with no usable label, spread across paternal/maternal by generation parity
-        // to avoid all unknowns piling into one sector.
-        const memberGen = m.generation ?? selfGen
-        cat = memberGen % 2 === 0 ? 'paternal' : 'maternal'
       }
+      // Unrecognised/empty label (cousin, first-cousin, etc.) — resolved below via parent inheritance
     }
-    category.set(m.id, cat)
+    if (cat !== null) category.set(m.id, cat)
+  }
+
+  // ── 2b. Inherit category from parent or fall back to generation parity ─────
+  // Members not yet categorised (unrecognised label: cousin, first-cousin, empty, etc.)
+  // inherit the paternal/maternal side from their first already-categorised parent.
+  // Processing in ascending generation order ensures grandparents are resolved before
+  // grandchildren, so one pass is sufficient for typical family depths.
+  const uncategorisedMembers = members
+    .filter(m => m.id !== anchorId && !category.has(m.id))
+    .sort((a, b) => (a.generation ?? selfGen) - (b.generation ?? selfGen))
+
+  for (const m of uncategorisedMembers) {
+    let inheritedCat: UCategory | null = null
+    for (const pid of m.parentIds) {
+      const pc = category.get(pid)
+      if (pc === 'paternal' || pc === 'maternal') { inheritedCat = pc; break }
+    }
+    if (inheritedCat === null) {
+      const memberGen = m.generation ?? selfGen
+      inheritedCat = memberGen % 2 === 0 ? 'paternal' : 'maternal'
+    }
+    category.set(m.id, inheritedCat)
   }
 
   // ── 3. Group by (category, depth) for sector-ring placement ──────────────
@@ -387,7 +411,13 @@ export function buildUniverse(
         // Use enriched member list so label-derived virtual edges are traversable.
         // In anonymous explore mode there is no verified self perspective, so
         // relationship labels are intentionally hidden.
-        : (perspectiveSelfId ? (computeRelationLabel(perspectiveSelfId, m.id, enrichedMembers) ?? '') : ''),
+        : (perspectiveSelfId ? (
+          computeRelationLabel(perspectiveSelfId, m.id, enrichedMembers) ??
+          // Fallback: stored relationship was set by the tree owner (admin perspective).
+          // Show it formatted when BFS cannot reach the node structurally (e.g. when
+          // the member has a spouse that breaks isIsolated() but no path to self exists).
+          (m.relationship ? m.relationship.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '')
+        ) : ''),
       photoUrl: m.photoUrl || undefined,
       city: m.currentPlace ?? m.birthPlace ?? m.hometown ?? '',
       gotra: m.gotra ?? m.caste ?? '',
