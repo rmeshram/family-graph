@@ -586,6 +586,23 @@ function ConfettiBurst() {
 // ONE question per screen. Answer → node appears in tree behind you → next question.
 // 4 questions × ~8 seconds = ~32 seconds to a complete immediate family.
 
+// Steps that are "Do you have a X?" — show Yes/No first, reveal name input only on Yes.
+const YES_NO_STEPS = new Set(['spouse', 'child', 'sibling'])
+
+// Words that mean "I don't have one" — typed in the name field → auto-skip permanently.
+const SKIP_WORDS = new Set(['no', 'nope', 'n', 'none', 'na', 'n/a', 'skip', 'nahi', 'nahin', 'nobody', 'never', 'not yet'])
+
+// localStorage helpers — persist permanent "No" answers so steps never re-appear.
+const _wizardKey = (selfId: string) => `wizard_dismissed_${selfId}`
+function getWizardDismissed(selfId: string): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(_wizardKey(selfId)) ?? '[]') as string[]) }
+  catch { return new Set() }
+}
+function saveWizardDismissed(selfId: string, relType: string) {
+  const s = getWizardDismissed(selfId); s.add(relType)
+  try { localStorage.setItem(_wizardKey(selfId), JSON.stringify([...s])) } catch {}
+}
+
 const WIZARD_STEPS_DEF = [
   {
     relType: 'father' as QuickRelType,
@@ -659,9 +676,14 @@ interface SpeedWizardProps {
 }
 
 function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWizardProps) {
-  // Compute pending steps ONCE on mount so stepIdx always maps correctly.
+  // Permanently dismissed steps ("No" was answered) — loaded once from localStorage.
+  const [dismissed] = useState(() => getWizardDismissed(selfId))
+
+  // Compute pending steps ONCE on mount — exclude already-dismissed and structurally satisfied.
   const [pendingSteps] = useState(() =>
-    WIZARD_STEPS_DEF.filter(s => s.checkMissing(members, selfId))
+    WIZARD_STEPS_DEF
+      .filter(s => s.checkMissing(members, selfId))
+      .filter(s => !dismissed.has(s.relType))
   )
   const [stepIdx, setStepIdx] = useState(0)
   const [name, setName] = useState('')
@@ -669,6 +691,8 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [justAdded, setJustAdded] = useState(false)
+  // showInput: for yes/no steps, start hidden; reveal on "Yes". Always visible for parent steps.
+  const [showInput, setShowInput] = useState(() => !YES_NO_STEPS.has(pendingSteps[0]?.relType ?? ''))
   const inputRef = useRef<HTMLInputElement>(null)
 
   const totalSteps = WIZARD_STEPS_DEF.length
@@ -678,11 +702,18 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
   // Auto-focus + reset on step change
   useEffect(() => {
     if (!currentStep) return
+    const isYesNo = YES_NO_STEPS.has(currentStep.relType)
+    setShowInput(!isYesNo)
     setName(''); setGender(currentStep.defaultGender); setError('')
-    const t = setTimeout(() => inputRef.current?.focus(), 80)
+    const t = setTimeout(() => { if (!isYesNo) inputRef.current?.focus() }, 80)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepIdx])
+
+  // Auto-focus when input becomes visible after "Yes"
+  useEffect(() => {
+    if (showInput) { setTimeout(() => inputRef.current?.focus(), 60) }
+  }, [showInput])
 
   useEffect(() => { if (pendingSteps.length === 0) onDone() }, [pendingSteps.length, onDone])
 
@@ -691,9 +722,20 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
     else setStepIdx(i => i + 1)
   }, [stepIdx, pendingSteps.length, onDone])
 
+  // handleSkip: advance to next step. permanent=true saves to localStorage so it never shows again.
+  const handleSkip = useCallback((permanent = false) => {
+    if (permanent && currentStep) saveWizardDismissed(selfId, currentStep.relType)
+    advance()
+  }, [currentStep, selfId, advance])
+
   const handleSubmit = useCallback(async () => {
     if (!currentStep) return
     const trimmed = name.trim()
+    // If user typed a negative word ("no", "nope", etc.) treat it as a permanent skip.
+    if (SKIP_WORDS.has(trimmed.toLowerCase())) {
+      handleSkip(true)
+      return
+    }
     if (!trimmed) { setError('Please enter a name.'); return }
     setIsSubmitting(true); setError('')
     try {
@@ -705,7 +747,7 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
     } finally {
       setIsSubmitting(false)
     }
-  }, [currentStep, name, gender, selfId, onQuickAdd, advance])
+  }, [currentStep, name, gender, selfId, onQuickAdd, advance, handleSkip])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !isSubmitting) handleSubmit()
@@ -779,77 +821,99 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
                 </p>
               </div>
 
-              {/* Input */}
-              <div className="space-y-3">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={name}
-                  onChange={e => { setName(e.target.value); setError('') }}
-                  onKeyDown={handleKeyDown}
-                  placeholder={currentStep.placeholder}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  disabled={isSubmitting}
-                  className={cn(
-                    'w-full rounded-xl border bg-muted/40 px-4 py-3.5 text-[16px] font-medium placeholder:text-muted-foreground/40 outline-none transition-all',
-                    'focus:border-primary/60 focus:bg-background/80 focus:ring-2 focus:ring-primary/20',
-                    error ? 'border-destructive/60' : 'border-border/50',
-                  )}
-                />
+              {/* Yes/No prompt — shown for spouse/child/sibling before the name input */}
+              {!showInput ? (
+                <div className="mt-5 space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowInput(true)}
+                    className="w-full rounded-xl py-3.5 text-[15px] font-bold bg-primary text-primary-foreground hover:brightness-105 transition-all active:scale-[0.98]"
+                  >
+                    Yes, add them →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSkip(true)}
+                    className="w-full text-center text-[13px] text-muted-foreground hover:text-foreground transition-colors py-1.5"
+                  >
+                    No, I don't have one
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Input */}
+                  <div className="space-y-3">
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={name}
+                      onChange={e => { setName(e.target.value); setError('') }}
+                      onKeyDown={handleKeyDown}
+                      placeholder={currentStep.placeholder}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      disabled={isSubmitting}
+                      className={cn(
+                        'w-full rounded-xl border bg-muted/40 px-4 py-3.5 text-[16px] font-medium placeholder:text-muted-foreground/40 outline-none transition-all',
+                        'focus:border-primary/60 focus:bg-background/80 focus:ring-2 focus:ring-primary/20',
+                        error ? 'border-destructive/60' : 'border-border/50',
+                      )}
+                    />
 
-                {/* Gender picker — only for spouse / child (unknown gender) */}
-                {(currentStep.relType === 'spouse' || currentStep.relType === 'child') && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['male', 'female', 'other'] as const).map(g => (
-                      <button key={g} type="button" onClick={() => setGender(g)}
-                        className={cn(
-                          'rounded-xl border py-2 text-[11px] font-semibold transition-all',
-                          gender === g
-                            ? 'border-primary/60 bg-primary/10 text-primary'
-                            : 'border-border/40 bg-muted/30 text-muted-foreground hover:border-border/70',
-                        )}>
-                        {g === 'male' ? '♂ Male' : g === 'female' ? '♀ Female' : '⊙ Other'}
-                      </button>
-                    ))}
+                    {/* Gender picker — only for spouse / child (unknown gender) */}
+                    {(currentStep.relType === 'spouse' || currentStep.relType === 'child') && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {(['male', 'female', 'other'] as const).map(g => (
+                          <button key={g} type="button" onClick={() => setGender(g)}
+                            className={cn(
+                              'rounded-xl border py-2 text-[11px] font-semibold transition-all',
+                              gender === g
+                                ? 'border-primary/60 bg-primary/10 text-primary'
+                                : 'border-border/40 bg-muted/30 text-muted-foreground hover:border-border/70',
+                            )}>
+                            {g === 'male' ? '♂ Male' : g === 'female' ? '♀ Female' : '⊙ Other'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {error && <p className="text-[11px] text-destructive">{error}</p>}
                   </div>
-                )}
 
-                {error && <p className="text-[11px] text-destructive">{error}</p>}
-              </div>
-
-              {/* CTA buttons */}
-              <div className="mt-5 space-y-2.5">
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={isSubmitting || !name.trim()}
-                  className={cn(
-                    'w-full rounded-xl py-3.5 text-[15px] font-bold transition-all active:scale-[0.98]',
-                    justAdded
-                      ? 'bg-emerald-500 text-white'
-                      : 'bg-primary text-primary-foreground hover:brightness-105',
-                    'disabled:opacity-40 disabled:cursor-not-allowed',
-                  )}
-                >
-                  {isSubmitting ? (
-                    <span className="inline-flex items-center gap-2">
-                      <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                      Adding…
-                    </span>
-                  ) : justAdded ? (
-                    '✓ Added!'
-                  ) : (
-                    `Add ${currentStep.relType.charAt(0).toUpperCase() + currentStep.relType.slice(1)} →`
-                  )}
-                </button>
-                <button
-                  type="button" onClick={advance} disabled={isSubmitting}
-                  className="w-full text-center text-[12px] text-muted-foreground hover:text-foreground transition-colors py-1.5"
-                >
-                  {currentStep.skipLabel}
-                </button>
-              </div>
+                  {/* CTA buttons */}
+                  <div className="mt-5 space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={isSubmitting || !name.trim()}
+                      className={cn(
+                        'w-full rounded-xl py-3.5 text-[15px] font-bold transition-all active:scale-[0.98]',
+                        justAdded
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-primary text-primary-foreground hover:brightness-105',
+                        'disabled:opacity-40 disabled:cursor-not-allowed',
+                      )}
+                    >
+                      {isSubmitting ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                          Adding…
+                        </span>
+                      ) : justAdded ? (
+                        '✓ Added!'
+                      ) : (
+                        `Add ${currentStep.relType.charAt(0).toUpperCase() + currentStep.relType.slice(1)} →`
+                      )}
+                    </button>
+                    <button
+                      type="button" onClick={() => handleSkip(false)} disabled={isSubmitting}
+                      className="w-full text-center text-[12px] text-muted-foreground hover:text-foreground transition-colors py-1.5"
+                    >
+                      {currentStep.skipLabel}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </motion.div>
