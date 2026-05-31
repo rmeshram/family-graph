@@ -132,7 +132,18 @@ export function DuplicateMergeDialog({ open, onOpenChange, members, onMergeCompl
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? 'Merge failed')
+        // BOTH_CLAIMED: two real people claimed by different users — cannot auto-merge.
+        // Admin must revoke one claim first, then retry.
+        if (data.error === 'BOTH_CLAIMED' || res.status === 409) {
+          throw new Error(
+            `Cannot merge: both profiles are claimed by different family members.\n\n` +
+            `To proceed:\n` +
+            `1. Ask one person to go to their profile and click "Unclaim"\n` +
+            `2. Once unclaimed, retry the merge here\n\n` +
+            `(Claims from Moderation → Transfer tab can also be used)`
+          )
+        }
+        throw new Error(data.message ?? data.error ?? 'Merge failed')
       }
 
       setMerged(prev => new Set([...prev, pairKey]))

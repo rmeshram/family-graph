@@ -782,11 +782,11 @@ export default function FamilyGraphApp() {
   const settled = !authLoading && !dbLoading && !isDemoMode && members.length > 0
 
   // Relationship perspective is only meaningful when the viewer has a *claimed*
-  // self node. In soft_identified mode (joined via invite but not claimed), the
-  // tree's static relationship labels were authored from the admin's perspective
-  // and may be wrong for a different viewer. Gate to fully_claimed so unclaimed
-  // and browse users see a neutral, unlabelled tree (issues #3, #4).
-  const relationshipPerspectiveEnabled = isDemoMode || identityState === 'fully_claimed'
+  // Relationship labels: enabled for fully_claimed AND soft_identified users.
+  // In soft_identified mode the labels reflect the admin's perspective (e.g., "Father")
+  // which is correct for the node's role in the tree even if the viewer hasn't claimed yet.
+  // Hiding all labels left invited users with an unlabelled graph — worse UX than imprecise labels.
+  const relationshipPerspectiveEnabled = isDemoMode || identityState === 'fully_claimed' || identityState === 'soft_identified'
   // Relationship intelligence (Path Finder) is also enabled for soft_identified
   // users — their structural position in the tree is known even without a claimed
   // profile, so BFS-computed paths are meaningful.
