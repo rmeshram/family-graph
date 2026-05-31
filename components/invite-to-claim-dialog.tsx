@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { UserPlus, Send, RefreshCw, Copy, Check, Shield } from 'lucide-react'
+import { UserPlus, Send, RefreshCw, Copy, Check, Shield, MessageCircle } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -223,28 +223,39 @@ export function InviteToClaimDialog({
                 </div>
               </div>
 
+              {/* WhatsApp — primary CTA */}
+              <Button
+                size="sm"
+                className="w-full bg-[#25D366] hover:bg-[#1fba59] text-white font-medium"
+                onClick={() => {
+                  const waText = encodeURIComponent(
+                    `Hi ${member.name},\n\nI've added you to our family tree on Family Graph.\n\nJoin here: ${inviteLink}\n\nYou can:\n• View family connections\n• Add your family branch\n• Help complete our family tree`
+                  )
+                  window.open(`https://wa.me/?text=${waText}`, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                Invite via WhatsApp
+              </Button>
+
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   className="flex-1"
-                  onClick={refreshInvite}
-                  disabled={refreshing}
-                >
-                  {refreshing ? (
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                  )}
-                  Refresh link
-                </Button>
-                <Button
-                  size="sm"
-                  className="flex-1"
                   onClick={copyLink}
                 >
                   {copied ? <Check className="h-3.5 w-3.5 mr-1.5" /> : <Copy className="h-3.5 w-3.5 mr-1.5" />}
-                  {copied ? 'Copied!' : 'Copy & share'}
+                  {copied ? 'Copied!' : 'Copy link'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshInvite}
+                  disabled={refreshing}
+                  title="Refresh link"
+                >
+                  <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
                 </Button>
               </div>
             </div>

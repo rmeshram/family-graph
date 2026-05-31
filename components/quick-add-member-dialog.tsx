@@ -115,10 +115,20 @@ export function QuickAddMemberDialog({
     onOpenChange(open)
   }
 
+  // Names that are clearly not real people — placeholder or test values
+  const INVALID_NAME_BLOCKLIST = /^(yes|no|n\/a|na|nil|unknown|test|dummy|tbd|xxx|none|fake|temp|abc|xyz)$/i
+
   const validate = () => {
     let valid = true
-    if (!name.trim()) {
+    const trimmed = name.trim()
+    if (!trimmed) {
       setNameError('Name is required')
+      valid = false
+    } else if (!/\p{L}/u.test(trimmed)) {
+      setNameError('Please enter a valid person\'s name')
+      valid = false
+    } else if (INVALID_NAME_BLOCKLIST.test(trimmed)) {
+      setNameError('Please enter a valid person\'s name')
       valid = false
     } else {
       setNameError('')

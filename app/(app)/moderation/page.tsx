@@ -12,10 +12,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   ArrowLeft, Shield, CheckCircle2, XCircle, AlertTriangle,
-  Clock, RefreshCw, Loader2, ArrowRightLeft, Users, Archive, RotateCcw
+  Clock, RefreshCw, Loader2, ArrowRightLeft, Users, Archive, RotateCcw, GitMerge
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
+import { useMembers } from '@/hooks/use-members'
+import { DuplicateMergeDialog, detectDuplicatePairs } from '@/components/duplicate-merge-dialog'
 import type { PendingConflict } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -236,9 +238,19 @@ export default function ModerationPage() {
   const { user, familyId, profile, loading: authLoading } = useAuth()
   const supabase = createClient()
   const { toast } = useToast()
+  const { members } = useMembers(familyId)
 
   const role = (profile as any)?.role as string | undefined
   const canAccess = role === 'admin' || role === 'moderator'
+
+  // Duplicate pairs — computed from live members list
+  const duplicatePairs = detectDuplicatePairs(members)
+  const [dupMergeOpen, setDupMergeOpen] = useState(false)
+  const [dismissedPairs, setDismissedPairs] = useState<Set<string>>(new Set())
+  const visibleDupPairs = duplicatePairs.filter(p => {
+    const key = [p.primary.id, p.duplicate.id].sort().join('|')
+    return !dismissedPairs.has(key)
+  })
 
   const [claims, setClaims] = useState<ClaimRequest[]>([])
   const [conflicts, setConflicts] = useState<PendingConflict[]>([])
@@ -503,6 +515,17 @@ export default function ModerationPage() {
             )}
           </TabsTrigger>
           {role === 'admin' && (
+            <TabsTrigger value="duplicates" className="text-xs h-7 gap-1">
+              <GitMerge className="h-3 w-3" />
+              Duplicates
+              {visibleDupPairs.length > 0 && (
+                <span className="ml-1 rounded-full bg-orange-500/20 text-orange-400 text-[9px] font-bold px-1.5 py-px">
+                  {visibleDupPairs.length}
+                </span>
+              )}
+            </TabsTrigger>
+          )}
+          {role === 'admin' && (
             <TabsTrigger value="transfer" className="text-xs h-7 gap-1">
               <ArrowRightLeft className="h-3 w-3" />
               Transfer
@@ -577,6 +600,92 @@ export default function ModerationPage() {
           </ScrollArea>
         </TabsContent>
 
+        {/* Duplicate Pairs Tab (admin only) */}
+        {role === 'admin' && (
+          <TabsContent value="duplicates" className="flex-1 min-h-0 mt-0">
+            <ScrollArea className="h-full px-4 py-3">
+              {visibleDupPairs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                  <CheckCircle2 className="h-10 w-10 text-green-400/40" />
+                  <p className="text-sm font-medium text-muted-foreground">No duplicate pairs detected</p>
+                  <p className="text-xs text-muted-foreground/60">All members appear to be unique</p>
+                </div>
+              ) : (
+                <div className="space-y-3 pb-4">
+                  <p className="text-xs text-muted-foreground">
+                    {visibleDupPairs.length} pair{visibleDupPairs.length > 1 ? 's' : ''} of members may refer to the same person.
+                    Use "Merge" to combine them and preserve all connections.
+                  </p>
+                  {visibleDupPairs.map(pair => {
+                    const pairKey = [pair.primary.id, pair.duplicate.id].sort().join('|')
+                    const REASON_LABELS: Record<string, string> = {
+                      phone: 'same phone', email: 'same email', name: 'same name',
+                      name_fuzzy: 'similar name', first_name: 'same first name',
+                      name_phonetic: 'sounds alike', birth_year_exact: 'same birth year',
+                      birth_year_approx: 'close birth year', structural_parent: 'same parent slot',
+                      structural_spouse: 'same spouse slot',
+                    }
+                    return (
+                      <div key={pairKey} className="rounded-2xl border border-border/50 bg-card p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm">{pair.primary.name}</span>
+                              <GitMerge className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="font-semibold text-sm">{pair.duplicate.name}</span>
+                              <Badge variant="outline" className="text-[10px] border-orange-500/30 text-orange-400">
+                                {pair.score}% match
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {pair.reasons.map(r => REASON_LABELS[r] ?? r).join(' · ')}
+                            </p>
+                            <div className="flex gap-4 text-xs text-muted-foreground">
+                              <span>
+                                <span className="text-foreground font-medium">{pair.primary.name}</span>
+                                {pair.primary.birthYear ? ` · b.${pair.primary.birthYear}` : ''}
+                                {pair.primary.relationship ? ` · ${pair.primary.relationship}` : ''}
+                                {pair.primary.isClaimed ? ' · ✓ claimed' : ''}
+                              </span>
+                            </div>
+                            <div className="flex gap-4 text-xs text-muted-foreground">
+                              <span>
+                                <span className="text-foreground font-medium">{pair.duplicate.name}</span>
+                                {pair.duplicate.birthYear ? ` · b.${pair.duplicate.birthYear}` : ''}
+                                {pair.duplicate.relationship ? ` · ${pair.duplicate.relationship}` : ''}
+                                {pair.duplicate.isClaimed ? ' · ✓ claimed' : ''}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm" variant="outline"
+                            className="h-7 text-xs gap-1.5"
+                            onClick={() => setDupMergeOpen(true)}
+                          >
+                            <GitMerge className="h-3 w-3" />
+                            Merge
+                          </Button>
+                          <Button
+                            size="sm" variant="ghost"
+                            className="h-7 text-xs text-muted-foreground"
+                            onClick={() => {
+                              setDismissedPairs(prev => new Set([...prev, pairKey]))
+                            }}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+        )}
+
         {/* Transfer Tab (admin only) */}
         {role === 'admin' && (
           <TabsContent value="transfer" className="flex-1 min-h-0 mt-0">
@@ -638,6 +747,18 @@ export default function ModerationPage() {
           </TabsContent>
         )}
       </Tabs>
+
+      {/* Merge dialog — opened from Duplicate Pairs tab */}
+      <DuplicateMergeDialog
+        open={dupMergeOpen}
+        onOpenChange={setDupMergeOpen}
+        members={members}
+        onMergeComplete={(primaryId, absorbedId) => {
+          const key = [primaryId, absorbedId].sort().join('|')
+          setDismissedPairs(prev => new Set([...prev, key]))
+          toast({ title: 'Members merged', description: 'Duplicate profile absorbed into the primary node.' })
+        }}
+      />
     </div>
   )
 }

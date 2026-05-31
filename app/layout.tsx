@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import Script from 'next/script'
@@ -54,6 +54,13 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-icon.png',
   },
+}
+
+// viewport-fit=cover is required for env(safe-area-inset-*) to work on iPhone.
+// Without it, the CSS safe-area values are always 0 and zoom controls sit behind
+// the home indicator on devices with a notch / Dynamic Island.
+export const viewport: Viewport = {
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({

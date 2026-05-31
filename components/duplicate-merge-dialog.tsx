@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { scoreCandidate, tierColor } from '@/lib/match-detection'
 
-interface DuplicatePair {
+export interface DuplicatePair {
   primary: FamilyMember
   duplicate: FamilyMember
   score: number
@@ -41,7 +41,7 @@ interface Props {
 }
 
 /** Detect potential duplicate pairs within a member list using identity scoring. */
-function detectDuplicatePairs(members: FamilyMember[]): DuplicatePair[] {
+export function detectDuplicatePairs(members: FamilyMember[]): DuplicatePair[] {
   const pairs: DuplicatePair[] = []
   const seen = new Set<string>()
 

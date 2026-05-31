@@ -205,64 +205,74 @@ export async function POST(
       birth_year_hint?: number | null
     } | null = null
     if (!authorized) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inviteQ = admin.from('invite_links') as any
-      let claimInviteQuery = inviteQ
-        .select('id, consumed_at, expires_at, family_id, invite_type, node_id, birth_year_hint, code')
-        .eq('node_id', nodeId)
-        .eq('invite_type', 'node_claim')
-        .is('consumed_at', null)
-        .eq('family_id', (node as any).family_id)
-      if (inviteCode?.trim()) {
-        claimInviteQuery = claimInviteQuery.eq('code', inviteCode.trim().toUpperCase())
-      }
-      const { data: inviteRows, error: claimInviteErr } = await claimInviteQuery
-        .order('created_at', { ascending: false })
-        .limit(5)
-      if (claimInviteErr) {
-        return NextResponse.json(
-          { error: 'INVITE_LOOKUP_FAILED', message: 'Could not verify this invite right now. Please try again in a minute.' },
-          { status: 500 }
-        )
-      }
-      const now = Date.now()
-      const claimInvite = (inviteRows ?? []).find((row: any) => {
-        if (!row.expires_at) return true
-        return new Date(row.expires_at).getTime() > now
-      })
-      if (claimInvite) {
-        authorized = true
-        authorizedViaNodeClaimInvite = true
-        activeNodeClaimInvite = claimInvite
-      } else if (inviteCode?.trim()) {
-        const { data: suppliedInvite } = await inviteQ
-          .select('id, consumed_at, expires_at, node_id, family_id, invite_type')
+      // SECURITY: An invite code is mandatory for cross-family claims.
+      // Without a code we cannot verify the caller was the intended recipient —
+      // any user who discovers a nodeId could otherwise claim it as long as any
+      // outstanding invite exists for that node. Require the explicit code so
+      // that only the person who received the specific invite link can proceed.
+      if (!inviteCode?.trim()) {
+        // No code supplied — skip invite-based auth entirely.
+        // Phone-number bypass (gate C below) is still evaluated.
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inviteQ = admin.from('invite_links') as any
+        const claimInviteQuery = inviteQ
+          .select('id, consumed_at, expires_at, family_id, invite_type, node_id, birth_year_hint, code')
+          .eq('node_id', nodeId)
+          .eq('invite_type', 'node_claim')
+          .is('consumed_at', null)
+          .eq('family_id', (node as any).family_id)
           .eq('code', inviteCode.trim().toUpperCase())
-          .maybeSingle()
-        if (suppliedInvite) {
-          if ((suppliedInvite as any).invite_type !== 'node_claim') {
-            return NextResponse.json(
-              { error: 'INVALID_INVITE_TYPE', message: 'This invite cannot be used to claim a profile.' },
-              { status: 422 }
-            )
-          }
-          if ((suppliedInvite as any).node_id !== nodeId || (suppliedInvite as any).family_id !== (node as any).family_id) {
-            return NextResponse.json(
-              { error: 'INVITE_NODE_MISMATCH', message: 'This invite is for a different profile. Please open the exact invite link shared with you.' },
-              { status: 422 }
-            )
-          }
-          if ((suppliedInvite as any).consumed_at) {
-            return NextResponse.json(
-              { error: 'INVITE_ALREADY_USED', message: 'This invite has already been used. Ask the family admin to send a fresh invite.' },
-              { status: 410 }
-            )
-          }
-          if ((suppliedInvite as any).expires_at && new Date((suppliedInvite as any).expires_at).getTime() <= now) {
-            return NextResponse.json(
-              { error: 'INVITE_EXPIRED', message: 'This invite has expired. Ask the family admin to refresh it.' },
-              { status: 410 }
-            )
+        const { data: inviteRows, error: claimInviteErr } = await claimInviteQuery
+          .order('created_at', { ascending: false })
+          .limit(5)
+        if (claimInviteErr) {
+          return NextResponse.json(
+            { error: 'INVITE_LOOKUP_FAILED', message: 'Could not verify this invite right now. Please try again in a minute.' },
+            { status: 500 }
+          )
+        }
+        const now = Date.now()
+        const claimInvite = (inviteRows ?? []).find((row: any) => {
+          if (!row.expires_at) return true
+          return new Date(row.expires_at).getTime() > now
+        })
+        if (claimInvite) {
+          authorized = true
+          authorizedViaNodeClaimInvite = true
+          activeNodeClaimInvite = claimInvite
+        } else {
+          // Code was provided but no active invite matched — look up the code
+          // specifically to return a precise error (expired / consumed / wrong node).
+          const { data: suppliedInvite } = await inviteQ
+            .select('id, consumed_at, expires_at, node_id, family_id, invite_type')
+            .eq('code', inviteCode.trim().toUpperCase())
+            .maybeSingle()
+          if (suppliedInvite) {
+            if ((suppliedInvite as any).invite_type !== 'node_claim') {
+              return NextResponse.json(
+                { error: 'INVALID_INVITE_TYPE', message: 'This invite cannot be used to claim a profile.' },
+                { status: 422 }
+              )
+            }
+            if ((suppliedInvite as any).node_id !== nodeId || (suppliedInvite as any).family_id !== (node as any).family_id) {
+              return NextResponse.json(
+                { error: 'INVITE_NODE_MISMATCH', message: 'This invite is for a different profile. Please open the exact invite link shared with you.' },
+                { status: 422 }
+              )
+            }
+            if ((suppliedInvite as any).consumed_at) {
+              return NextResponse.json(
+                { error: 'INVITE_ALREADY_USED', message: 'This invite has already been used. Ask the family admin to send a fresh invite.' },
+                { status: 410 }
+              )
+            }
+            if ((suppliedInvite as any).expires_at && new Date((suppliedInvite as any).expires_at).getTime() <= now) {
+              return NextResponse.json(
+                { error: 'INVITE_EXPIRED', message: 'This invite has expired. Ask the family admin to refresh it.' },
+                { status: 410 }
+              )
+            }
           }
         }
       }

@@ -633,6 +633,21 @@ const WIZARD_STEPS_DEF = [
     checkMissing: (members: FamilyMember[], selfId: string) =>
       !members.some(m => m.parentIds.includes(selfId)),
   },
+  {
+    relType: 'sibling' as QuickRelType,
+    question: "Do you have any brothers or sisters?",
+    placeholder: "e.g. Priya Mehta",
+    defaultGender: '' as const,
+    emoji: '👫',
+    skipLabel: "No siblings",
+    checkMissing: (members: FamilyMember[], selfId: string) => {
+      const self = members.find(m => m.id === selfId); if (!self) return false
+      // No sibling = no other member that shares at least one of self's parents
+      return !(self.parentIds ?? []).length
+        ? false // if self has no parents yet, skip the siblings step too
+        : !members.some(m => m.id !== selfId && (self.parentIds ?? []).some(pid => (m.parentIds ?? []).includes(pid)))
+    },
+  },
 ]
 
 interface SpeedWizardProps {
@@ -929,7 +944,9 @@ export function HierarchicalTree({
       if (n.id === selfMemberId) { map.set(n.id, 'You'); return }
       const label = computeRelationLabel(selfMemberId, n.id, enrichedMembers)
       if (label) map.set(n.id, label)
-      else if (n.member.relationship) map.set(n.id, n.member.relationship as string)
+      // No fallback to n.member.relationship — that field is stored relative to the
+      // original tree creator, not relative to the current viewer. Showing it would
+      // display e.g. "spouse" on someone's Bhabhi from the viewer's perspective.
     })
     return map
   }, [nodes, selfMemberId, enrichedMembers])
@@ -962,7 +979,10 @@ export function HierarchicalTree({
     const maxX = Math.max(...xs) + NODE_W / 2 + 52
     const minY = Math.min(...ys) - NODE_H / 2 - 52
     const maxY = Math.max(...ys) + NODE_H / 2 + 80
-    const k = Math.min(dimensions.width / (maxX - minX), dimensions.height / (maxY - minY), 1.15)
+    const k = Math.max(
+      0.3, // never shrink below 30% — for very large trees users can scroll/zoom manually
+      Math.min(dimensions.width / (maxX - minX), dimensions.height / (maxY - minY), 1.15)
+    )
     const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2
     const px = -cx * k
     const py = -cy * k
@@ -1083,8 +1103,11 @@ export function HierarchicalTree({
 
   const handleSelectWithFocus = useCallback((id: string) => {
     onSelectMember(id)
+    // Also open the member detail panel so a single tap/click is enough to view
+    // a profile — users shouldn't need to find the hover-strip "View" button.
+    onOpenMemberDetail?.(id)
     focusOnNode(id)
-  }, [onSelectMember, focusOnNode])
+  }, [onSelectMember, onOpenMemberDetail, focusOnNode])
 
   const selfMember = selfMemberId ? members.find(m => m.id === selfMemberId) : undefined
 
@@ -1167,7 +1190,10 @@ export function HierarchicalTree({
       )}
 
       {/* ── Zoom controls (bottom-right) ─────────────────────────── */}
-      <div className="absolute bottom-4 right-4 z-40 flex flex-col gap-1.5 pointer-events-auto">
+      <div
+        className="absolute right-4 z-40 flex flex-col gap-1.5 pointer-events-auto"
+        style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
+      >
         {([
           { icon: ZoomIn, action: () => applyZoom(0.25, dimensions.width / 2, dimensions.height / 2), title: 'Zoom in' },
           { icon: ZoomOut, action: () => applyZoom(-0.25, dimensions.width / 2, dimensions.height / 2), title: 'Zoom out' },

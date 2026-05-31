@@ -23,16 +23,19 @@ import { SearchDialog } from '@/components/search-dialog'
 import { AIInsightsDialog } from '@/components/ai-insights-dialog'
 import { AddStoryDialog } from '@/components/add-story-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { DuplicateMergeDialog } from '@/components/duplicate-merge-dialog'
 import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-feed'
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipOnboardingDialog } from '@/components/relationship-onboarding-dialog'
 import { InviteToClaimDialog } from '@/components/invite-to-claim-dialog'
 import { SuggestedNodesBanner } from '@/components/suggested-nodes-banner'
+import { SuggestedMergesBanner } from '@/components/suggested-merges-banner'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { HierarchicalTree } from '@/components/hierarchical-tree'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
+import { DuplicateDetectionBanner } from '@/components/duplicate-detection-banner'
 import { OnboardingChecklist } from '@/components/onboarding-checklist'
 import { computePostAddSuggestions, getRelationshipBetweenPeople, type RelationshipSuggestion, type RelationshipAction, type RelationshipResult } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -54,7 +57,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Drawer, DrawerContent } from '@/components/ui/drawer'
 import { QRCodeSVG } from 'qrcode.react'
 import {
-  GitBranch, Sparkles, UserPlus, Search, Settings,
+  GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity,
   Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
@@ -586,6 +589,7 @@ export default function FamilyGraphApp() {
   const [isStoryDialogOpen, setIsStoryDialogOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<string>('general')
+  const [isDuplicateMergeOpen, setIsDuplicateMergeOpen] = useState(false)
 
   // Listen for fg:open-settings custom event fired from notification bell
   useEffect(() => {
@@ -603,6 +607,7 @@ export default function FamilyGraphApp() {
   const [inviteToClaimTarget, setInviteToClaimTarget] = useState<FamilyMember | null>(null)
   // ── Relationship intelligence suggestions ─────────────────────────────────
   const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
+  const [mergeScanTrigger, setMergeScanTrigger] = useState(0)
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
   const [viewMode, setViewMode] = useState<TreeViewMode>(
@@ -782,7 +787,10 @@ export default function FamilyGraphApp() {
   // and may be wrong for a different viewer. Gate to fully_claimed so unclaimed
   // and browse users see a neutral, unlabelled tree (issues #3, #4).
   const relationshipPerspectiveEnabled = isDemoMode || identityState === 'fully_claimed'
-  const relationshipIntelligenceEnabled = isDemoMode || identityState === 'fully_claimed'
+  // Relationship intelligence (Path Finder) is also enabled for soft_identified
+  // users — their structural position in the tree is known even without a claimed
+  // profile, so BFS-computed paths are meaningful.
+  const relationshipIntelligenceEnabled = isDemoMode || identityState === 'fully_claimed' || identityState === 'soft_identified'
   const fullRelationshipActivation = isDemoMode || identityState === 'fully_claimed'
 
   const displayMembers = useMemo(() => {
@@ -1023,12 +1031,25 @@ export default function FamilyGraphApp() {
         return
       }
       const newMember = await dbAddMember(memberData, user.id)
-      toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
+      toast({
+        title: `${memberData.name} added`,
+        description: 'Invite them to join the family tree?',
+        action: newMember ? (
+          <button
+            className="shrink-0 rounded border border-border bg-transparent px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+            onClick={() => setInviteToClaimTarget(newMember)}
+          >
+            Invite
+          </button>
+        ) : undefined,
+      })
       // Run relationship intelligence: surface actionable suggestions to the user
       if (newMember) {
         const allWithNew = [...members, newMember]
         const suggestions = computePostAddSuggestions(newMember.id, allWithNew)
         if (suggestions.length > 0) setPendingSuggestions(suggestions)
+        // Trigger duplicate scan after every successful add
+        setMergeScanTrigger(t => t + 1)
       }
     } catch (e: unknown) {
       toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
@@ -1107,9 +1128,17 @@ export default function FamilyGraphApp() {
 
     toast({
       title: `${QUICK_REL_LABELS[relType]} added`,
-      description: `${name} added to the tree.`,
+      description: 'Invite them to join the family tree?',
+      action: (
+        <button
+          className="shrink-0 rounded border border-border bg-transparent px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+          onClick={() => setInviteToClaimTarget(newMember)}
+        >
+          Invite
+        </button>
+      ),
     })
-  }, [familyId, user, members, dbAddMember, dbUpdateMember, toast])
+  }, [familyId, user, members, dbAddMember, dbUpdateMember, toast, setInviteToClaimTarget])
 
   const handleDeleteMember = useCallback(async () => {
     if (!selectedMemberId) return
@@ -1444,6 +1473,16 @@ export default function FamilyGraphApp() {
                 <span className="hidden sm:inline">Add</span>
               </Button>
             )}
+            {isAdmin && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setIsDuplicateMergeOpen(true)}>
+                    <GitMerge className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Check for duplicate profiles</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setIsSettingsOpen(true)}>
@@ -1516,6 +1555,19 @@ export default function FamilyGraphApp() {
           <div className="px-3 pt-2">
             <SuggestedNodesBanner onClaimed={() => refetchMembers()} />
           </div>
+        )}
+
+        {/* Duplicate member suggestions — shown after an add if pairs are detected */}
+        {!isDemoMode && !isViewer && (
+          <SuggestedMergesBanner
+            members={members}
+            scanTrigger={mergeScanTrigger}
+            isAdmin={isAdmin}
+            onMergeComplete={(_primaryId, absorbedId) => {
+              dbDeleteMember(absorbedId).catch(() => null)
+              refetchMembers()
+            }}
+          />
         )}
 
         {/* ── "Their tree just grew" real-time alert ───────────────── */}
@@ -1780,6 +1832,14 @@ export default function FamilyGraphApp() {
                 } : undefined}
                 onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
+                isAdmin={isAdmin}
+              />
+            )}
+
+            {/* ── Duplicate detection banner — admin-only, post-add scan ──────── */}
+            {!isDemoMode && isAdmin && members.length > 1 && (
+              <DuplicateDetectionBanner
+                members={members}
                 isAdmin={isAdmin}
               />
             )}
@@ -2220,6 +2280,14 @@ export default function FamilyGraphApp() {
       })()}
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
+      {isAdmin && (
+        <DuplicateMergeDialog
+          open={isDuplicateMergeOpen}
+          onOpenChange={setIsDuplicateMergeOpen}
+          members={members}
+          onMergeComplete={() => refetchMembers()}
+        />
+      )}
       <SettingsDialog
         open={isSettingsOpen}
         onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }}

@@ -165,7 +165,15 @@ export function enrichMembersWithDerivedEdges(
     } else if (['son', 'daughter', 'child'].includes(rel)) {
       addP(m.id, sid)
     } else if (['husband', 'wife', 'spouse'].includes(rel)) {
-      addSp(sid, m.id)
+      // Only create a virtual spouse edge to self if this member has NO structural
+      // spouse connection to another family member. If they already have a real
+      // spouse in the tree (e.g. bhabhi who is the structural wife of a sibling),
+      // adding a second virtual SPOUSE→self edge creates a spurious 1-hop path
+      // that makes BFS return "Husband/Wife" instead of the correct "Bhabhi/Jija".
+      const hasStructuralSpouseInFamily =
+        m.spouseIds.some(sp => memberIdSet.has(sp) && sp !== sid) ||
+        members.some(other => other.id !== m.id && other.id !== sid && (other.spouseIds ?? []).includes(m.id))
+      if (!hasStructuralSpouseInFamily) addSp(sid, m.id)
     } else if (['brother', 'sister', 'sibling'].includes(rel)) {
       addP(m.id, getSelfParentId())
     } else if (rel.includes('grandfather') || rel.includes('grandmother') || rel === 'grandparent') {
@@ -264,6 +272,12 @@ function edgeStepLabel(type: EngineEdgeType, target: FamilyMember): string {
   return m ? 'Husband' : f ? 'Wife' : 'Spouse'
 }
 
+// Labels with confidence below this threshold are suppressed. The BFS engine
+// returns Math.max(0.3, ...) for very distant/uncertain paths, so a threshold
+// of 0.5 filters out paths that are longer than 4–5 hops with no dictionary hit,
+// avoiding spurious "2nd Cousin Twice Removed" labels on weakly-connected members.
+const RELATION_CONFIDENCE_THRESHOLD = 0.5
+
 export function computeRelationLabel(
   fromId: string,
   toId: string,
@@ -277,12 +291,18 @@ export function computeRelationLabel(
   // "Cousin-in-law". Only enrich from `fromId` so virtual edges always point correctly.
   const enrichedFromSelf = enrichMembersWithDerivedEdges(members, fromId)
   const resultFromSelf = getRelationshipBetweenPeople(enrichedFromSelf, fromId, toId)
-  if (resultFromSelf.found) return resultFromSelf.relationship
+  if (resultFromSelf.found) {
+    if (resultFromSelf.confidence < RELATION_CONFIDENCE_THRESHOLD) return null
+    return resultFromSelf.relationship
+  }
 
   // Final fallback: raw structural edges only (no virtual enrichment).
   // Handles trees where every member has explicit parentIds/spouseIds.
   const resultRaw = getRelationshipBetweenPeople(members, fromId, toId)
-  if (resultRaw.found) return resultRaw.relationship
+  if (resultRaw.found) {
+    if (resultRaw.confidence < RELATION_CONFIDENCE_THRESHOLD) return null
+    return resultRaw.relationship
+  }
 
   return null
 }
