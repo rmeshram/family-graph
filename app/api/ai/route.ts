@@ -151,27 +151,84 @@ const TOOL_DECLARATIONS = [
 ]
 
 // ─── Gemini fetch with retry (handles 503 / 429 transient errors) ─────────────
-// Model fallback chain: gemini-2.0-flash → gemini-flash-latest
-const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-flash-latest']
+// Model fallback chain: gemini-2.0-flash → gemini-1.5-flash
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash']
 
 async function geminiPost(apiKey: string, body: Record<string, unknown>): Promise<Response> {
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      // Success or non-retriable error — return immediately
-      if (res.ok || (res.status !== 503 && res.status !== 429)) return res
-      // 503/429 — wait then retry (or fall through to next model on last attempt)
-      if (attempt < 2) await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ac = new AbortController()
+      const timer = setTimeout(() => ac.abort(), 18000) // 18 s hard cap per attempt
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: ac.signal,
+        })
+        clearTimeout(timer)
+        // Success or non-retriable error — return immediately
+        if (res.ok || (res.status !== 503 && res.status !== 429)) return res
+        // 503/429 — short wait then retry once more
+        if (attempt < 1) await new Promise(r => setTimeout(r, 500))
+      } catch {
+        clearTimeout(timer)
+      }
     }
   }
   // All models exhausted — return last response (caller handles non-ok)
   const lastUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODELS[GEMINI_MODELS.length - 1]}:generateContent?key=${apiKey}`
   return fetch(lastUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+}
+
+// ─── Gemini streaming: pipes tokens into a ReadableStream controller ──────────
+async function geminiStreamToController(
+  apiKey: string,
+  body: Record<string, unknown>,
+  controller: ReadableStreamDefaultController,
+  encoder: TextEncoder
+): Promise<void> {
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 20000)
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ac.signal,
+      })
+      clearTimeout(timer)
+      if (!res.ok || !res.body) continue
+
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop()!
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6).trim()
+          if (raw === '[DONE]') return
+          try {
+            const chunk = JSON.parse(raw)
+            const parts = chunk?.candidates?.[0]?.content?.parts as Array<{ text?: string }> | undefined
+            const text = parts?.find(p => p.text)?.text
+            if (text) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', text })}\n\n`))
+          } catch { /* skip malformed chunk */ }
+        }
+      }
+      return // streamed successfully
+    } catch {
+      clearTimeout(timer)
+    }
+  }
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -302,7 +359,7 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
       contents: geminiContents,
       tools: [{ function_declarations: TOOL_DECLARATIONS }],
       tool_config: { function_calling_config: { mode: 'AUTO' } },
-      generationConfig: { maxOutputTokens: 768, temperature: 0.6 },
+      generationConfig: { maxOutputTokens: 1024, temperature: 0.6 },
     }
 
     const pass1Res = await geminiPost(apiKey, pass1Body)
@@ -323,7 +380,7 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
       const { name, args } = funcCallPart.functionCall
       console.log(`[AI_TOOL] tool=${name} args=${JSON.stringify(args).slice(0, 200)} user=${user?.id ?? 'demo'}`)
 
-      // ── Resolve the tool ───────────────────────────────────────────────
+      // ── Resolve the tool (pure, instant) ──────────────────────────────
       let toolResult: string
       if (name === 'getRelationshipPath') {
         toolResult = resolveGetRelationshipPath(args, rawMembers)
@@ -335,48 +392,49 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
         toolResult = 'Tool not found.'
       }
 
-      // ── Pass 2: Send function response back to Gemini ──────────────────
-      // Use the actual candidate.content from pass1 (preserves thoughtSignature if present)
+      // ── Build pass 2 body ──────────────────────────────────────────────
       const pass2Contents: GeminiContent[] = [
         ...geminiContents,
         candidate.content as GeminiContent,
         { role: 'user', parts: [{ functionResponse: { name, response: { result: toolResult } } }] },
       ]
-
       const pass2Body = {
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: pass2Contents,
-        generationConfig: { maxOutputTokens: 768, temperature: 0.6 },
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.6 },
       }
 
-      const pass2Res = await geminiPost(apiKey, pass2Body)
-
-      if (!pass2Res.ok) {
-        const errText = await pass2Res.text()
-        console.error('[AI_ERROR] Gemini pass2 error:', pass2Res.status, errText.slice(0, 200))
-        return NextResponse.json({ response: null, reason: 'api_error' })
-      }
-
-      const pass2Data = await pass2Res.json()
-      // gemini-2.5-flash (thinking model) may include thought parts — find the text part explicitly
-      const pass2Parts: GeminiPart[] = pass2Data?.candidates?.[0]?.content?.parts ?? []
-      const finalText = pass2Parts.find(p => p.text)?.text ?? null
-
-      // Build clean args for the UI badge (string values only)
+      // ── Stream pass 2 — user sees tokens as they arrive ───────────────
       const displayArgs: Record<string, string> = {}
-      for (const [k, v] of Object.entries(args)) {
-        displayArgs[k] = String(v)
-      }
+      for (const [k, v] of Object.entries(args)) displayArgs[k] = String(v)
+      const toolCallInfo = { toolName: name, args: displayArgs, result: toolResult }
 
-      return NextResponse.json({
-        response: finalText,
-        toolCallInfo: { toolName: name, args: displayArgs, result: toolResult },
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream({
+        async start(controller) {
+          // Emit the tool call badge data first so the client can show it
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'tool', toolCallInfo })}\n\n`))
+          // Stream the natural-language response
+          await geminiStreamToController(apiKey, pass2Body, controller, encoder)
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
       })
     }
 
-    // ── No tool call — direct text response ───────────────────────────────
+    // ── No tool call — direct text response (already have full text) ──────
     const text = parts.find(p => p.text)?.text ?? null
-    return NextResponse.json({ response: text })
+    if (!text) return NextResponse.json({ response: null, reason: 'empty_response' })
+
+    // Return as SSE so the client can use the same streaming handler
+    const encoder = new TextEncoder()
+    return new Response(
+      encoder.encode(`data: ${JSON.stringify({ type: 'token', text })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`),
+      { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } },
+    )
   } catch (err) {
     console.error('[AI_ERROR] Route error:', err)
     return NextResponse.json({ response: null, reason: 'fetch_error' })

@@ -318,6 +318,8 @@ export interface AIMessage {
   actionType?: 'relationship' | 'add_member' | 'story' | 'search' | 'insight'
   toolCallInfo?: AIToolCallInfo
   isError?: boolean
+  /** True while the message is being streamed — hides it from conversation history export */
+  isStreaming?: boolean
 }
 
 export interface InviteLink {
