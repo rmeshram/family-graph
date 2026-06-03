@@ -15,6 +15,8 @@ export interface OnboardingChecklistProps {
   hasOtherClaims: boolean
   onAddMember: () => void
   onInvite: () => void
+  /** Called when a specific unclaimed member should be invited — opens the invite dialog for them */
+  onInviteMember?: (member: FamilyMember) => void
   onAddStory: () => void
   /** Optional — stored in localStorage to persist dismiss state */
   userId?: string
@@ -37,27 +39,29 @@ export function OnboardingChecklist({
   hasOtherClaims,
   onAddMember,
   onInvite,
+  onInviteMember,
   onAddStory,
   userId,
 }: OnboardingChecklistProps) {
   const [dismissed, setDismissed] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
-  // Persist dismiss state so it survives page refresh
+  // Persist dismiss state in sessionStorage — survives page refresh within a session
+  // but reappears on the next visit so users always have a path forward.
   const storageKey = userId ? `fg_checklist_dismissed_${userId}` : null
 
   useEffect(() => {
     if (!storageKey) return
     try {
-      const val = localStorage.getItem(storageKey)
+      const val = sessionStorage.getItem(storageKey)
       if (val === '1') setDismissed(true)
-    } catch { /* localStorage may be unavailable */ }
+    } catch { /* sessionStorage may be unavailable */ }
   }, [storageKey])
 
   const handleDismiss = () => {
     setDismissed(true)
     if (storageKey) {
-      try { localStorage.setItem(storageKey, '1') } catch { /* ignore */ }
+      try { sessionStorage.setItem(storageKey, '1') } catch { /* ignore */ }
     }
   }
 
@@ -82,41 +86,119 @@ export function OnboardingChecklist({
     [members, selfMember, selfParentIds]
   )
 
+  // Resolve specific family members so step labels can use real names
+  const father = useMemo(() =>
+    selfParentIds.length > 0
+      ? (members.find(m => selfParentIds.includes(m.id) && m.gender === 'male')
+        ?? members.find(m => selfParentIds.includes(m.id)))
+      : undefined,
+    [members, selfParentIds]
+  )
+  const mother = useMemo(() =>
+    selfParentIds.length > 0
+      ? members.find(m => selfParentIds.includes(m.id) && m.gender === 'female')
+      : undefined,
+    [members, selfParentIds]
+  )
+  const paternalGf = useMemo(() => {
+    if (!father) return null
+    const fps = father.parentIds ?? []
+    return members.find(m => fps.includes(m.id) && m.gender === 'male') ?? null
+  }, [father, members])
+  const paternalGm = useMemo(() => {
+    if (!father) return null
+    const fps = father.parentIds ?? []
+    return members.find(m => fps.includes(m.id) && m.gender === 'female') ?? null
+  }, [father, members])
+  const firstUnclaimedSibling = useMemo(() =>
+    members.find(m =>
+      !m.isClaimed && m.id !== selfMember?.id &&
+      m.id !== father?.id && m.id !== mother?.id &&
+      selfParentIds.length > 0 && m.parentIds?.some(pid => selfParentIds.includes(pid))
+    ) ?? null,
+    [members, selfMember, father, mother, selfParentIds]
+  )
+
   const steps: Step[] = [
     {
       id: 'created',
-      label: 'You\'re in!',
+      label: "You're added",
       detail: 'Profile created',
       emoji: '🌱',
       done: !!selfMember,
     },
     {
-      id: 'parent',
-      label: 'Add a parent',
-      detail: 'Father or mother',
+      id: 'father',
+      label: 'Add your father',
+      detail: 'Paternal ancestry',
+      emoji: '👨',
+      done: !!father,
+      cta: 'Add',
+      onCta: onAddMember,
+    },
+    {
+      id: 'mother',
+      label: 'Add your mother',
+      detail: 'Maternal ancestry',
+      emoji: '👩',
+      done: !!mother,
+      cta: 'Add',
+      onCta: onAddMember,
+    },
+    ...(father ? [{
+      id: 'paternal_gf',
+      label: `Add ${father.name.split(' ')[0]}'s father`,
+      detail: 'Your paternal grandfather',
       emoji: '👴',
-      done: hasParent,
-      cta: 'Add parent',
+      done: !!paternalGf,
+      cta: 'Add',
       onCta: onAddMember,
-    },
+    }] : []),
+    ...(father ? [{
+      id: 'paternal_gm',
+      label: `Add ${father.name.split(' ')[0]}'s mother`,
+      detail: 'Your paternal grandmother',
+      emoji: '👵',
+      done: !!paternalGm,
+      cta: 'Add',
+      onCta: onAddMember,
+    }] : []),
     {
-      id: 'relative',
-      label: 'Add a relative',
-      detail: 'Sibling, spouse or child',
-      emoji: '👨‍👩‍👧',
+      id: 'sibling',
+      label: 'Add a sibling or spouse',
+      detail: 'Immediate family',
+      emoji: '👫',
       done: hasChildOrSpouse || hasSibling,
-      cta: 'Add relative',
+      cta: 'Add',
       onCta: onAddMember,
     },
-    {
-      id: 'invite',
-      label: 'Invite a family member',
-      detail: 'Share the tree link',
+    ...(father ? [{
+      id: 'invite_father',
+      label: `Invite ${father.name.split(' ')[0]}`,
+      detail: 'Let them claim their profile',
       emoji: '💌',
-      done: hasOtherClaims,
+      done: !!father.isClaimed,
       cta: 'Invite',
-      onCta: onInvite,
-    },
+      onCta: onInviteMember ? () => onInviteMember(father!) : onInvite,
+    }] : []),
+    ...(mother ? [{
+      id: 'invite_mother',
+      label: `Invite ${mother.name.split(' ')[0]}`,
+      detail: 'Let them claim their profile',
+      emoji: '💌',
+      done: !!mother.isClaimed,
+      cta: 'Invite',
+      onCta: onInviteMember ? () => onInviteMember(mother!) : onInvite,
+    }] : []),
+    ...(firstUnclaimedSibling ? [{
+      id: 'invite_sibling',
+      label: `Invite ${firstUnclaimedSibling.name.split(' ')[0]}`,
+      detail: 'Share the family tree',
+      emoji: '📨',
+      done: false,
+      cta: 'Invite',
+      onCta: onInviteMember ? () => onInviteMember(firstUnclaimedSibling) : onInvite,
+    }] : []),
     {
       id: 'story',
       label: 'Add a memory',
@@ -132,9 +214,8 @@ export function OnboardingChecklist({
   const allDone = completedCount === steps.length
   const progressPct = (completedCount / steps.length) * 100
 
-  // Hide after all 5 steps done (user has completed the whole journey)
-  // or after manual dismiss
-  if (dismissed || (allDone && completedCount === steps.length)) return null
+  // Hide when all steps complete or manually dismissed
+  if (dismissed || allDone) return null
 
   // Find the first incomplete step (for the CTA)
   const nextStep = steps.find(s => !s.done)

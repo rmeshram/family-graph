@@ -600,7 +600,7 @@ function getWizardDismissed(selfId: string): Set<string> {
 }
 function saveWizardDismissed(selfId: string, relType: string) {
   const s = getWizardDismissed(selfId); s.add(relType)
-  try { localStorage.setItem(_wizardKey(selfId), JSON.stringify([...s])) } catch {}
+  try { localStorage.setItem(_wizardKey(selfId), JSON.stringify([...s])) } catch { }
 }
 
 const WIZARD_STEPS_DEF = [

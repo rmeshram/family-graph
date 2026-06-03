@@ -58,7 +58,7 @@ import { Drawer, DrawerContent } from '@/components/ui/drawer'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
-  X, Home, Activity,
+  X, Home, Activity, MessageCircle,
   Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
 } from 'lucide-react'
@@ -605,6 +605,8 @@ export default function FamilyGraphApp() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isRelOnboardingOpen, setIsRelOnboardingOpen] = useState(false)
   const [inviteToClaimTarget, setInviteToClaimTarget] = useState<FamilyMember | null>(null)
+  // Tracks which NBA label was dismissed — auto-resets when the recommended action changes
+  const [nbaDismissedLabel, setNbaDismissedLabel] = useState<string | null>(null)
   // ── Relationship intelligence suggestions ─────────────────────────────────
   const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
   const [mergeScanTrigger, setMergeScanTrigger] = useState(0)
@@ -878,6 +880,37 @@ export default function FamilyGraphApp() {
     members.some(m => m.isClaimed && m.claimedByUserId && m.claimedByUserId !== user?.id),
     [members, user?.id]
   )
+
+  // ── Next Best Action ─────────────────────────────────────────────────────────────────
+  // Computes ONE specific step the user should take right now, in priority order:
+  // add father → add mother → invite each parent → add grandparents → invite others.
+  // Pure client computation, no extra fetches. Returns null when tree is well-built.
+  const nextBestAction = useMemo<{
+    icon: string; label: string; sublabel: string
+    ctaText: string; isWhatsApp: boolean
+    targetMember: FamilyMember | null
+    anchorId: string | null; relType: QuickRelType | null
+  } | null>(() => {
+    if (isDemoMode || isViewer || !selfMember) return null
+    const sid = selfMember.id
+    const selfPids = selfMember.parentIds ?? []
+    const father = members.find(m => selfPids.includes(m.id) && m.gender === 'male')
+      ?? members.find(m => (m as any).relationship === 'father')
+    const mother = members.find(m => selfPids.includes(m.id) && m.gender === 'female')
+      ?? members.find(m => (m as any).relationship === 'mother')
+    if (!father) return { icon: '👨', label: 'Add your father', sublabel: 'Start building your ancestry', ctaText: 'Add Father', isWhatsApp: false, targetMember: null, anchorId: sid, relType: 'father' }
+    if (!mother) return { icon: '👩', label: 'Add your mother', sublabel: 'Complete your core family', ctaText: 'Add Mother', isWhatsApp: false, targetMember: null, anchorId: sid, relType: 'mother' }
+    if (!father.isClaimed) return { icon: '💌', label: `Invite ${father.name.split(' ')[0]} to claim their profile`, sublabel: 'They can add their parents & siblings', ctaText: 'Invite via WhatsApp', isWhatsApp: true, targetMember: father, anchorId: null, relType: null }
+    if (!mother.isClaimed) return { icon: '💌', label: `Invite ${mother.name.split(' ')[0]} to claim their profile`, sublabel: 'They can add their parents & siblings', ctaText: 'Invite via WhatsApp', isWhatsApp: true, targetMember: mother, anchorId: null, relType: null }
+    const fPids = father.parentIds ?? []
+    const hasPGf = fPids.some(pid => members.find(m => m.id === pid)?.gender === 'male')
+    const hasPGm = fPids.some(pid => members.find(m => m.id === pid)?.gender === 'female')
+    if (!hasPGf) return { icon: '👴', label: `Add ${father.name.split(' ')[0]}'s father`, sublabel: 'Your paternal grandfather', ctaText: 'Add Grandfather', isWhatsApp: false, targetMember: null, anchorId: father.id, relType: 'father' }
+    if (!hasPGm) return { icon: '👵', label: `Add ${father.name.split(' ')[0]}'s mother`, sublabel: 'Your paternal grandmother', ctaText: 'Add Grandmother', isWhatsApp: false, targetMember: null, anchorId: father.id, relType: 'mother' }
+    const unclaimedOther = members.find(m => !m.isClaimed && m.id !== sid && m.id !== father.id && m.id !== mother.id)
+    if (unclaimedOther) return { icon: '💌', label: `Invite ${unclaimedOther.name.split(' ')[0]} to join`, sublabel: "They haven't claimed their profile yet", ctaText: 'Invite via WhatsApp', isWhatsApp: true, targetMember: unclaimedOther, anchorId: null, relType: null }
+    return null
+  }, [isDemoMode, isViewer, selfMember, members])
 
   // Account-level privacy settings for the current user — used for contact info masking
   const { settings: myPrivacySettings } = usePrivacySettings(isDemoMode ? undefined : user?.id)
@@ -1568,6 +1601,44 @@ export default function FamilyGraphApp() {
               refetchMembers()
             }}
           />
+        )}
+
+        {/* ── Next Best Action strip — one specific step, highest priority ──────────────
+             Resets when the action changes (e.g. father added → strip reappears with mother).
+             Never shows two competing nudges at the same time.                               */}
+        {!isDemoMode && !isViewer && nextBestAction && nbaDismissedLabel !== nextBestAction.label && (
+          <div className="flex items-center gap-3 border-b border-primary/15 bg-primary/5 px-4 py-2.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm">
+              {nextBestAction.icon}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-foreground leading-snug truncate">{nextBestAction.label}</p>
+              <p className="text-[10px] text-muted-foreground">{nextBestAction.sublabel}</p>
+            </div>
+            <Button
+              size="sm"
+              className={cn(
+                'h-7 shrink-0 gap-1 text-xs font-semibold border-none whitespace-nowrap',
+                nextBestAction.isWhatsApp
+                  ? 'bg-[#25D366] hover:bg-[#1fba59] text-white'
+                  : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+              )}
+              onClick={() => {
+                if (nextBestAction.targetMember) setInviteToClaimTarget(nextBestAction.targetMember)
+                else if (nextBestAction.anchorId && nextBestAction.relType) handleAddRelative(nextBestAction.anchorId, nextBestAction.relType)
+              }}
+            >
+              {nextBestAction.isWhatsApp && <MessageCircle className="h-3 w-3" />}
+              {nextBestAction.ctaText}
+            </Button>
+            <button
+              onClick={() => setNbaDismissedLabel(nextBestAction.label)}
+              className="shrink-0 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              aria-label="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         )}
 
         {/* ── "Their tree just grew" real-time alert ───────────────── */}
@@ -2457,6 +2528,7 @@ export default function FamilyGraphApp() {
           hasOtherClaims={checklistHasOtherClaims}
           onAddMember={() => setIsAddDialogOpen(true)}
           onInvite={() => setShowInviteWidget(true)}
+          onInviteMember={(m) => setInviteToClaimTarget(m)}
           onAddStory={() => setIsStoryDialogOpen(true)}
           userId={user?.id}
         />
