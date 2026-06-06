@@ -84,7 +84,15 @@ export function ClaimNodeDialog({
     attemptsLeft?: number
     lockedUntil?: string
     claimedNodeId?: string
+    // SUGGEST_FAMILY_LINK fields
+    existingNodeId?: string
+    existingNodeName?: string
+    existingFamilyName?: string
+    targetNodeId?: string
+    targetFamilyName?: string
   } | null>(null)
+  const [connectingFamilies, setConnectingFamilies] = useState(false)
+  const [familyLinkResult, setFamilyLinkResult] = useState<{ autoAccepted: boolean; existingFamilyName: string } | null>(null)
   const [justClaimed, setJustClaimed] = useState(false)
   const [confidenceScore, setConfidenceScore] = useState<number | null>(null)
 
@@ -126,10 +134,41 @@ export function ClaimNodeDialog({
         attemptsLeft: err.attemptsLeft,
         lockedUntil: err.lockedUntil,
         claimedNodeId: err.claimedNodeId,
+        existingNodeId: err.existingNodeId,
+        existingNodeName: err.existingNodeName,
+        existingFamilyName: err.existingFamilyName,
+        targetNodeId: err.targetNodeId,
+        targetFamilyName: err.targetFamilyName,
       })
       if (err.confidenceScore != null) setConfidenceScore(err.confidenceScore)
     } finally {
       setClaiming(false)
+    }
+  }
+
+  const handleConnectFamilies = async () => {
+    if (!claimError?.existingNodeId || !claimError?.targetNodeId) return
+    setConnectingFamilies(true)
+    try {
+      const res = await fetch('/api/family-links/cross-claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          claimNodeId: claimError.targetNodeId,
+          existingNodeId: claimError.existingNodeId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setClaimError(prev => prev ? { ...prev, message: data.message ?? 'Could not connect families. Please try again.' } : prev)
+        return
+      }
+      setFamilyLinkResult({ autoAccepted: data.autoAccepted, existingFamilyName: claimError.existingFamilyName ?? 'your family' })
+      setClaimError(null)
+    } catch {
+      setClaimError(prev => prev ? { ...prev, message: 'Network error. Please try again.' } : prev)
+    } finally {
+      setConnectingFamilies(false)
     }
   }
 
@@ -255,10 +294,65 @@ export function ClaimNodeDialog({
                   {claimError.code === 'ALREADY_CLAIMED' && <p>This profile has already been claimed.</p>}
                   {claimError.code === 'RATE_LIMITED' && <p>Too many requests — try again in an hour.</p>}
                   {claimError.code === 'ALREADY_LINKED_IN_FAMILY' && <p>You already have a claimed profile in this family. Unlink it via Settings → Privacy first.</p>}
-                  {!['IDENTITY_MISMATCH', 'LOCKED_OUT', 'ALREADY_CLAIMED', 'RATE_LIMITED', 'ALREADY_LINKED_IN_FAMILY'].includes(claimError.code) && (
+                  {!['IDENTITY_MISMATCH', 'LOCKED_OUT', 'ALREADY_CLAIMED', 'RATE_LIMITED', 'ALREADY_LINKED_IN_FAMILY', 'SUGGEST_FAMILY_LINK'].includes(claimError.code) && (
                     <p>{claimError.message ?? 'Something went wrong. Please try again.'}</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Connect Families card — shown when user already has a node in another family */}
+            {claimError?.code === 'SUGGEST_FAMILY_LINK' && (
+              <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/30 p-4 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20">
+                    <GitBranch className="h-4 w-4 text-indigo-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-indigo-300">Connect both family trees</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      Your account is already linked to{' '}
+                      <strong className="text-foreground">{claimError.existingNodeName}</strong>{' '}
+                      in <strong className="text-foreground">{claimError.existingFamilyName}</strong>.
+                      Instead of claiming a separate profile, you can link both families —
+                      your profile will serve as the bridge between the two trees.
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-1 pl-1">
+                  {[
+                    '🌳  Both family trees stay intact — no data is lost',
+                    '🔗  Members from both families will appear linked',
+                    `🪢  "${claimError.targetFamilyName}" will see your family as connected relatives`,
+                  ].map(t => (
+                    <li key={t} className="text-xs text-muted-foreground">{t}</li>
+                  ))}
+                </ul>
+                {claimError.message && claimError.code === 'SUGGEST_FAMILY_LINK' && connectingFamilies === false && (
+                  <p className="text-xs text-destructive">{claimError.message}</p>
+                )}
+                <Button
+                  size="sm"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                  onClick={handleConnectFamilies}
+                  disabled={connectingFamilies}
+                >
+                  {connectingFamilies
+                    ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Connecting…</>
+                    : <><GitBranch className="h-3.5 w-3.5" />Connect Families</>
+                  }
+                </Button>
+              </div>
+            )}
+
+            {/* Family link success */}
+            {familyLinkResult && (
+              <div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-400">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <p>{familyLinkResult.autoAccepted
+                  ? 'Both family trees are now connected!'
+                  : `A connection request has been sent to ${familyLinkResult.existingFamilyName} admins. Once accepted, both trees will be linked.`
+                }</p>
               </div>
             )}
 
