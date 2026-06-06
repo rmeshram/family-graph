@@ -1941,6 +1941,14 @@ export default function FamilyGraphApp() {
                 } : undefined}
                 onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 isAdmin={isAdmin}
+                bottomControlsInset={
+                  // Push zoom/recenter controls above the mobile mission strip so they
+                  // are never hidden behind it. Strip is ~80px tall (button ~60px + wrapper padding).
+                  // Use safe-area-aware value: strip height + 8px breathing room.
+                  isMobile && !showMissionDrawer && missionProgress.done < missionProgress.total
+                    ? 88
+                    : undefined
+                }
               />
             )}
             {viewMode === 'universe' && (

@@ -107,6 +107,12 @@ export interface HierarchicalTreeProps {
   /** When true, forces the SpeedWizard to show even if the user already completed it this session */
   forceWizard?: boolean
   isAdmin?: boolean
+  /**
+   * Extra bottom inset (px) for the zoom/recenter controls and guide link.
+   * Pass the height of any sticky overlay (e.g. mobile mission strip) so controls
+   * are never hidden behind it. Defaults to 16 (1rem).
+   */
+  bottomControlsInset?: number
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -983,6 +989,7 @@ export function HierarchicalTree({
   onDelete,
   forceWizard = false,
   isAdmin = false,
+  bottomControlsInset,
 }: HierarchicalTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
@@ -1328,7 +1335,7 @@ export function HierarchicalTree({
       {/* ── Zoom controls (bottom-right) ─────────────────────────── */}
       <div
         className="absolute right-4 z-40 flex flex-col gap-1.5 pointer-events-auto"
-        style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
+        style={{ bottom: bottomControlsInset !== undefined ? bottomControlsInset : 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
       >
         {([
           { icon: ZoomIn, action: () => applyZoom(0.25, dimensions.width / 2, dimensions.height / 2), title: 'Zoom in' },
@@ -1348,7 +1355,8 @@ export function HierarchicalTree({
         <button
           type="button"
           onClick={() => { sessionStorage.removeItem('fg_wizard_done'); setWizardDone(false) }}
-          className="absolute bottom-4 left-4 z-40 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          className="absolute left-4 z-40 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          style={{ bottom: bottomControlsInset !== undefined ? bottomControlsInset : 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
         >
           Restart guide
         </button>
