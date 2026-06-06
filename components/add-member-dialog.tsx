@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FamilyMember } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -27,7 +27,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight, AlertTriangle, UserCheck } from 'lucide-react'
-import { scoreCandidate, normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
+import { scoreCandidate, normalizeStoredName, findExactNameMatch, type StructuralContext } from '@/lib/match-detection'
 import { getInverseRelationship } from '@/lib/relationship-engine'
 import { computeRelationLabel } from '@/lib/relation-engine'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -186,6 +186,43 @@ export function AddMemberDialog({
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
   const [bypassDuplicate, setBypassDuplicate] = useState(false)
 
+  // ── Phase 2: "Already in tree?" quick-select candidates ──────────────────
+  // When the user picks father / mother / spouse as relationship, surface existing
+  // members who already fill that structural role for the adder's siblings.
+  // Clicking one links that existing node instead of creating a duplicate.
+  const quickSelectCandidates = useMemo(() => {
+    if (editingMember || !selfMemberId) return []
+    const parentRel = /^(father|mother|step-?father|step-?mother)$/i
+    const spouseRel = /^(husband|wife|spouse|partner)$/i
+    if (!parentRel.test(relationship) && !spouseRel.test(relationship)) return []
+
+    const self = existingMembers.find(m => m.id === selfMemberId)
+    if (!self) return []
+
+    if (parentRel.test(relationship)) {
+      const isFather = /father/i.test(relationship)
+      // Collect all parent-generation members that siblings already have
+      const siblings = existingMembers.filter(m =>
+        m.id !== selfMemberId &&
+        m.parentIds.some(pid => self.parentIds.includes(pid))
+      )
+      const siblingParentIds = new Set(
+        [...siblings, self].flatMap(s => s.parentIds)
+      )
+      const candidates = existingMembers.filter(m =>
+        siblingParentIds.has(m.id) &&
+        (isFather ? m.gender !== 'female' : m.gender !== 'male')
+      )
+      return candidates
+    }
+
+    if (spouseRel.test(relationship)) {
+      const spouseIds = new Set(self.spouseIds ?? [])
+      return existingMembers.filter(m => spouseIds.has(m.id))
+    }
+    return []
+  }, [editingMember, selfMemberId, relationship, existingMembers])
+
   // Real-time exact-name duplicate detection — updates as the user types.
   // Only fires when birth years are NOT clearly different (same name + same/no DOB = likely duplicate).
   // Skips the member currently being edited so renaming with the same name is OK.
@@ -275,11 +312,16 @@ export function AddMemberDialog({
     (!selfMemberId && editingMember.relationship === 'self')
   )
 
+  // Names that are clearly not real people — placeholder or test values
+  const INVALID_NAME_BLOCKLIST = /^(yes|no|n\/a|na|nil|unknown|test|dummy|tbd|xxx|none|fake|temp|abc|xyz)$/i
+
   const validate = () => {
     const e: Record<string, string> = {}
     if (!name.trim()) e.name = 'Name is required'
     // Prevent pure-whitespace or symbol-only names
-    if (name.trim() && !/\p{L}/u.test(name.trim())) e.name = 'Name must contain at least one letter'
+    if (name.trim() && !/\p{L}/u.test(name.trim())) e.name = 'Please enter a valid person\'s name'
+    // Reject known placeholder / test values
+    if (name.trim() && INVALID_NAME_BLOCKLIST.test(name.trim())) e.name = 'Please enter a valid person\'s name'
     // Relationship is required for new members and when editing non-self nodes
     if (!isEditingSelf && !relationship)
       e.relationship = 'Please select how this person is related to you — it determines their position in the tree'
@@ -305,6 +347,23 @@ export function AddMemberDialog({
       if (spouseId && spouseId === selfId) e.spouseId = 'Cannot be your own spouse'
       if (fatherId && fatherId === selfId) e.fatherId = 'Cannot be your own parent'
       if (motherId && motherId === selfId) e.motherId = 'Cannot be your own parent'
+    }
+    // Issue 5: Structural duplicate-relationship enforcement
+    // A person cannot have two biological fathers or two biological mothers.
+    // Step/foster parents are OK in addition to a biological parent.
+    if (!editingMember && selfMemberId) {
+      const self = existingMembers.find(m => m.id === selfMemberId)
+      if (self) {
+        const existingParents = existingMembers.filter(m => (self.parentIds ?? []).includes(m.id))
+        const isBioFather = /^(father)$/i.test(relationship)
+        const isBioMother = /^(mother)$/i.test(relationship)
+        if (isBioFather && existingParents.some(p => p.gender === 'male')) {
+          e.relationship = `A father is already in your tree (${existingParents.find(p => p.gender === 'male')?.name ?? 'existing'}). Use stepfather or foster-father if this is a different role, or edit the existing father node instead.`
+        }
+        if (isBioMother && existingParents.some(p => p.gender === 'female')) {
+          e.relationship = `A mother is already in your tree (${existingParents.find(p => p.gender === 'female')?.name ?? 'existing'}). Use stepmother or foster-mother if this is a different role, or edit the existing mother node instead.`
+        }
+      }
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -349,6 +408,20 @@ export function AddMemberDialog({
         }
         // Different birth year — genuinely different person; skip fuzzy check and continue
       } else if (!bypassDuplicate) {
+        // Build structural context so sibling-parent / spouse signals boost score
+        const structuralCtx: StructuralContext | undefined = selfMemberId && relationship
+          ? {
+            addingRelationship: relationship,
+            addingForMemberId: selfMemberId,
+            allMembers: existingMembers.map(m => ({
+              id: m.id, name: m.name,
+              parentIds: m.parentIds ?? [],
+              spouseIds: m.spouseIds ?? [],
+              gender: m.gender ?? null,
+            })),
+          }
+          : undefined
+
         let bestMatch: DuplicateWarning | null = null
         for (const m of existingMembers) {
           const result = scoreCandidate(
@@ -357,7 +430,8 @@ export function AddMemberDialog({
               addedByName: null, relationship: m.relationship ?? null,
               birthYear: m.birthYear ?? null, phone: m.phone ?? null, email: m.email ?? null,
             },
-            { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null, phone: phone || null, email: email || null }
+            { name: storedName, birthYear: birthYear ? parseInt(birthYear) : null, phone: phone || null, email: email || null },
+            structuralCtx
           )
           if (result && result.confidenceScore >= 40) {
             const tier = result.confidenceScore >= 70 ? 'high' : 'medium'
@@ -553,6 +627,46 @@ export function AddMemberDialog({
                 )}
               </div>
             </div>
+
+            {/* ── Phase 2: "Already in tree?" quick-select ─────────────────────
+                Shown when the relationship implies a known structural slot
+                (father/mother/spouse) and siblings/self already have a match. */}
+            {!editingMember && quickSelectCandidates.length > 0 && (
+              <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 space-y-2">
+                <p className="text-xs font-medium text-primary flex items-center gap-1.5">
+                  <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                  Already added by a family member — is it one of these?
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {quickSelectCandidates.map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        // Link the existing node into the correct slot and close
+                        if (/father/i.test(relationship)) { setFatherId(m.id) }
+                        else if (/mother/i.test(relationship)) { setMotherId(m.id) }
+                        else if (/husband|wife|spouse|partner/i.test(relationship)) { setSpouseId(m.id) }
+                        // Clear name + warn since we're re-using an existing node
+                        setName('')
+                        setDuplicateWarning(null)
+                      }}
+                      className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/60 transition-colors"
+                    >
+                      <span className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                        {m.name.charAt(0).toUpperCase()}
+                      </span>
+                      {m.name}
+                      {m.birthYear ? <span className="text-muted-foreground">· {m.birthYear}</span> : null}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Tap a name to link that existing profile — no duplicate created.
+                  Or type a new name below if this is a different person.
+                </p>
+              </div>
+            )}
 
             {/* Basic Info */}
             <div className="space-y-4">
@@ -1104,6 +1218,12 @@ export function AddMemberDialog({
                     {duplicateWarning.member.birthYear ? ` · Born ${duplicateWarning.member.birthYear}` : ''}
                     {duplicateWarning.member.relationship ? ` · ${duplicateWarning.member.relationship}` : ''}
                   </p>
+                  {/* Show reason if structural */}
+                  {(duplicateWarning as any).reasons?.includes?.('structural_parent') && (
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Already added as a parent by another family member
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">

@@ -110,6 +110,15 @@ export function useInvites(familyId: string | null) {
       .eq('id', nodeId)
       .eq('claim_status' as any, 'unclaimed')
 
+    // Write audit log so notification bell shows "Invite sent for <name>"
+    // to family admins watching the Realtime claim_audit_log subscription.
+    await (supabase as any).from('claim_audit_log').insert({
+      node_id: nodeId,
+      action: 'invite_sent',
+      performed_by: userId,
+      meta: { code, identity_hint: nodeName },
+    }).then(() => {/* fire-and-forget — audit failure must not block the invite flow */ })
+
     return { ...data, link: `${getOrigin()}/join/${(data as any).code}` }
   }, [familyId, getCallerRole, supabase])
 

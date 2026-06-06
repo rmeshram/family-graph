@@ -23,17 +23,21 @@ import { SearchDialog } from '@/components/search-dialog'
 import { AIInsightsDialog } from '@/components/ai-insights-dialog'
 import { AddStoryDialog } from '@/components/add-story-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { DuplicateMergeDialog } from '@/components/duplicate-merge-dialog'
 import { LiveActivityFeed, PresenceAvatars } from '@/components/live-activity-feed'
 import { ClaimNodeDialog } from '@/components/claim-node-dialog'
 import { RelationshipOnboardingDialog } from '@/components/relationship-onboarding-dialog'
 import { InviteToClaimDialog } from '@/components/invite-to-claim-dialog'
 import { SuggestedNodesBanner } from '@/components/suggested-nodes-banner'
+import { SuggestedMergesBanner } from '@/components/suggested-merges-banner'
 import { RelationshipUniverse } from '@/components/relationship-universe'
 import { HierarchicalTree } from '@/components/hierarchical-tree'
 import { PathFinderPanel } from '@/components/path-finder-panel'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
+import { DuplicateDetectionBanner } from '@/components/duplicate-detection-banner'
 import { OnboardingChecklist } from '@/components/onboarding-checklist'
+import { FamilyMissionPanel } from '@/components/family-mission-panel'
 import { computePostAddSuggestions, getRelationshipBetweenPeople, type RelationshipSuggestion, type RelationshipAction, type RelationshipResult } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -54,8 +58,8 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Drawer, DrawerContent } from '@/components/ui/drawer'
 import { QRCodeSVG } from 'qrcode.react'
 import {
-  GitBranch, Sparkles, UserPlus, Search, Settings,
-  X, Home, Activity,
+  GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
+  X, Home, Activity, MessageCircle,
   Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
 } from 'lucide-react'
@@ -548,15 +552,23 @@ export default function FamilyGraphApp() {
     if (claimedId) setSelectedMemberId(claimedId)
   }, [])
 
-  // ?welcome=1 is appended by onboarding — show first-step overlay once
+  // ?welcome=1 is appended by onboarding — show first-step overlay once.
+  // ?view=tree (from sidebar "View Details") switches to the tree view with the Family Mission panel.
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (new URLSearchParams(window.location.search).get('welcome') === '1') {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('welcome') === '1') {
       setShowWelcomeOverlay(true)
-      // Clean the param from URL without a page reload
+    }
+    if (params.get('view') === 'tree') {
+      setViewMode('tree')
+    }
+    // Clean any handled params from URL without a page reload
+    if (params.has('welcome') || params.has('view')) {
       const url = new URL(window.location.href)
       url.searchParams.delete('welcome')
+      url.searchParams.delete('view')
       window.history.replaceState({}, '', url.toString())
     }
   }, [])
@@ -586,6 +598,7 @@ export default function FamilyGraphApp() {
   const [isStoryDialogOpen, setIsStoryDialogOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<string>('general')
+  const [isDuplicateMergeOpen, setIsDuplicateMergeOpen] = useState(false)
 
   // Listen for fg:open-settings custom event fired from notification bell
   useEffect(() => {
@@ -601,8 +614,11 @@ export default function FamilyGraphApp() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isRelOnboardingOpen, setIsRelOnboardingOpen] = useState(false)
   const [inviteToClaimTarget, setInviteToClaimTarget] = useState<FamilyMember | null>(null)
+  // Tracks which NBA label was dismissed — auto-resets when the recommended action changes
+  const [nbaDismissedLabel, setNbaDismissedLabel] = useState<string | null>(null)
   // ── Relationship intelligence suggestions ─────────────────────────────────
   const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
+  const [mergeScanTrigger, setMergeScanTrigger] = useState(1) // start at 1 so scan fires on first member load
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
   const [viewMode, setViewMode] = useState<TreeViewMode>(
@@ -777,12 +793,15 @@ export default function FamilyGraphApp() {
   const settled = !authLoading && !dbLoading && !isDemoMode && members.length > 0
 
   // Relationship perspective is only meaningful when the viewer has a *claimed*
-  // self node. In soft_identified mode (joined via invite but not claimed), the
-  // tree's static relationship labels were authored from the admin's perspective
-  // and may be wrong for a different viewer. Gate to fully_claimed so unclaimed
-  // and browse users see a neutral, unlabelled tree (issues #3, #4).
-  const relationshipPerspectiveEnabled = isDemoMode || identityState === 'fully_claimed'
-  const relationshipIntelligenceEnabled = isDemoMode || identityState === 'fully_claimed'
+  // Relationship labels: enabled for fully_claimed AND soft_identified users.
+  // In soft_identified mode the labels reflect the admin's perspective (e.g., "Father")
+  // which is correct for the node's role in the tree even if the viewer hasn't claimed yet.
+  // Hiding all labels left invited users with an unlabelled graph — worse UX than imprecise labels.
+  const relationshipPerspectiveEnabled = isDemoMode || identityState === 'fully_claimed' || identityState === 'soft_identified'
+  // Relationship intelligence (Path Finder) is also enabled for soft_identified
+  // users — their structural position in the tree is known even without a claimed
+  // profile, so BFS-computed paths are meaningful.
+  const relationshipIntelligenceEnabled = isDemoMode || identityState === 'fully_claimed' || identityState === 'soft_identified'
   const fullRelationshipActivation = isDemoMode || identityState === 'fully_claimed'
 
   const displayMembers = useMemo(() => {
@@ -859,6 +878,7 @@ export default function FamilyGraphApp() {
   // Contributors (non-viewer, non-admin logged-in users) can add AND delete unclaimed nodes.
   // Admins can delete any node (including claimed ones). Contributors are blocked from
   // archiving a node that is claimed by a different user — that requires an admin.
+  // The logged-in user's own node can NEVER be deleted by anyone.
   const canDelete = !isDemoMode && !isViewer && !!user
 
   // ── Progressive onboarding checklist data ────────────────────────────────────
@@ -870,6 +890,37 @@ export default function FamilyGraphApp() {
     members.some(m => m.isClaimed && m.claimedByUserId && m.claimedByUserId !== user?.id),
     [members, user?.id]
   )
+
+  // ── Next Best Action ─────────────────────────────────────────────────────────────────
+  // Computes ONE specific step the user should take right now, in priority order:
+  // add father → add mother → invite each parent → add grandparents → invite others.
+  // Pure client computation, no extra fetches. Returns null when tree is well-built.
+  const nextBestAction = useMemo<{
+    icon: string; label: string; sublabel: string
+    ctaText: string; isWhatsApp: boolean
+    targetMember: FamilyMember | null
+    anchorId: string | null; relType: QuickRelType | null
+  } | null>(() => {
+    if (isDemoMode || isViewer || !selfMember) return null
+    const sid = selfMember.id
+    const selfPids = selfMember.parentIds ?? []
+    const father = members.find(m => selfPids.includes(m.id) && m.gender === 'male')
+      ?? members.find(m => (m as any).relationship === 'father')
+    const mother = members.find(m => selfPids.includes(m.id) && m.gender === 'female')
+      ?? members.find(m => (m as any).relationship === 'mother')
+    if (!father) return { icon: '👨', label: 'Add your father', sublabel: 'Start building your ancestry', ctaText: 'Add Father', isWhatsApp: false, targetMember: null, anchorId: sid, relType: 'father' }
+    if (!mother) return { icon: '👩', label: 'Add your mother', sublabel: 'Complete your core family', ctaText: 'Add Mother', isWhatsApp: false, targetMember: null, anchorId: sid, relType: 'mother' }
+    if (!father.isClaimed) return { icon: '💌', label: `Invite ${father.name.split(' ')[0]} to claim their profile`, sublabel: 'They can add their parents & siblings', ctaText: 'Invite via WhatsApp', isWhatsApp: true, targetMember: father, anchorId: null, relType: null }
+    if (!mother.isClaimed) return { icon: '💌', label: `Invite ${mother.name.split(' ')[0]} to claim their profile`, sublabel: 'They can add their parents & siblings', ctaText: 'Invite via WhatsApp', isWhatsApp: true, targetMember: mother, anchorId: null, relType: null }
+    const fPids = father.parentIds ?? []
+    const hasPGf = fPids.some(pid => members.find(m => m.id === pid)?.gender === 'male')
+    const hasPGm = fPids.some(pid => members.find(m => m.id === pid)?.gender === 'female')
+    if (!hasPGf) return { icon: '👴', label: `Add ${father.name.split(' ')[0]}'s father`, sublabel: 'Your paternal grandfather', ctaText: 'Add Grandfather', isWhatsApp: false, targetMember: null, anchorId: father.id, relType: 'father' }
+    if (!hasPGm) return { icon: '👵', label: `Add ${father.name.split(' ')[0]}'s mother`, sublabel: 'Your paternal grandmother', ctaText: 'Add Grandmother', isWhatsApp: false, targetMember: null, anchorId: father.id, relType: 'mother' }
+    const unclaimedOther = members.find(m => !m.isClaimed && m.id !== sid && m.id !== father.id && m.id !== mother.id)
+    if (unclaimedOther) return { icon: '💌', label: `Invite ${unclaimedOther.name.split(' ')[0]} to join`, sublabel: "They haven't claimed their profile yet", ctaText: 'Invite via WhatsApp', isWhatsApp: true, targetMember: unclaimedOther, anchorId: null, relType: null }
+    return null
+  }, [isDemoMode, isViewer, selfMember, members])
 
   // Account-level privacy settings for the current user — used for contact info masking
   const { settings: myPrivacySettings } = usePrivacySettings(isDemoMode ? undefined : user?.id)
@@ -1023,12 +1074,25 @@ export default function FamilyGraphApp() {
         return
       }
       const newMember = await dbAddMember(memberData, user.id)
-      toast({ title: 'Member added', description: `${memberData.name} added to the tree.` })
+      toast({
+        title: `${memberData.name} added`,
+        description: 'Invite them to join the family tree?',
+        action: newMember ? (
+          <button
+            className="shrink-0 rounded border border-border bg-transparent px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+            onClick={() => setInviteToClaimTarget(newMember)}
+          >
+            Invite
+          </button>
+        ) : undefined,
+      })
       // Run relationship intelligence: surface actionable suggestions to the user
       if (newMember) {
         const allWithNew = [...members, newMember]
         const suggestions = computePostAddSuggestions(newMember.id, allWithNew)
         if (suggestions.length > 0) setPendingSuggestions(suggestions)
+        // Trigger duplicate scan after every successful add
+        setMergeScanTrigger(t => t + 1)
       }
     } catch (e: unknown) {
       toast({ title: 'Failed', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
@@ -1099,17 +1163,35 @@ export default function FamilyGraphApp() {
     const newMember = await dbAddMember(memberData, user.id)
     if (!newMember) return
 
-    // For a new parent (father/mother): patch the anchor so it recognises the new parent
+    // Patch anchor so graph edges are bidirectional for every relationship type
     if (relType === 'father' || relType === 'mother') {
+      // New parent: anchor must recognise the new node as its parent
       const updated = [...new Set([...(anchor.parentIds ?? []), newMember.id])]
       await dbUpdateMember(anchorId, { parentIds: updated })
+    } else if (relType === 'spouse') {
+      // New spouse: anchor must also list the new node as a spouse.
+      // Without this the graph has a one-sided edge → BFS traversal fails →
+      // the spouse appears as "Father" (or no label) from the anchor's perspective.
+      const updated = [...new Set([...(anchor.spouseIds ?? []), newMember.id])]
+      await dbUpdateMember(anchorId, { spouseIds: updated })
+    } else if (relType === 'sibling') {
+      // New sibling via shared parent: ensure the new node also lists the shared parent
+      // (it already has it via parentIds set above, but double-check for safety)
     }
 
     toast({
       title: `${QUICK_REL_LABELS[relType]} added`,
-      description: `${name} added to the tree.`,
+      description: 'Invite them to join the family tree?',
+      action: (
+        <button
+          className="shrink-0 rounded border border-border bg-transparent px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+          onClick={() => setInviteToClaimTarget(newMember)}
+        >
+          Invite
+        </button>
+      ),
     })
-  }, [familyId, user, members, dbAddMember, dbUpdateMember, toast])
+  }, [familyId, user, members, dbAddMember, dbUpdateMember, toast, setInviteToClaimTarget])
 
   const handleDeleteMember = useCallback(async () => {
     if (!selectedMemberId) return
@@ -1119,6 +1201,12 @@ export default function FamilyGraphApp() {
       return
     }
     const memberToDelete = members.find(m => m.id === selectedMemberId)
+    // Issue 3: The logged-in user's own node must never be deleted
+    if (selectedMemberId === selfMember?.id) {
+      toast({ title: 'Cannot archive your own profile', description: 'Your node is the anchor of the family tree and cannot be removed. Contact support if you need to transfer ownership.', variant: 'destructive' })
+      setIsDeleteDialogOpen(false)
+      return
+    }
     // Contributors may not archive a node claimed by a different user
     if (!isAdmin && memberToDelete?.isClaimed && memberToDelete?.claimedByUserId !== user?.id) {
       toast({ title: 'Cannot archive', description: 'This profile is claimed by another member. Ask a family admin to archive it.', variant: 'destructive' })
@@ -1444,6 +1532,16 @@ export default function FamilyGraphApp() {
                 <span className="hidden sm:inline">Add</span>
               </Button>
             )}
+            {isAdmin && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setIsDuplicateMergeOpen(true)}>
+                    <GitMerge className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Check for duplicate profiles</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setIsSettingsOpen(true)}>
@@ -1486,30 +1584,7 @@ export default function FamilyGraphApp() {
           </div>
         </header>
 
-        {/* ── Profile completeness nudge ───────────────────────────── */}
-        {!isDemoMode && selfMember && (() => {
-          const { score, missing } = computeProfileCompleteness(selfMember)
-          if (missing.length === 0) return null
-          return (
-            <div className="flex items-center gap-3 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="font-medium text-amber-400">{score}% complete</span>
-                <span className="text-muted-foreground hidden sm:inline">— add: {missing.join(', ')}</span>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10 shrink-0"
-                onClick={() => { setEditingMember(selfMember); handleSelectMember(selfMember.id) }}
-              >
-                Complete Profile
-              </Button>
-            </div>
-          )
-        })()}
-
-        {/* ── Pending family link requests banner (logged-in only) ── */}
-        {!isDemoMode && <FamilyLinkRequestsBanner familyId={familyId ?? null} />}
+        {/* Profile completeness + FamilyLinkRequestsBanner removed — surfaced in sidebar Family Health widget instead */}
 
         {/* People You May Know — only once identity is fully verified */}
         {!isDemoMode && fullRelationshipActivation && (
@@ -1517,6 +1592,57 @@ export default function FamilyGraphApp() {
             <SuggestedNodesBanner onClaimed={() => refetchMembers()} />
           </div>
         )}
+
+        {/* Duplicate member suggestions — shown after an add if pairs are detected */}
+        {!isDemoMode && !isViewer && (
+          <SuggestedMergesBanner
+            members={members}
+            scanTrigger={mergeScanTrigger}
+            isAdmin={isAdmin}
+            onMergeComplete={(_primaryId, absorbedId) => {
+              dbDeleteMember(absorbedId).catch(() => null)
+              refetchMembers()
+            }}
+          />
+        )}
+
+        {/* ── Next Best Action strip — one specific step, highest priority ──────────────
+             Resets when the action changes (e.g. father added → strip reappears with mother).
+             Never shows two competing nudges at the same time.                               */}
+        {/* {!isDemoMode && !isViewer && nextBestAction && nbaDismissedLabel !== nextBestAction.label && (
+          <div className="flex items-center gap-3 border-b border-primary/15 bg-primary/5 px-4 py-2.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm">
+              {nextBestAction.icon}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-foreground leading-snug truncate">{nextBestAction.label}</p>
+              <p className="text-[10px] text-muted-foreground">{nextBestAction.sublabel}</p>
+            </div>
+            <Button
+              size="sm"
+              className={cn(
+                'h-7 shrink-0 gap-1 text-xs font-semibold border-none whitespace-nowrap',
+                nextBestAction.isWhatsApp
+                  ? 'bg-[#25D366] hover:bg-[#1fba59] text-white'
+                  : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+              )}
+              onClick={() => {
+                if (nextBestAction.targetMember) setInviteToClaimTarget(nextBestAction.targetMember)
+                else if (nextBestAction.anchorId && nextBestAction.relType) handleAddRelative(nextBestAction.anchorId, nextBestAction.relType)
+              }}
+            >
+              {nextBestAction.isWhatsApp && <MessageCircle className="h-3 w-3" />}
+              {nextBestAction.ctaText}
+            </Button>
+            <button
+              onClick={() => setNbaDismissedLabel(nextBestAction.label)}
+              className="shrink-0 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              aria-label="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )} */}
 
         {/* ── "Their tree just grew" real-time alert ───────────────── */}
         {newMemberAlert && (
@@ -1671,10 +1797,16 @@ export default function FamilyGraphApp() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 pointer-events-none select-none z-10">
                   {/* Ghost parents */}
                   <div className="flex items-end gap-12">
-                    {[{ label: 'Add Father', rel: 'father', color: 'blue' }, { label: 'Add Mother', rel: 'mother', color: 'pink' }].map(slot => (
+                    {([{ label: 'Add Father', rel: 'father' as QuickRelType, color: 'blue' }, { label: 'Add Mother', rel: 'mother' as QuickRelType, color: 'pink' }]).map(slot => (
                       <div key={slot.rel} className="flex flex-col items-center gap-2 pointer-events-auto">
                         <button
-                          onClick={() => setIsAddDialogOpen(true)}
+                          onClick={() => {
+                            if (selfMember && handleAddRelative) {
+                              handleAddRelative(selfMember.id, slot.rel)
+                            } else {
+                              setIsAddDialogOpen(true)
+                            }
+                          }}
                           className={`flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed transition-all hover:scale-105 ${slot.color === 'blue' ? 'border-blue-500/40 bg-blue-500/5 hover:border-blue-500/70 hover:bg-blue-500/10' : 'border-pink-500/40 bg-pink-500/5 hover:border-pink-500/70 hover:bg-pink-500/10'}`}
                         >
                           <span className="text-xl">＋</span>
@@ -1756,7 +1888,11 @@ export default function FamilyGraphApp() {
                   if (m && !m.isClaimed) setInviteToClaimTarget(m)
                 } : undefined}
                 onClaimNode={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
-                onDelete={canDelete ? (memberId) => { setSelectedMemberId(memberId); setIsDeleteDialogOpen(true) } : undefined}
+                onDelete={canDelete ? (memberId) => {
+                  if (memberId === selfMember?.id) return // Issue 3: own node is permanent
+                  setSelectedMemberId(memberId)
+                  setIsDeleteDialogOpen(true)
+                } : undefined}
                 onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 isAdmin={isAdmin}
               />
@@ -1780,6 +1916,14 @@ export default function FamilyGraphApp() {
                 } : undefined}
                 onClaim={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
                 loading={!isDemoMode && (dbLoading || authLoading)}
+                isAdmin={isAdmin}
+              />
+            )}
+
+            {/* ── Duplicate detection banner — admin-only, post-add scan ──────── */}
+            {!isDemoMode && isAdmin && members.length > 1 && (
+              <DuplicateDetectionBanner
+                members={members}
                 isAdmin={isAdmin}
               />
             )}
@@ -1999,6 +2143,22 @@ export default function FamilyGraphApp() {
             )
           )}
 
+          {/* Family Mission Panel — persistent right sidebar in tree view.
+              Hidden when a higher-priority panel (AI, Invite, PathFinder, MemberDetail) opens. */}
+          {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
+            && !showAIWidget && !showInviteWidget && !selectedMember && (
+              <FamilyMissionPanel
+                selfMember={selfMember}
+                members={members}
+                isAdmin={isAdmin}
+                familyId={familyId}
+                onAddMember={() => setIsAddDialogOpen(true)}
+                onAddStory={() => setIsStoryDialogOpen(true)}
+                onInviteMember={(m) => setInviteToClaimTarget(m)}
+                hasStories={checklistHasStories}
+              />
+            )}
+
           {/* Member Detail — aside on desktop, bottom sheet on mobile */}
           {selectedMemberDisplay && !showAIWidget && !showInviteWidget && !pathFinderOpen && !isMobile && (
             <aside className="w-80 shrink-0 xl:w-96 h-full overflow-hidden">
@@ -2010,7 +2170,7 @@ export default function FamilyGraphApp() {
                   !isViewer &&
                   (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                 ) ? () => setEditingMember(selectedMember) : undefined}
-                onDelete={canDelete ? () => setIsDeleteDialogOpen(true) : undefined}
+                onDelete={canDelete && selectedMemberDisplay?.id !== selfMember?.id ? () => setIsDeleteDialogOpen(true) : undefined}
                 onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                 onInvite={!isDemoMode && !isViewer && !selectedMemberDisplay.isClaimed
                   ? () => setInviteToClaimTarget(selectedMember)
@@ -2068,6 +2228,7 @@ export default function FamilyGraphApp() {
                 handleOpenPathFinder(id)
               } : undefined}
               onDelete={canDelete ? (id) => {
+                if (id === selfMember?.id) return // Issue 3: own node is permanent
                 setSelectedMemberId(id)
                 setMobileMenuMemberId(null)
                 setLongPressMemberId(null)
@@ -2114,7 +2275,7 @@ export default function FamilyGraphApp() {
                         !isViewer &&
                         (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                       ) ? () => setEditingMember(selectedMember) : undefined}
-                      onDelete={canDelete ? () => setIsDeleteDialogOpen(true) : undefined}
+                      onDelete={canDelete && selectedMember?.id !== selfMember?.id ? () => setIsDeleteDialogOpen(true) : undefined}
                       onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                       onInvite={!isDemoMode && !isViewer && selectedMember && !selectedMemberDisplay.isClaimed
                         ? () => setInviteToClaimTarget(selectedMember)
@@ -2220,6 +2381,14 @@ export default function FamilyGraphApp() {
       })()}
       <AIInsightsDialog open={isAIInsightsOpen} onOpenChange={setIsAIInsightsOpen} members={members} />
       <AddStoryDialog open={isStoryDialogOpen} onOpenChange={setIsStoryDialogOpen} member={selectedMember || null} onAdd={handleAddStory} />
+      {isAdmin && (
+        <DuplicateMergeDialog
+          open={isDuplicateMergeOpen}
+          onOpenChange={setIsDuplicateMergeOpen}
+          members={members}
+          onMergeComplete={() => refetchMembers()}
+        />
+      )}
       <SettingsDialog
         open={isSettingsOpen}
         onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }}
@@ -2380,19 +2549,8 @@ export default function FamilyGraphApp() {
         </div>
       )}
 
-      {/* Progressive onboarding checklist — visible to fully_claimed users only */}
-      {!isDemoMode && !isViewer && identityState === 'fully_claimed' && selfMember && (
-        <OnboardingChecklist
-          selfMember={selfMember}
-          members={members}
-          hasStories={checklistHasStories}
-          hasOtherClaims={checklistHasOtherClaims}
-          onAddMember={() => setIsAddDialogOpen(true)}
-          onInvite={() => setShowInviteWidget(true)}
-          onAddStory={() => setIsStoryDialogOpen(true)}
-          userId={user?.id}
-        />
-      )}
+      {/* OnboardingChecklist removed — Family Mission panel in the right sidebar covers the same tasks
+          and is more prominent + includes People Waiting to Join */}
     </TooltipProvider>
   )
 }

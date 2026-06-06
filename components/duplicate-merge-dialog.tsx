@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { scoreCandidate, tierColor } from '@/lib/match-detection'
 
-interface DuplicatePair {
+export interface DuplicatePair {
   primary: FamilyMember
   duplicate: FamilyMember
   score: number
@@ -41,7 +41,7 @@ interface Props {
 }
 
 /** Detect potential duplicate pairs within a member list using identity scoring. */
-function detectDuplicatePairs(members: FamilyMember[]): DuplicatePair[] {
+export function detectDuplicatePairs(members: FamilyMember[]): DuplicatePair[] {
   const pairs: DuplicatePair[] = []
   const seen = new Set<string>()
 
@@ -50,8 +50,14 @@ function detectDuplicatePairs(members: FamilyMember[]): DuplicatePair[] {
       const a = members[i]
       const b = members[j]
 
-      // Skip already-claimed nodes (user has already confirmed their identity)
-      if (a.isClaimed && b.isClaimed) continue
+      // Skip already-claimed nodes only when they are claimed by DIFFERENT users —
+      // two nodes each claimed by a different real person cannot be the same person.
+      // If both are claimed by the SAME user, or one/both are unclaimed, still check.
+      if (
+        a.isClaimed && b.isClaimed &&
+        a.claimedByUserId && b.claimedByUserId &&
+        a.claimedByUserId !== b.claimedByUserId
+      ) continue
 
       const key = [a.id, b.id].sort().join('|')
       if (seen.has(key)) continue
@@ -132,7 +138,18 @@ export function DuplicateMergeDialog({ open, onOpenChange, members, onMergeCompl
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? 'Merge failed')
+        // BOTH_CLAIMED: two real people claimed by different users — cannot auto-merge.
+        // Admin must revoke one claim first, then retry.
+        if (data.error === 'BOTH_CLAIMED' || res.status === 409) {
+          throw new Error(
+            `Cannot merge: both profiles are claimed by different family members.\n\n` +
+            `To proceed:\n` +
+            `1. Ask one person to go to their profile and click "Unclaim"\n` +
+            `2. Once unclaimed, retry the merge here\n\n` +
+            `(Claims from Moderation → Transfer tab can also be used)`
+          )
+        }
+        throw new Error(data.message ?? data.error ?? 'Merge failed')
       }
 
       setMerged(prev => new Set([...prev, pairKey]))

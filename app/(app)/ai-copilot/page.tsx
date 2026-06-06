@@ -375,7 +375,7 @@ export default function AICopilotPage() {
     // Build new history with this user turn appended
     const updatedHistory = [...conversationHistory, { role: 'user', content: query }]
 
-    let aiContent: string
+    let aiContent = ''
     let relatedIds: string[] = []
     let toolCallInfo: AIToolCallInfo | undefined
     let isError = false
@@ -390,30 +390,91 @@ export default function AICopilotPage() {
         }),
       })
 
-      const data = await res.json()
+      const contentType = res.headers.get('Content-Type') ?? ''
 
-      if (data.toolCallInfo) {
-        setThinkingStatus('Looking up relationship...')
-        toolCallInfo = data.toolCallInfo as AIToolCallInfo
-      }
+      if (contentType.includes('text/event-stream') && res.body) {
+        // ── SSE streaming path — show message immediately, fill tokens in real-time ──
+        const aiMsgId = (Date.now() + 1).toString()
+        setMessages(prev => [...prev, {
+          id: aiMsgId, role: 'ai', content: '', timestamp: new Date().toISOString(), isStreaming: true,
+        }])
+        setIsThinking(false)
 
-      if (data.response) {
-        aiContent = data.response
-        setAiMode('gemini')
-        setConversationHistory([
-          ...updatedHistory,
-          { role: 'model', content: data.response },
-        ])
-      } else {
-        // no_api_key or api_error — local fallback
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let accumulated = ''
+        let streamedToolCallInfo: AIToolCallInfo | undefined
+        let streamSuccess = false
+
+        readLoop: while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const chunks = buffer.split('\n\n')
+          buffer = chunks.pop()!
+          for (const chunk of chunks) {
+            if (!chunk.startsWith('data: ')) continue
+            try {
+              const event = JSON.parse(chunk.slice(6))
+              if (event.type === 'tool') {
+                streamedToolCallInfo = event.toolCallInfo as AIToolCallInfo
+                setThinkingStatus('Looking up relationship...')
+              } else if (event.type === 'token') {
+                accumulated += event.text
+                setMessages(prev => prev.map(m =>
+                  m.id === aiMsgId ? { ...m, content: accumulated } : m
+                ))
+              } else if (event.type === 'done') {
+                streamSuccess = true
+                break readLoop
+              } else if (event.type === 'no_key' || event.type === 'error') {
+                break readLoop
+              }
+            } catch { /* skip malformed */ }
+          }
+        }
+
+        if (accumulated) {
+          // Streaming succeeded — finalize the message in-place
+          setMessages(prev => prev.map(m =>
+            m.id === aiMsgId
+              ? { ...m, content: accumulated, isStreaming: false, toolCallInfo: streamedToolCallInfo }
+              : m
+          ))
+          setAiMode('gemini')
+          setConversationHistory([...updatedHistory, { role: 'model', content: accumulated }])
+          setNewMsgIds(prev => new Set([...prev, aiMsgId]))
+          setIsThinking(false)
+          return
+        }
+
+        // Stream gave nothing — remove placeholder and fall through to local
+        setMessages(prev => prev.filter(m => m.id !== aiMsgId))
+        setIsThinking(true)
         setAiMode('local')
-        const result = generateAIResponse(query, members)
-        aiContent = result.content
-        relatedIds = result.relatedIds
-        setConversationHistory([
-          ...updatedHistory,
-          { role: 'model', content: result.content },
-        ])
+        const localResult = generateAIResponse(query, members)
+        aiContent = localResult.content
+        relatedIds = localResult.relatedIds
+        setConversationHistory([...updatedHistory, { role: 'model', content: aiContent }])
+      } else {
+        // ── JSON fallback path (no_api_key or network error before SSE) ──────────
+        const data = await res.json()
+        if (data.toolCallInfo) {
+          setThinkingStatus('Looking up relationship...')
+          toolCallInfo = data.toolCallInfo as AIToolCallInfo
+        }
+        if (data.response) {
+          aiContent = data.response
+          setAiMode('gemini')
+          setConversationHistory([...updatedHistory, { role: 'model', content: data.response }])
+        } else {
+          setAiMode('local')
+          const result = generateAIResponse(query, members)
+          aiContent = result.content
+          relatedIds = result.relatedIds
+          setConversationHistory([...updatedHistory, { role: 'model', content: result.content }])
+        }
       }
     } catch {
       // Network error — local fallback

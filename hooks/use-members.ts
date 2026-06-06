@@ -243,15 +243,23 @@ export function useMembers(familyId: string | null) {
       }
     }
 
-    // 2. Structural spouse cap: the anchor node in spouseIds can only have one spouse
-    //    (unless the family explicitly uses polygamy — not a use-case we model).
+    // 2. Structural spouse cap: the anchor node in spouseIds can only have one spouse.
+    //    IMPORTANT: filter dangling refs first — if the previously linked spouse was
+    //    archived/deleted, their ID is still in anchor.spouseIds but they no longer
+    //    exist in the live members array. Treating that as a live link causes a false
+    //    "already has a spouse" error (the reported bug: Ratnamala's deleted husband).
     if ((memberData.spouseIds?.length ?? 0) > 0) {
       for (const anchorId of memberData.spouseIds!) {
         const anchor = members.find(m => m.id === anchorId)
-        if (anchor && anchor.spouseIds.length > 0) {
-          throw new Error(
-            `${anchor.name} already has a spouse (${members.find(m => m.id === anchor.spouseIds[0])?.name ?? 'another member'}). Remove the existing spouse link before adding a new one.`
-          )
+        if (anchor) {
+          // Only count spouse IDs that resolve to a currently live member
+          const liveSpouseIds = anchor.spouseIds.filter(sid => members.some(m => m.id === sid))
+          if (liveSpouseIds.length > 0) {
+            const liveSpousseName = members.find(m => m.id === liveSpouseIds[0])?.name ?? 'another member'
+            throw new Error(
+              `${anchor.name} already has a spouse (${liveSpousseName}). Remove the existing spouse link before adding a new one.`
+            )
+          }
         }
       }
     }

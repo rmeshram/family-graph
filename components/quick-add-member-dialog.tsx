@@ -115,10 +115,20 @@ export function QuickAddMemberDialog({
     onOpenChange(open)
   }
 
+  // Names that are clearly not real people — placeholder or test values
+  const INVALID_NAME_BLOCKLIST = /^(yes|no|n\/a|na|nil|unknown|test|dummy|tbd|xxx|none|fake|temp|abc|xyz)$/i
+
   const validate = () => {
     let valid = true
-    if (!name.trim()) {
+    const trimmed = name.trim()
+    if (!trimmed) {
       setNameError('Name is required')
+      valid = false
+    } else if (!/\p{L}/u.test(trimmed)) {
+      setNameError('Please enter a valid person\'s name')
+      valid = false
+    } else if (INVALID_NAME_BLOCKLIST.test(trimmed)) {
+      setNameError('Please enter a valid person\'s name')
       valid = false
     } else {
       setNameError('')
@@ -157,6 +167,23 @@ export function QuickAddMemberDialog({
     if (!validate() || isSubmitting) return
 
     const storedName = normalizeStoredName(name)
+
+    // Issue 5: Block structural duplicates — two fathers / two mothers
+    if (existingMembers?.length && (relType === 'father' || relType === 'mother')) {
+      const existingParents = existingMembers.filter(m =>
+        (anchorMember.parentIds ?? []).includes(m.id)
+      )
+      if (relType === 'father' && existingParents.some(p => p.gender === 'male')) {
+        const existing = existingParents.find(p => p.gender === 'male')
+        setSubmitError(`${existing?.name ?? 'A father'} is already in the tree. Edit that profile instead, or choose Stepfather if this is a different person.`)
+        return
+      }
+      if (relType === 'mother' && existingParents.some(p => p.gender === 'female')) {
+        const existing = existingParents.find(p => p.gender === 'female')
+        setSubmitError(`${existing?.name ?? 'A mother'} is already in the tree. Edit that profile instead, or choose Stepmother if this is a different person.`)
+        return
+      }
+    }
 
     if (existingMembers?.length) {
       // 1. Hard block: exact name match — no bypass.

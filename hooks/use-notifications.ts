@@ -610,6 +610,56 @@ export function useNotifications(
     return () => { supabase.removeChannel(channel) }
   }, [familyId])
 
+  // ── Realtime: family_members INSERT → member_added notification ───────────
+  // Fires immediately when any family member is added by any user in the family,
+  // so the bell updates in real time without waiting for a page reload.
+  // Suppresses the current user's own additions (self-notification is noisy).
+  const [memberAddedNotifs, setMemberAddedNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+    if (!FEATURE_FLAGS.enableRealtimeNotifications) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`family_members_insert:${familyId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
+        (payload) => {
+          const row = payload.new as any
+          // Don't self-notify: skip nodes the current user just added (their own member_id)
+          if (currentUserMemberId && row.id === currentUserMemberId) return
+          // Skip 'self' relationship nodes (they're always the user's own profile)
+          if (row.relationship === 'self') return
+          const displayName = row.name ?? 'A new family member'
+          const initials = getInitials(displayName)
+          setMemberAddedNotifs(prev => {
+            const id = `added-rt-${row.id}`
+            if (prev.some(n => n.id === id)) return prev
+            const notif: AppNotification = {
+              id,
+              type: 'member_joined',
+              title: `${displayName} was added to the tree`,
+              body: row.relationship ? `Added as ${row.relationship}` : 'New family member added',
+              memberName: displayName,
+              memberInitials: initials,
+              memberAvatarUrl: row.photo_url ?? undefined,
+              timestamp: new Date(row.created_at ?? Date.now()),
+              read: false,
+              href: '/dashboard',
+              priority: 'medium' as NotifPriority,
+            }
+            return [notif, ...prev].slice(0, 20)
+          })
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.warn('[family_members_insert] realtime error:', err)
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [familyId, currentUserMemberId])
+
   const notifications = useMemo<AppNotification[]>(() => {
     const notifs: AppNotification[] = []
 
@@ -798,6 +848,7 @@ export function useNotifications(
         ...pendingClaimNotifs,   // admin: polled claim queue (high priority first)
         ...claimNotifs,          // realtime: claim lifecycle events
         ...joinNotifs,           // realtime: is_claimed flip
+        ...memberAddedNotifs,    // realtime: new members inserted by others
         ...storyNotifs,          // realtime: new stories
         ...visibilityNotifs,     // realtime: visibility changes
         ...roleNotifs,           // realtime: role changes
@@ -808,7 +859,7 @@ export function useNotifications(
       const sorted = sortNotifications(deduped)
       return sorted.map(n => ({ ...n, read: readIds.has(n.id) }))
     },
-    [notifications, claimNotifs, joinNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, profileUpdateNotifs, readIds]
+    [notifications, claimNotifs, joinNotifs, memberAddedNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, profileUpdateNotifs, readIds]
   )
 
   const unreadCount = useMemo(
@@ -828,13 +879,14 @@ export function useNotifications(
         ...pendingClaimNotifs.map(n => n.id),
         ...roleNotifs.map(n => n.id),
         ...profileUpdateNotifs.map(n => n.id),
+        ...memberAddedNotifs.map(n => n.id),
       ])
       // LOW-02: write to user-scoped key
       const key = currentUserId ? `${STORAGE_KEY}_${currentUserId}` : STORAGE_KEY
       try { localStorage.setItem(key, JSON.stringify([...allIds])) } catch { /* ignore */ }
       return allIds
     })
-  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs, currentUserId])
+  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, memberAddedNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs, currentUserId])
 
   return { notifications: notificationsWithRead, unreadCount, markAllRead }
 }

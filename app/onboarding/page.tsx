@@ -202,6 +202,10 @@ function OnboardingContent() {
         .select()
         .single()
       if (memberErr) throw memberErr
+      // Guard: .single() can return null data without an error in some Supabase versions.
+      // If member is null, profile.member_id would be set to undefined, leaving the user
+      // in 'unlinked' state on the dashboard despite completing onboarding.
+      if (!member) throw new Error('Member profile was not created — please try again.')
 
       // 4. Update profile with member_id now that self member exists
       await supabase.from("profiles").update({

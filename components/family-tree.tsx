@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FamilyMember } from '@/lib/types'
 import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
+import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { ZoomIn, ZoomOut, Maximize2, Grid3X3, ChevronDown, ChevronRight, Lock, ShieldCheck, ChevronLeft, EyeOff } from 'lucide-react'
@@ -27,10 +28,38 @@ function getRelBadgeStyle(rel: string | undefined, networkGroup?: string) {
   if (networkGroup === 'extended') return { bg: 'rgba(139,92,246,0.15)', color: 'rgba(167,139,250,0.95)', border: 'rgba(139,92,246,0.42)' }
   const r = (rel ?? '').toLowerCase()
   if (r === 'self') return { bg: 'rgba(99,102,241,0.18)', color: 'rgba(165,180,252,0.95)', border: 'rgba(99,102,241,0.52)' }
-  if (['spouse', 'husband', 'wife'].includes(r)) return { bg: 'rgba(244,63,94,0.15)', color: 'rgba(251,113,133,0.95)', border: 'rgba(244,63,94,0.42)' }
-  if (['son', 'daughter', 'child', 'grandson', 'granddaughter', 'grandchild'].includes(r))
+  // Spouse
+  if (r.startsWith('husband') || r.startsWith('wife') || r === 'spouse' || r.startsWith('co-spouse'))
+    return { bg: 'rgba(244,63,94,0.15)', color: 'rgba(251,113,133,0.95)', border: 'rgba(244,63,94,0.42)' }
+  // Children / descendants (green)
+  if (r.startsWith('son') || r.startsWith('daughter') || r === 'child' || r.startsWith('child ') ||
+    r.startsWith('grandson') || r.startsWith('granddaughter') || r.startsWith('grandchild') ||
+    r.includes('great-grandson') || r.includes('great-granddaughter') || r.includes('great-grandchild'))
     return { bg: 'rgba(34,197,94,0.12)', color: 'rgba(134,239,172,0.95)', border: 'rgba(34,197,94,0.38)' }
+  // Parents / ancestors (blue)
+  if (r.startsWith('father') || r.startsWith('mother') || r === 'parent' || r.startsWith('parent ') ||
+    r.startsWith('grandfather') || r.startsWith('grandmother') || r.startsWith('grandparent') ||
+    r.includes('great-grandfather') || r.includes('great-grandmother') || r.includes('great-grandparent'))
+    return { bg: 'rgba(59,130,246,0.15)', color: 'rgba(147,197,253,0.95)', border: 'rgba(59,130,246,0.42)' }
+  // Siblings (purple)
+  if (r.startsWith('brother') || r.startsWith('sister') || r === 'sibling')
+    return { bg: 'rgba(168,85,247,0.15)', color: 'rgba(216,180,254,0.95)', border: 'rgba(168,85,247,0.42)' }
+  // Default — uncles, aunts, cousins, in-laws, etc. (amber)
   return { bg: 'rgba(245,158,11,0.15)', color: 'rgba(252,211,77,0.95)', border: 'rgba(245,158,11,0.48)' }
+}
+
+/** Strips cultural-term parentheticals and shortens verbose computed labels for node badges. */
+function shortenRelLabel(label: string): string {
+  if (!label) return label
+  // Remove parenthetical suffixes like "(Chacha/Tau)", "(Dada/Nana)"
+  const base = label.replace(/\s*\(.*?\)/g, '').trim()
+  const l = base.toLowerCase()
+  if (l.startsWith('paternal uncle') || l.startsWith('maternal uncle')) return 'Uncle'
+  if (l.startsWith('paternal aunt') || l.startsWith('maternal aunt')) return 'Aunt'
+  if (l.startsWith('paternal grandfather') || l.startsWith('maternal grandfather')) return 'Grandfather'
+  if (l.startsWith('paternal grandmother') || l.startsWith('maternal grandmother')) return 'Grandmother'
+  if (l.startsWith('step-')) return base.replace('Step-', 'Step ') // normalise hyphen
+  return base
 }
 
 interface FamilyTreeProps {
@@ -390,6 +419,30 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     }
     return map
   }, [nodePositions, memberMap])
+
+  // ── BFS-computed relationship labels (keyed by memberId) ──────────────────
+  // These are computed live from the graph structure so that a spouse is never
+  // shown as "Father", etc. The raw DB `member.relationship` field is set from
+  // the *adder's* perspective at add-time and is NOT reliable for display.
+  const computedRelLabels = useMemo<Map<string, string>>(() => {
+    const map = new Map<string, string>()
+    if (!selfMemberId) return map
+    const selfMember = members.find(m => m.id === selfMemberId)
+    if (!selfMember) return map
+    const enriched = enrichMembersWithDerivedEdges(members, selfMemberId)
+    for (const m of members) {
+      if (m.id === selfMemberId) continue
+      const result = getRelationshipBetweenPeople(enriched, selfMemberId, m.id)
+      if (result.found) {
+        map.set(m.id, result.relationship)
+      } else if (m.relationship && m.relationship !== 'self') {
+        // No graph path found — fall back to the stored label as a last resort
+        // but only if it doesn't look like "self" or empty.
+        map.set(m.id, m.relationship)
+      }
+    }
+    return map
+  }, [members, selfMemberId])
 
   // ── Generation row labels (rendered in transform space) ────────────────────
   const genLabels = useMemo(() => {
@@ -1131,12 +1184,11 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const isCollapsed = collapsedIds.has(member.id)
             // ✔ O(1) hasChildren via precomputed parentSet
             const hasChildren = graphIndex.parentSet.has(member.id)
-            // Don't show 'SELF' as a label on nodes — only the current user's node
-            // should display 'You', which is handled by isSelf in member-card/list.
-            const relationshipLabel = selfMemberId && member.relationship && member.relationship !== 'self'
-              ? member.relationship.toUpperCase()
-              : null
-            const relBadge = getRelBadgeStyle(member.relationship, networkGroup)
+            // Use BFS-computed label (never the raw DB field which reflects the adder's perspective)
+            const computedLabel = computedRelLabels.get(member.id) ?? null
+            // Short form for the badge (strips cultural parentheticals, keeps it to 1-2 words)
+            const relationshipLabel = !isSelf && computedLabel ? shortenRelLabel(computedLabel).toUpperCase() : null
+            const relBadge = getRelBadgeStyle(computedLabel ?? undefined, networkGroup)
 
             // COMPACT mode: stripped-down node, avatar + name only
             if (renderMode === 'compact') {
@@ -1406,8 +1458,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       {isUnclaimed && (
                         <p className="text-xs text-orange-400">Not joined yet — tap to invite</p>
                       )}
-                      {selfMemberId && !isUnclaimed && member.relationship && member.relationship !== 'self' && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400/80">{member.relationship}</p>
+                      {!isUnclaimed && computedLabel && (
+                        <p className="text-xs text-amber-400/80">{computedLabel}</p>
                       )}
                       {member.occupation && (
                         <p className="text-xs text-muted-foreground">{member.occupation}</p>
@@ -1715,7 +1767,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
           const birthYear = member.birthYear ?? (member.dateOfBirth ? new Date(member.dateOfBirth).getFullYear() : null)
           const age = birthYear ? new Date().getFullYear() - birthYear : null
           const catColor = member.networkGroup === 'affiliated' ? '#14B8A6' : member.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
-          const relLabel = isSelf ? 'You' : (member.relationship && member.relationship !== 'self' ? String(member.relationship) : null)
+          const relLabel = isSelf ? 'You' : (computedRelLabels.get(selectedMemberId!) ?? (member.relationship && member.relationship !== 'self' ? String(member.relationship) : null))
           const isNarrow = dimensions.width < 560
           // Context-aware primary CTA — mirrors universe popup logic
           const primaryBtn = isSelf

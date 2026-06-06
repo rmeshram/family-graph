@@ -1005,8 +1005,26 @@ export default function JoinPage() {
                 </div>
                 <h2 className="text-lg font-bold">Is this you?</h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  This invite was created specifically for the profile below.
+                  {preview?.inviterName
+                    ? <><strong className="text-foreground">{preview.inviterName}</strong> added you to the{' '}
+                      <strong className="text-foreground">{preview?.name ?? 'family'}</strong> tree and sent you this link.</>
+                    : 'Someone added you to this family tree and sent you this link to claim your profile.'}
                 </p>
+              </div>
+
+              {/* What you get by claiming */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-1.5">
+                <p className="text-[10px] font-semibold text-primary/70 uppercase tracking-wide">Once you claim your profile</p>
+                <ul className="space-y-1">
+                  {[
+                    '✏️  Edit your own bio, photo & details',
+                    '👁  Control who can see your profile',
+                    '🌿  Add your spouse, children & relatives',
+                    '🔔  Get birthday & family update notifications',
+                  ].map(t => (
+                    <li key={t} className="text-xs text-muted-foreground">{t}</li>
+                  ))}
+                </ul>
               </div>
 
               {/* Profile identity card */}
