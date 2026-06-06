@@ -433,13 +433,13 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     for (const m of members) {
       if (m.id === selfMemberId) continue
       const result = getRelationshipBetweenPeople(enriched, selfMemberId, m.id)
-      if (result.found) {
+      if (result.found && result.confidence >= 0.5) {
         map.set(m.id, result.relationship)
-      } else if (m.relationship && m.relationship !== 'self') {
-        // No graph path found — fall back to the stored label as a last resort
-        // but only if it doesn't look like "self" or empty.
-        map.set(m.id, m.relationship)
       }
+      // No fallback to m.relationship — that field is stored relative to whoever
+      // *added* the member, not relative to the current viewer. Showing it would
+      // display e.g. 'Mother' on Sukhdeo's spouse when Sukhdeo views the tree.
+      // Blank is always better than a label from the wrong perspective.
     }
     return map
   }, [members, selfMemberId])
@@ -1767,7 +1767,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
           const birthYear = member.birthYear ?? (member.dateOfBirth ? new Date(member.dateOfBirth).getFullYear() : null)
           const age = birthYear ? new Date().getFullYear() - birthYear : null
           const catColor = member.networkGroup === 'affiliated' ? '#14B8A6' : member.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
-          const relLabel = isSelf ? 'You' : (computedRelLabels.get(selectedMemberId!) ?? (member.relationship && member.relationship !== 'self' ? String(member.relationship) : null))
+          const relLabel = isSelf ? 'You' : (computedRelLabels.get(selectedMemberId!) ?? null)
           const isNarrow = dimensions.width < 560
           // Context-aware primary CTA — mirrors universe popup logic
           const primaryBtn = isSelf

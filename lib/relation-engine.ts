@@ -49,17 +49,37 @@ export function enrichMembersWithDerivedEdges(
   const sid = self.id
 
   const memberIdSet = new Set(members.map(m => m.id))
-  const isIsolated = (m: FamilyMember): boolean => {
-    // A node needs ancestry enrichment if it has NO real parent edges in this family.
-    // Having a spouse, children, or being someone's spouse does NOT block enrichment —
-    // those structural connections are irrelevant to whether the node's own ancestry
-    // virtual edge should be derived from its `relationship` label.
-    //
-    // Example: chacha (paternal uncle) has a wife and children in the tree but
-    // no parentIds — without enrichment, cousins (his children) are unreachable
-    // from the viewer via BFS.
-    return !m.parentIds.some(pid => memberIdSet.has(pid))
+
+  // Pre-compute which members are reachable from selfId via REAL structural edges only.
+  // Virtual enrichment is skipped for reachable nodes — their stored `relationship` label
+  // was set from the TREE CREATOR's perspective, not the current viewer's perspective.
+  // Adding a false virtual edge for them creates a shorter wrong path that BFS picks first.
+  //
+  // Example: Dayaram (relationship='father', set when Sukhdeo added him) is already
+  // reachable from Ratnamala via SPOUSE→Sukhdeo→PARENT→Dayaram. If we also add a
+  // virtual PARENT edge from Ratnamala to Dayaram, BFS returns "Father" (1 hop)
+  // instead of the correct "Father-in-law" (2 hops).
+  //
+  // Example: Motiram (relationship='uncle', no parentIds) is NOT reachable from Ratnamala
+  // via real edges — he still gets a virtual PARENT edge connecting him to the grandparent
+  // layer so BFS can traverse to him and his children.
+  const realGraph = buildRelationshipGraph(members)
+  const reallyReachable = new Set<string>([sid])
+  {
+    const bfsQ = [sid]
+    let head = 0
+    while (head < bfsQ.length) {
+      const cur = bfsQ[head++]
+      for (const { to } of (realGraph.get(cur) ?? [])) {
+        if (!reallyReachable.has(to)) {
+          reallyReachable.add(to)
+          bfsQ.push(to)
+        }
+      }
+    }
   }
+
+  const isIsolated = (m: FamilyMember): boolean => !reallyReachable.has(m.id)
 
   const extras = new Map<string, { parentIds: string[]; spouseIds: string[] }>()
   const virtuals: FamilyMember[] = []

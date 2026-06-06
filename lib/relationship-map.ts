@@ -46,9 +46,11 @@ export const RELATIONSHIP_MAP: Record<string, RelationLabel> = {
   'PARENT>SPOUSE': { neutral: 'Step-parent', male: 'Step-father', female: 'Step-mother' },
   'SPOUSE>CHILD': { neutral: 'Step-child', male: 'Step-son', female: 'Step-daughter' },
   'SPOUSE>SPOUSE': { neutral: 'Co-spouse (Sautan/Sauta)' },
-  // Legacy 2-step: PARENT>CHILD = sibling when SIBLING edge absent
+  // PARENT>CHILD = sibling when SIBLING edge absent (go up to parent, down to other child)
   'PARENT>CHILD': { neutral: 'Sibling', male: 'Brother', female: 'Sister' },
-  'CHILD>PARENT': { neutral: 'Sibling', male: 'Brother', female: 'Sister' },
+  // CHILD>PARENT = co-parent/spouse: go down to child, up to the child's other parent = my spouse
+  // NOTE: CHILD>PARENT is NOT the same as PARENT>CHILD. The reverse path means co-parent.
+  'CHILD>PARENT': { neutral: 'Spouse', male: 'Husband', female: 'Wife' },
 
   // ── 3-step ─────────────────────────────────────────────────────────────────
   'PARENT>PARENT>PARENT': { neutral: 'Great-grandparent', male: 'Great-grandfather', female: 'Great-grandmother' },
