@@ -2161,6 +2161,57 @@ export default function FamilyGraphApp() {
             )
           )}
 
+          {/* Family Mission Panel — desktop aside */}
+          {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
+            && !isMobile
+            && !showAIWidget && !showInviteWidget && !selectedMember && (
+              <FamilyMissionPanel
+                selfMember={selfMember}
+                members={members}
+                isAdmin={isAdmin}
+                familyId={familyId}
+                onAddMember={() => setIsAddDialogOpen(true)}
+                onQuickAddMember={(relType, anchorId) => handleAddRelative(anchorId, relType)}
+                onAddStory={() => setIsStoryDialogOpen(true)}
+                onInviteMember={(m) => setInviteToClaimTarget(m)}
+                onEditSelf={() => setEditingMember(selfMember)}
+                hasStories={checklistHasStories}
+              />
+            )}
+
+          {/* Family Mission Panel — mobile bottom drawer */}
+          {isMobile && (
+            <Drawer open={showMissionDrawer} onOpenChange={setShowMissionDrawer} direction="bottom">
+              <DrawerContent className="max-h-[85vh] overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-4 w-4 text-primary" />
+                    <span className="font-semibold text-sm">Family Mission</span>
+                  </div>
+                  <button onClick={() => setShowMissionDrawer(false)} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {selfMember && (
+                    <FamilyMissionPanel
+                      selfMember={selfMember}
+                      members={members}
+                      isAdmin={isAdmin}
+                      familyId={familyId}
+                      onAddMember={() => { setShowMissionDrawer(false); setIsAddDialogOpen(true) }}
+                      onQuickAddMember={(relType, anchorId) => { setShowMissionDrawer(false); handleAddRelative(anchorId, relType) }}
+                      onAddStory={() => { setShowMissionDrawer(false); setIsStoryDialogOpen(true) }}
+                      onInviteMember={(m) => { setShowMissionDrawer(false); setInviteToClaimTarget(m) }}
+                      onEditSelf={() => { setShowMissionDrawer(false); setEditingMember(selfMember) }}
+                      hasStories={checklistHasStories}
+                    />
+                  )}
+                </div>
+              </DrawerContent>
+            </Drawer>
+          )}
+
           {/* Member Detail — aside on desktop, bottom sheet on mobile */}
           {selectedMemberDisplay && !showAIWidget && !showInviteWidget && !pathFinderOpen && !isMobile && (
             <aside className="w-80 shrink-0 xl:w-96 h-full overflow-hidden">
