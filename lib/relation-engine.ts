@@ -41,32 +41,45 @@ export function enrichMembersWithDerivedEdges(
   members: FamilyMember[],
   selfId?: string | null,
 ): FamilyMember[] {
-  const self = selfId
+  // VIEWER: the person currently logged in / viewing the tree
+  const viewer = selfId
     ? members.find(m => m.id === selfId)
     : members.find(m => m.relationship === 'self')
-  if (!self) return members
+  if (!viewer) return members
 
-  const sid = self.id
+  // CREATOR: the person from whose perspective all stored `relationship` labels were set.
+  // e.g. relationship='uncle' means "uncle of the creator", NOT "uncle of the viewer".
+  // Virtual edges must be anchored to the creator so BFS produces the correct label
+  // for ANY viewer — including spouses, in-laws, etc.
+  //
+  // Example (without this fix, viewer=Ratnamala, creator should be Rahul):
+  //   getSelfGrandparentId(Ratnamala) → virtual VGP (she has no real parents)
+  //   addP(Motiram, VGP) → Motiram becomes Ratnamala's virtual uncle
+  //   BFS: PARENT>PARENT>CHILD = "Uncle" ← WRONG
+  //
+  // With fix (creator=Rahul):
+  //   getSelfGrandparentId(Rahul) → Dayaram (Sukhdeo is Rahul's parent, Dayaram is Sukhdeo's parent)
+  //   addP(Motiram, Dayaram) → Motiram becomes Sukhdeo's structural sibling
+  //   BFS from Ratnamala: SPOUSE>SIBLING = "Brother-in-law" ← CORRECT
+  //
+  // Falls back to viewer if no 'self' member exists (fresh trees, demo mode, etc.)
+  const creator = members.find(m => m.relationship === 'self') ?? viewer
+  const sid = creator.id  // anchor ID for all virtual edge placement
 
   const memberIdSet = new Set(members.map(m => m.id))
 
-  // Pre-compute which members are reachable from selfId via REAL structural edges only.
-  // Virtual enrichment is skipped for reachable nodes — their stored `relationship` label
-  // was set from the TREE CREATOR's perspective, not the current viewer's perspective.
-  // Adding a false virtual edge for them creates a shorter wrong path that BFS picks first.
+  // Pre-compute reachability from the VIEWER (not creator).
+  // Nodes already reachable from the viewer via real structural edges are NOT enriched —
+  // adding a virtual edge would create a shorter wrong path that BFS picks over the
+  // correct multi-hop real path.
   //
-  // Example: Dayaram (relationship='father', set when Sukhdeo added him) is already
-  // reachable from Ratnamala via SPOUSE→Sukhdeo→PARENT→Dayaram. If we also add a
-  // virtual PARENT edge from Ratnamala to Dayaram, BFS returns "Father" (1 hop)
-  // instead of the correct "Father-in-law" (2 hops).
-  //
-  // Example: Motiram (relationship='uncle', no parentIds) is NOT reachable from Ratnamala
-  // via real edges — he still gets a virtual PARENT edge connecting him to the grandparent
-  // layer so BFS can traverse to him and his children.
+  // Example: Dayaram IS reachable from Ratnamala via SPOUSE→Sukhdeo→PARENT→Dayaram.
+  // Without this guard we would also add a virtual PARENT edge Ratnamala→Dayaram which
+  // would make BFS return "Father" (1 hop) instead of "Father-in-law" (2 hops).
   const realGraph = buildRelationshipGraph(members)
-  const reallyReachable = new Set<string>([sid])
+  const reallyReachable = new Set<string>([viewer.id])
   {
-    const bfsQ = [sid]
+    const bfsQ = [viewer.id]
     let head = 0
     while (head < bfsQ.length) {
       const cur = bfsQ[head++]
@@ -114,7 +127,7 @@ export function enrichMembersWithDerivedEdges(
   let vspReady = false, vcReady = false, vuReady = false, vsppReady = false
 
   const getSelfParentId = (): string => {
-    if (self.parentIds.length > 0) return self.parentIds[0]
+    if (creator.parentIds.length > 0) return creator.parentIds[0]
     const overrideP = extras.get(sid)?.parentIds
     if (overrideP?.length) return overrideP[0]
     if (!vpReady) { vpReady = true; ensureVirt(VP, [], []); addP(sid, VP) }
@@ -138,7 +151,7 @@ export function enrichMembersWithDerivedEdges(
   }
 
   const getSelfSpouseId = (): string => {
-    if (self.spouseIds.length > 0) return self.spouseIds[0]
+    if (creator.spouseIds.length > 0) return creator.spouseIds[0]
     const rev = members.find(m => m.spouseIds.includes(sid))
     if (rev) return rev.id
     const ovSp = extras.get(sid)?.spouseIds
