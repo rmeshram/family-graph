@@ -61,7 +61,7 @@ import {
   GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity, MessageCircle,
   Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
-  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield,
+  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -69,37 +69,40 @@ import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
-function FamilyTreeSkeleton() {
-  const rows = [
-    [{ w: 72, label: true }],
-    [{ w: 64 }, { w: 64 }],
-    [{ w: 56 }, { w: 56 }, { w: 56 }],
-    [{ w: 52 }, { w: 52 }, { w: 52 }, { w: 52 }],
-  ] as { w: number; label?: boolean }[][]
-
+// Mimics the hierarchical tree: grandparents → parents → self+spouse → children.
+// Uses the same `animate-pulse` pattern as the layout shell skeleton.
+function TreeNodeSkel({ w, highlight = false }: { w: number; highlight?: boolean }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 pointer-events-none select-none overflow-hidden">
-      {rows.map((row, ri) => (
-        <div key={ri} className="flex items-start gap-10 md:gap-16">
-          {row.map((node, ni) => (
-            <div key={ni} className="flex flex-col items-center gap-2 relative">
-              {/* connector up */}
-              {ri > 0 && (
-                <div className="absolute -top-8 left-1/2 -translate-x-px w-px h-8 bg-border/40" />
-              )}
-              {/* node card */}
-              <div
-                className="rounded-2xl border border-border/30 bg-muted/20 p-3 flex flex-col items-center gap-2"
-                style={{ width: node.w + 16 }}
-              >
-                <Skeleton className="h-10 w-10 rounded-full" />
-                <Skeleton className="h-2.5 rounded-full" style={{ width: node.w * 0.65 }} />
-                {node.label && <Skeleton className="h-2 rounded-full" style={{ width: node.w * 0.45 }} />}
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
+    <div
+      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 ${highlight ? 'border-primary/30 bg-primary/5' : 'border-border/30 bg-muted/15'}`}
+      style={{ width: w + 16 }}
+    >
+      <Skeleton className={`h-10 w-10 rounded-full ${highlight ? 'bg-primary/20' : ''}`} />
+      <Skeleton className="h-2.5 rounded-full" style={{ width: w * 0.6 }} />
+      <Skeleton className="h-2 rounded-full" style={{ width: w * 0.4 }} />
+    </div>
+  )
+}
+
+function FamilyTreeSkeleton() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 pointer-events-none select-none overflow-hidden px-4 animate-pulse">
+      {/* grandparents */}
+      <div className="flex items-end gap-14 md:gap-20">
+        {[80, 72].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      </div>
+      {/* parents */}
+      <div className="flex items-end gap-10 md:gap-16">
+        {[72, 68].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      </div>
+      {/* self + spouse */}
+      <div className="flex items-end gap-6 md:gap-10">
+        {([68, 64, 60] as const).map((w, i) => <TreeNodeSkel key={i} w={w} highlight={i === 1} />)}
+      </div>
+      {/* children */}
+      <div className="flex items-end gap-10 md:gap-14">
+        {[56, 52].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      </div>
     </div>
   )
 }
@@ -621,6 +624,7 @@ export default function FamilyGraphApp() {
   const [mergeScanTrigger, setMergeScanTrigger] = useState(1) // start at 1 so scan fires on first member load
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
+  const [showMissionDrawer, setShowMissionDrawer] = useState(false)
   const [viewMode, setViewMode] = useState<TreeViewMode>(
     FEATURE_FLAGS.enableHierarchicalTreeView ? 'tree' : 'universe'
   )
@@ -1526,6 +1530,18 @@ export default function FamilyGraphApp() {
 
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
+            {/* Mission button — mobile only, shows progress badge */}
+            {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer && isMobile && (
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => setShowMissionDrawer(true)}
+                className="h-8 gap-1 text-xs text-primary hover:bg-primary/10 relative"
+              >
+                <Target className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Mission</span>
+              </Button>
+            )}
+
             {!isViewer && (
               <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
                 <UserPlus className="h-3.5 w-3.5" />
@@ -2144,25 +2160,6 @@ export default function FamilyGraphApp() {
               </aside>
             )
           )}
-
-          {/* Family Mission Panel — desktop-only right sidebar in tree view.
-              Hidden on mobile (full canvas needed) and when any higher-priority panel is open. */}
-          {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
-            && !isMobile
-            && !showAIWidget && !showInviteWidget && !selectedMember && (
-              <FamilyMissionPanel
-                selfMember={selfMember}
-                members={members}
-                isAdmin={isAdmin}
-                familyId={familyId}
-                onAddMember={() => setIsAddDialogOpen(true)}
-                onQuickAddMember={(relType, anchorId) => handleAddRelative(anchorId, relType)}
-                onAddStory={() => setIsStoryDialogOpen(true)}
-                onInviteMember={(m) => setInviteToClaimTarget(m)}
-                onEditSelf={() => setEditingMember(selfMember)}
-                hasStories={checklistHasStories}
-              />
-            )}
 
           {/* Member Detail — aside on desktop, bottom sheet on mobile */}
           {selectedMemberDisplay && !showAIWidget && !showInviteWidget && !pathFinderOpen && !isMobile && (
