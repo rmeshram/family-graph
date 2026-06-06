@@ -1576,30 +1576,7 @@ export default function FamilyGraphApp() {
           </div>
         </header>
 
-        {/* ── Profile completeness nudge ───────────────────────────── */}
-        {!isDemoMode && selfMember && (() => {
-          const { score, missing } = computeProfileCompleteness(selfMember)
-          if (missing.length === 0) return null
-          return (
-            <div className="flex items-center gap-3 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="font-medium text-amber-400">{score}% complete</span>
-                <span className="text-muted-foreground hidden sm:inline">— add: {missing.join(', ')}</span>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10 shrink-0"
-                onClick={() => { setEditingMember(selfMember); handleSelectMember(selfMember.id) }}
-              >
-                Complete Profile
-              </Button>
-            </div>
-          )
-        })()}
-
-        {/* ── Pending family link requests banner (logged-in only) ── */}
-        {!isDemoMode && <FamilyLinkRequestsBanner familyId={familyId ?? null} />}
+        {/* Profile completeness + FamilyLinkRequestsBanner removed — surfaced in sidebar Family Health widget instead */}
 
         {/* People You May Know — only once identity is fully verified */}
         {!isDemoMode && fullRelationshipActivation && (

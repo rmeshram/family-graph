@@ -74,7 +74,7 @@ export function SuggestedMergesBanner({
       return !dismissed.has(pairKey(p))
     })
     setVisiblePairs(found)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanTrigger, members.length, members])
 
   const dismiss = (pair: DuplicatePair) => {
@@ -153,8 +153,8 @@ export function SuggestedMergesBanner({
                             pair.score >= 75
                               ? 'bg-red-500/15 text-red-300'
                               : pair.score >= 60
-                              ? 'bg-amber-500/15 text-amber-300'
-                              : 'bg-slate-500/15 text-slate-400'
+                                ? 'bg-amber-500/15 text-amber-300'
+                                : 'bg-slate-500/15 text-slate-400'
                           )}
                         >
                           {pair.score}% match
