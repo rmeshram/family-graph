@@ -2549,20 +2549,8 @@ export default function FamilyGraphApp() {
         </div>
       )}
 
-      {/* Progressive onboarding checklist — visible to fully_claimed users only */}
-      {!isDemoMode && !isViewer && identityState === 'fully_claimed' && selfMember && (
-        <OnboardingChecklist
-          selfMember={selfMember}
-          members={members}
-          hasStories={checklistHasStories}
-          hasOtherClaims={checklistHasOtherClaims}
-          onAddMember={() => setIsAddDialogOpen(true)}
-          onInvite={() => setShowInviteWidget(true)}
-          onInviteMember={(m) => setInviteToClaimTarget(m)}
-          onAddStory={() => setIsStoryDialogOpen(true)}
-          userId={user?.id}
-        />
-      )}
+      {/* OnboardingChecklist removed — Family Mission panel in the right sidebar covers the same tasks
+          and is more prominent + includes People Waiting to Join */}
     </TooltipProvider>
   )
 }
