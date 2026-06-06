@@ -552,15 +552,23 @@ export default function FamilyGraphApp() {
     if (claimedId) setSelectedMemberId(claimedId)
   }, [])
 
-  // ?welcome=1 is appended by onboarding — show first-step overlay once
+  // ?welcome=1 is appended by onboarding — show first-step overlay once.
+  // ?view=tree (from sidebar "View Details") switches to the tree view with the Family Mission panel.
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (new URLSearchParams(window.location.search).get('welcome') === '1') {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('welcome') === '1') {
       setShowWelcomeOverlay(true)
-      // Clean the param from URL without a page reload
+    }
+    if (params.get('view') === 'tree') {
+      setViewMode('tree')
+    }
+    // Clean any handled params from URL without a page reload
+    if (params.has('welcome') || params.has('view')) {
       const url = new URL(window.location.href)
       url.searchParams.delete('welcome')
+      url.searchParams.delete('view')
       window.history.replaceState({}, '', url.toString())
     }
   }, [])
@@ -1601,7 +1609,7 @@ export default function FamilyGraphApp() {
         {/* ── Next Best Action strip — one specific step, highest priority ──────────────
              Resets when the action changes (e.g. father added → strip reappears with mother).
              Never shows two competing nudges at the same time.                               */}
-        {!isDemoMode && !isViewer && nextBestAction && nbaDismissedLabel !== nextBestAction.label && (
+        {/* {!isDemoMode && !isViewer && nextBestAction && nbaDismissedLabel !== nextBestAction.label && (
           <div className="flex items-center gap-3 border-b border-primary/15 bg-primary/5 px-4 py-2.5">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm">
               {nextBestAction.icon}
@@ -1634,7 +1642,7 @@ export default function FamilyGraphApp() {
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-        )}
+        )} */}
 
         {/* ── "Their tree just grew" real-time alert ───────────────── */}
         {newMemberAlert && (

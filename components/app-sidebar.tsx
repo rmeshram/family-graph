@@ -227,7 +227,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <Link href="/dashboard"
+          <Link href="/dashboard?view=tree"
               className="flex items-center gap-1 text-[12px] font-semibold text-primary hover:text-primary/80 transition-colors">
               View Details <ChevronRight className="h-3 w-3" />
             </Link>
