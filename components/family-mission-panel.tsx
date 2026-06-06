@@ -15,7 +15,6 @@ import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target,
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -234,7 +233,7 @@ export function FamilyMissionPanel({
                   style={{ width: `${progressPct}%` }} />
               </div>
             </div>
-            <ScrollArea className="max-h-64">
+            <div className="overflow-y-auto" style={{ maxHeight: '240px' }}>
               <ul className="px-3 pb-3 space-y-0.5">
                 {steps.map(step => (
                   <li key={step.id}>
@@ -265,7 +264,7 @@ export function FamilyMissionPanel({
                   </li>
                 ))}
               </ul>
-            </ScrollArea>
+            </div>
           </>
         )}
       </div>
@@ -289,7 +288,7 @@ export function FamilyMissionPanel({
         </button>
 
         {waitingOpen && (
-          <ScrollArea className="flex-1">
+          <div className="flex-1 overflow-y-auto">
             {waitingPeople.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center px-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 mb-2">
@@ -333,7 +332,7 @@ export function FamilyMissionPanel({
                 </button>
               </div>
             )}
-          </ScrollArea>
+          </div>
         )}
       </div>
     </div>

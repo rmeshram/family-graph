@@ -363,6 +363,7 @@ export type Database = {
           role: string
           branch_root_member_id: string | null
           created_at: string
+          wizard_skipped: string[]
         }
         Insert: {
           id: string
@@ -374,6 +375,7 @@ export type Database = {
           role?: string
           branch_root_member_id?: string | null
           created_at?: string
+          wizard_skipped?: string[]
         }
         Update: {
           id?: string
@@ -385,6 +387,7 @@ export type Database = {
           role?: string
           branch_root_member_id?: string | null
           created_at?: string
+          wizard_skipped?: string[]
         }
         Relationships: []
       }

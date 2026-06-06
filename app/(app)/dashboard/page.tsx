@@ -1876,6 +1876,8 @@ export default function FamilyGraphApp() {
               <HierarchicalTree
                 members={filteredDisplayMembers}
                 selfMemberId={selfMember?.id ?? null}
+                userId={user?.id ?? null}
+                wizardSkipped={profile?.wizard_skipped ?? []}
                 selectedMemberId={selectedMemberId}
                 onSelectMember={handleSelectMember}
                 onAddRelative={!isDemoMode && !isViewer ? handleAddRelative : undefined}
@@ -2155,6 +2157,7 @@ export default function FamilyGraphApp() {
                 onAddMember={() => setIsAddDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
                 onInviteMember={(m) => setInviteToClaimTarget(m)}
+                onEditSelf={() => setEditingMember(selfMember)}
                 hasStories={checklistHasStories}
               />
             )}

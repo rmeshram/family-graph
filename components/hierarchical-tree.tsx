@@ -41,6 +41,7 @@ import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { ZoomIn, ZoomOut, Maximize2, Crown, Home, Trash2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 const NODE_W = 148
@@ -82,6 +83,10 @@ interface EdgeDef {
 export interface HierarchicalTreeProps {
   members: FamilyMember[]
   selfMemberId?: string | null
+  /** Auth user ID (not member ID) — used to persist wizard "No" answers to Supabase */
+  userId?: string | null
+  /** Rel types already dismissed from DB profile.wizard_skipped — merged with localStorage */
+  wizardSkipped?: string[]
   selectedMemberId: string | null
   onSelectMember: (id: string) => void
   onAddRelative?: (anchorId: string, relType: QuickRelType) => void
@@ -696,11 +701,19 @@ interface SpeedWizardProps {
   members: FamilyMember[]
   onQuickAdd: (name: string, gender: 'male' | 'female' | 'other' | '', birthYear: string, relType: QuickRelType, anchorId: string) => Promise<void>
   onDone: () => void
+  /** Rel types already dismissed in the DB — merged with localStorage on mount */
+  dbSkipped?: string[]
+  /** Called when user permanently skips a step — parent writes to Supabase */
+  onPermanentSkip?: (relType: string) => void
 }
 
-function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWizardProps) {
-  // Permanently dismissed steps ("No" was answered) — loaded once from localStorage.
-  const [dismissed] = useState(() => getWizardDismissed(selfId))
+function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone, dbSkipped = [], onPermanentSkip }: SpeedWizardProps) {
+  // Permanently dismissed steps ("No" was answered) — merged from localStorage + DB.
+  const [dismissed, setDismissed] = useState(() => {
+    const ls = getWizardDismissed(selfId)
+    for (const r of dbSkipped) ls.add(r)
+    return ls
+  })
 
   // Compute pending steps REACTIVELY from live members so that if father/mother were
   // already added (before the wizard opened, or via the ghost slots while wizard is open),
@@ -748,11 +761,15 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
     else setStepIdx(i => i + 1)
   }, [stepIdx, pendingSteps.length, onDone])
 
-  // handleSkip: advance to next step. permanent=true saves to localStorage so it never shows again.
+  // handleSkip: advance to next step. permanent=true saves to localStorage + notifies parent to write DB.
   const handleSkip = useCallback((permanent = false) => {
-    if (permanent && currentStep) saveWizardDismissed(selfId, currentStep.relType)
+    if (permanent && currentStep) {
+      saveWizardDismissed(selfId, currentStep.relType)
+      setDismissed(prev => { const next = new Set(prev); next.add(currentStep.relType); return next })
+      onPermanentSkip?.(currentStep.relType)
+    }
     advance()
-  }, [currentStep, selfId, advance])
+  }, [currentStep, selfId, advance, onPermanentSkip])
 
   const handleSubmit = useCallback(async () => {
     if (!currentStep) return
@@ -952,6 +969,8 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
 export function HierarchicalTree({
   members,
   selfMemberId,
+  userId,
+  wizardSkipped = [],
   selectedMemberId,
   onSelectMember,
   onAddRelative,
@@ -1004,6 +1023,29 @@ export function HierarchicalTree({
     !!selfMemberId &&
     !!onQuickAdd &&
     (forceWizard || WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)))
+
+  /** Write a permanently-skipped rel type to Supabase (best-effort, non-blocking). */
+  const handlePermanentWizardSkip = useCallback(async (relType: string) => {
+    if (!userId) return
+    try {
+      const supabase = createClient()
+      // Use raw SQL array_append via rpc is not available, so we read-then-write.
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('wizard_skipped')
+        .eq('id', userId)
+        .single()
+      const existing: string[] = prof?.wizard_skipped ?? []
+      if (!existing.includes(relType)) {
+        await supabase
+          .from('profiles')
+          .update({ wizard_skipped: [...existing, relType] })
+          .eq('id', userId)
+      }
+    } catch {
+      // Best-effort — localStorage is the authoritative fallback
+    }
+  }, [userId])
 
   const handleWizardDone = useCallback(() => {
     setWizardDone(true)
@@ -1276,6 +1318,8 @@ export function HierarchicalTree({
           members={members}
           onQuickAdd={onQuickAdd}
           onDone={handleWizardDone}
+          dbSkipped={wizardSkipped}
+          onPermanentSkip={handlePermanentWizardSkip}
         />
       )}
 
