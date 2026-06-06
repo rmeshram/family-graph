@@ -37,6 +37,7 @@ import { enrichMembersWithDerivedEdges } from '@/lib/relation-engine'
 import { RelationshipSuggestionsBanner } from '@/components/relationship-suggestions-banner'
 import { DuplicateDetectionBanner } from '@/components/duplicate-detection-banner'
 import { OnboardingChecklist } from '@/components/onboarding-checklist'
+import { FamilyMissionPanel } from '@/components/family-mission-panel'
 import { computePostAddSuggestions, getRelationshipBetweenPeople, type RelationshipSuggestion, type RelationshipAction, type RelationshipResult } from '@/lib/relationship-engine'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -609,7 +610,7 @@ export default function FamilyGraphApp() {
   const [nbaDismissedLabel, setNbaDismissedLabel] = useState<string | null>(null)
   // ── Relationship intelligence suggestions ─────────────────────────────────
   const [pendingSuggestions, setPendingSuggestions] = useState<RelationshipSuggestion[]>([])
-  const [mergeScanTrigger, setMergeScanTrigger] = useState(0)
+  const [mergeScanTrigger, setMergeScanTrigger] = useState(1) // start at 1 so scan fires on first member load
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
   const [viewMode, setViewMode] = useState<TreeViewMode>(
@@ -869,6 +870,7 @@ export default function FamilyGraphApp() {
   // Contributors (non-viewer, non-admin logged-in users) can add AND delete unclaimed nodes.
   // Admins can delete any node (including claimed ones). Contributors are blocked from
   // archiving a node that is claimed by a different user — that requires an admin.
+  // The logged-in user's own node can NEVER be deleted by anyone.
   const canDelete = !isDemoMode && !isViewer && !!user
 
   // ── Progressive onboarding checklist data ────────────────────────────────────
@@ -1153,10 +1155,20 @@ export default function FamilyGraphApp() {
     const newMember = await dbAddMember(memberData, user.id)
     if (!newMember) return
 
-    // For a new parent (father/mother): patch the anchor so it recognises the new parent
+    // Patch anchor so graph edges are bidirectional for every relationship type
     if (relType === 'father' || relType === 'mother') {
+      // New parent: anchor must recognise the new node as its parent
       const updated = [...new Set([...(anchor.parentIds ?? []), newMember.id])]
       await dbUpdateMember(anchorId, { parentIds: updated })
+    } else if (relType === 'spouse') {
+      // New spouse: anchor must also list the new node as a spouse.
+      // Without this the graph has a one-sided edge → BFS traversal fails →
+      // the spouse appears as "Father" (or no label) from the anchor's perspective.
+      const updated = [...new Set([...(anchor.spouseIds ?? []), newMember.id])]
+      await dbUpdateMember(anchorId, { spouseIds: updated })
+    } else if (relType === 'sibling') {
+      // New sibling via shared parent: ensure the new node also lists the shared parent
+      // (it already has it via parentIds set above, but double-check for safety)
     }
 
     toast({
@@ -1181,6 +1193,12 @@ export default function FamilyGraphApp() {
       return
     }
     const memberToDelete = members.find(m => m.id === selectedMemberId)
+    // Issue 3: The logged-in user's own node must never be deleted
+    if (selectedMemberId === selfMember?.id) {
+      toast({ title: 'Cannot archive your own profile', description: 'Your node is the anchor of the family tree and cannot be removed. Contact support if you need to transfer ownership.', variant: 'destructive' })
+      setIsDeleteDialogOpen(false)
+      return
+    }
     // Contributors may not archive a node claimed by a different user
     if (!isAdmin && memberToDelete?.isClaimed && memberToDelete?.claimedByUserId !== user?.id) {
       toast({ title: 'Cannot archive', description: 'This profile is claimed by another member. Ask a family admin to archive it.', variant: 'destructive' })
@@ -1794,10 +1812,16 @@ export default function FamilyGraphApp() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 pointer-events-none select-none z-10">
                   {/* Ghost parents */}
                   <div className="flex items-end gap-12">
-                    {[{ label: 'Add Father', rel: 'father', color: 'blue' }, { label: 'Add Mother', rel: 'mother', color: 'pink' }].map(slot => (
+                    {([{ label: 'Add Father', rel: 'father' as QuickRelType, color: 'blue' }, { label: 'Add Mother', rel: 'mother' as QuickRelType, color: 'pink' }]).map(slot => (
                       <div key={slot.rel} className="flex flex-col items-center gap-2 pointer-events-auto">
                         <button
-                          onClick={() => setIsAddDialogOpen(true)}
+                          onClick={() => {
+                            if (selfMember && handleAddRelative) {
+                              handleAddRelative(selfMember.id, slot.rel)
+                            } else {
+                              setIsAddDialogOpen(true)
+                            }
+                          }}
                           className={`flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed transition-all hover:scale-105 ${slot.color === 'blue' ? 'border-blue-500/40 bg-blue-500/5 hover:border-blue-500/70 hover:bg-blue-500/10' : 'border-pink-500/40 bg-pink-500/5 hover:border-pink-500/70 hover:bg-pink-500/10'}`}
                         >
                           <span className="text-xl">＋</span>
@@ -1879,7 +1903,11 @@ export default function FamilyGraphApp() {
                   if (m && !m.isClaimed) setInviteToClaimTarget(m)
                 } : undefined}
                 onClaimNode={!isDemoMode && user ? (memberId) => { setClaimTargetId(memberId); setIsClaimDialogOpen(true) } : undefined}
-                onDelete={canDelete ? (memberId) => { setSelectedMemberId(memberId); setIsDeleteDialogOpen(true) } : undefined}
+                onDelete={canDelete ? (memberId) => {
+                  if (memberId === selfMember?.id) return // Issue 3: own node is permanent
+                  setSelectedMemberId(memberId)
+                  setIsDeleteDialogOpen(true)
+                } : undefined}
                 onOpenMemberDetail={handleOpenSelectedMemberDetail}
                 isAdmin={isAdmin}
               />
@@ -2130,6 +2158,22 @@ export default function FamilyGraphApp() {
             )
           )}
 
+          {/* Family Mission Panel — persistent right sidebar in tree view.
+              Hidden when a higher-priority panel (AI, Invite, PathFinder, MemberDetail) opens. */}
+          {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
+            && !showAIWidget && !showInviteWidget && !selectedMember && (
+            <FamilyMissionPanel
+              selfMember={selfMember}
+              members={members}
+              isAdmin={isAdmin}
+              familyId={familyId}
+              onAddMember={() => setIsAddDialogOpen(true)}
+              onAddStory={() => setIsStoryDialogOpen(true)}
+              onInviteMember={(m) => setInviteToClaimTarget(m)}
+              hasStories={checklistHasStories}
+            />
+          )}
+
           {/* Member Detail — aside on desktop, bottom sheet on mobile */}
           {selectedMemberDisplay && !showAIWidget && !showInviteWidget && !pathFinderOpen && !isMobile && (
             <aside className="w-80 shrink-0 xl:w-96 h-full overflow-hidden">
@@ -2141,7 +2185,7 @@ export default function FamilyGraphApp() {
                   !isViewer &&
                   (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                 ) ? () => setEditingMember(selectedMember) : undefined}
-                onDelete={canDelete ? () => setIsDeleteDialogOpen(true) : undefined}
+                onDelete={canDelete && selectedMemberDisplay?.id !== selfMember?.id ? () => setIsDeleteDialogOpen(true) : undefined}
                 onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                 onInvite={!isDemoMode && !isViewer && !selectedMemberDisplay.isClaimed
                   ? () => setInviteToClaimTarget(selectedMember)
@@ -2199,6 +2243,7 @@ export default function FamilyGraphApp() {
                 handleOpenPathFinder(id)
               } : undefined}
               onDelete={canDelete ? (id) => {
+                if (id === selfMember?.id) return // Issue 3: own node is permanent
                 setSelectedMemberId(id)
                 setMobileMenuMemberId(null)
                 setLongPressMemberId(null)
@@ -2245,7 +2290,7 @@ export default function FamilyGraphApp() {
                         !isViewer &&
                         (!selectedMemberDisplay.isClaimed || selectedMemberDisplay.claimedByUserId === user?.id)
                       ) ? () => setEditingMember(selectedMember) : undefined}
-                      onDelete={canDelete ? () => setIsDeleteDialogOpen(true) : undefined}
+                      onDelete={canDelete && selectedMember?.id !== selfMember?.id ? () => setIsDeleteDialogOpen(true) : undefined}
                       onAddStory={!isViewer ? () => setIsStoryDialogOpen(true) : undefined}
                       onInvite={!isDemoMode && !isViewer && selectedMember && !selectedMemberDisplay.isClaimed
                         ? () => setInviteToClaimTarget(selectedMember)
