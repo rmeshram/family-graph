@@ -2145,9 +2145,10 @@ export default function FamilyGraphApp() {
             )
           )}
 
-          {/* Family Mission Panel — persistent right sidebar in tree view.
-              Hidden when a higher-priority panel (AI, Invite, PathFinder, MemberDetail) opens. */}
+          {/* Family Mission Panel — desktop-only right sidebar in tree view.
+              Hidden on mobile (full canvas needed) and when any higher-priority panel is open. */}
           {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
+            && !isMobile
             && !showAIWidget && !showInviteWidget && !selectedMember && (
               <FamilyMissionPanel
                 selfMember={selfMember}
