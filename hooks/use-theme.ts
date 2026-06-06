@@ -5,14 +5,18 @@ import { useEffect, useState } from 'react'
 export type AppTheme = 'dark' | 'light'
 
 export function useAppTheme() {
-  const [theme, setThemeState] = useState<AppTheme>('dark')
+  const [theme, setThemeState] = useState<AppTheme>('light')
 
   // Read from localStorage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem('fg-theme') as AppTheme | null
-      if (stored === 'light') {
+      if (stored === 'dark') {
+        setThemeState('dark')
+      } else {
+        // Default (no stored value or 'light') → light theme
         setThemeState('light')
+        document.documentElement.classList.add('light-theme')
       }
     } catch { }
   }, [])

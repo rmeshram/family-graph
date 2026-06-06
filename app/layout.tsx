@@ -74,7 +74,7 @@ export default function RootLayout({
         {/* Restore theme before first paint — raw script runs synchronously, no FOUC */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('fg-theme');if(t==='light')document.documentElement.classList.add('light-theme');}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('fg-theme');if(t!=='dark')document.documentElement.classList.add('light-theme');}catch(e){}})()`,
           }}
         />
       </head>

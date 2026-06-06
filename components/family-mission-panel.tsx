@@ -47,6 +47,8 @@ export interface FamilyMissionPanelProps {
   onInviteMember: (member: FamilyMember) => void
   onEditSelf: () => void
   hasStories: boolean
+  /** Override outer container className (e.g. full-width in mobile drawer) */
+  className?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -130,6 +132,7 @@ export function FamilyMissionPanel({
   onInviteMember,
   onEditSelf,
   hasStories,
+  className,
 }: FamilyMissionPanelProps) {
   const router = useRouter()
   const [missionsOpen, setMissionsOpen] = useState(true)
@@ -164,7 +167,7 @@ export function FamilyMissionPanel({
   const profileComplete = missingProfileFields.length === 0
 
   return (
-    <div className="flex h-full flex-col border-l border-border/40 w-64 lg:w-72 shrink-0 overflow-hidden"
+    <div className={cn("flex h-full flex-col border-l border-border/40 shrink-0 overflow-hidden", className ?? "w-64 lg:w-72")}
       style={{ background: 'var(--surface-header, hsl(var(--card)))' }}>
 
       {/* ── Complete Your Profile — primary action, hidden once done ── */}

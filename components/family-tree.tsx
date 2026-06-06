@@ -83,6 +83,8 @@ interface FamilyTreeProps {
   isAdmin?: boolean
   /** Open the full detail panel for this member (graph popup → full sidebar) */
   onOpenMemberDetail?: (memberId: string) => void
+  /** Extra bottom space (px) to push zoom controls above a sticky bottom bar on mobile */
+  bottomControlsInset?: number
 }
 
 interface NodePosition {
@@ -91,7 +93,7 @@ interface NodePosition {
   y: number
 }
 
-export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, onOpenProfile, onFindRelationship, onInviteNode, onClaimNode, onLongPressMember, isAdmin = false, onOpenMemberDetail }: FamilyTreeProps) {
+export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMember, onDoubleClickMember, onAddRelative, onOpenProfile, onFindRelationship, onInviteNode, onClaimNode, onLongPressMember, isAdmin = false, onOpenMemberDetail, bottomControlsInset = 0 }: FamilyTreeProps) {
   const router = useRouter()
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
@@ -1706,8 +1708,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
 
       {/* ─── Controls pill ─────────────────────────────────────────────── */}
       <div
-        className="absolute bottom-4 right-4 z-[3] flex items-center rounded-xl border border-border/40 overflow-hidden backdrop-blur-md divide-x divide-border/30"
-        style={{ background: 'var(--surface-card)' }}
+        className="absolute right-4 z-[3] flex items-center rounded-xl border border-border/40 overflow-hidden backdrop-blur-md divide-x divide-border/30"
+        style={{ background: 'var(--surface-card)', bottom: `${16 + bottomControlsInset}px` }}
       >
         <button
           onClick={() => { const cx = dimensions.width / 2; const cy = dimensions.height / 2; setZoom(z => { const nz = Math.min(z * 1.25, 4); setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) })); return nz }) }}

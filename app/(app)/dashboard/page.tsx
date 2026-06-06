@@ -1908,6 +1908,11 @@ export default function FamilyGraphApp() {
                   : undefined}
                 onLongPressMember={isMobile && isAdmin ? handleLongPressMemberMobile : undefined}
                 isAdmin={isAdmin}
+                bottomControlsInset={
+                  isMobile && !showMissionDrawer && missionProgress.done < missionProgress.total
+                    ? 88
+                    : 0
+                }
               />
             )}
             {viewMode === 'orgchart' && (
@@ -2288,6 +2293,7 @@ export default function FamilyGraphApp() {
                 <div className="flex-1 overflow-y-auto">
                   {selfMember && (
                     <FamilyMissionPanel
+                      className="w-full border-l-0"
                       selfMember={selfMember}
                       members={members}
                       isAdmin={isAdmin}

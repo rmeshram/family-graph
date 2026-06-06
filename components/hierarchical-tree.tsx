@@ -59,6 +59,8 @@ interface LayoutNode {
   x: number
   y: number
   role: 'self' | 'father' | 'mother' | 'fatherFather' | 'fatherMother' | 'motherFather' | 'motherMother' | 'spouse' | 'sibling' | 'child' | 'other'
+  /** True when this is an in-law (spouse of a core-tree member, placed in the extended section) */
+  isInLaw?: boolean
 }
 
 interface GhostSlot {
@@ -273,9 +275,14 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       const rowY = rg * ROW_H
       const baseX = (rowRightX.get(rg) ?? NODE_W / 2) + SECTION_GAP + NODE_W / 2
 
+      // Collect IDs of core (non-'other') members already placed, so we can mark in-laws
+      const coreNodeIds = new Set(nodes.map(n => n.id))
+
       sorted.forEach((m, i) => {
         const x = baseX + i * (NODE_W + H_GAP)
-        nodes.push({ id: m.id, member: m, row: rg, col: nodes.length, x, y: rowY, role: 'other' })
+        // Mark as in-law if this extended member is a spouse of someone already in the core tree
+        const isInLaw = (m.spouseIds ?? []).some(sid => coreNodeIds.has(sid))
+        nodes.push({ id: m.id, member: m, row: rg, col: nodes.length, x, y: rowY, role: 'other', isInLaw })
         placedIds.add(m.id)
       })
 
@@ -438,6 +445,11 @@ const TreeNodeCard = memo(function TreeNodeCard({
             <Crown className="h-4 w-4 fill-amber-400" />
           </div>
         )}
+        {node.isInLaw && !isSelf && (
+          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-10 bg-rose-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full leading-none whitespace-nowrap">
+            In-law
+          </div>
+        )}
         <span className="absolute top-1.5 right-2 text-[9px] font-bold opacity-55" style={{ color }}>
           {member.gender === 'male' ? '♂' : member.gender === 'female' ? '♀' : ''}
         </span>
@@ -452,7 +464,11 @@ const TreeNodeCard = memo(function TreeNodeCard({
         </Avatar>
         <div className="w-full px-1 text-center">
           <p className="text-[11px] font-semibold leading-tight truncate" title={displayName}>{displayName}</p>
-          {relationLabel && <p className="text-[9px] text-muted-foreground leading-tight truncate mt-0.5">{relationLabel}</p>}
+          {relationLabel && (
+            <p className={cn('text-[9px] leading-tight truncate mt-0.5', node.isInLaw ? 'text-rose-400/80 font-medium' : 'text-muted-foreground')}>
+              {relationLabel}
+            </p>
+          )}
         </div>
       </button>
 
