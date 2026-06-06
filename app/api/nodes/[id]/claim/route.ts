@@ -300,15 +300,82 @@ export async function POST(
     }
 
     // C1: Cross-family switch guard.
-    // If the claimer already belongs to a DIFFERENT family, require explicit
-    // confirmation before switching. Without this, a user who accidentally created
-    // their own tree would silently lose access to it when claiming via invite.
-    // The join page shows a confirmation dialog and re-sends with confirmCrossFamily=true.
+    // If the claimer already belongs to a DIFFERENT family, check first whether
+    // they already own a claimed node there. If they do, we never want to "switch"
+    // families — instead offer to connect the two trees (SUGGEST_FAMILY_LINK).
+    // Only show the "Switch & Claim" confirmation when the user has no active
+    // claimed node in their current family (e.g. they accidentally created a tree
+    // but never claimed a profile in it).
     const isCrossFamily = !!(callerFamilyId && callerFamilyId !== (node as any).family_id)
     if (isCrossFamily && !confirmCrossFamily) {
+      const targetFamilyId = (node as any).family_id as string
+
+      // Peek: does this user already have an active claimed node in their current family?
+      const { data: existingUserLink } = await admin
+        .from('user_node_links')
+        .select('node_id')
+        .eq('user_id', user.id)
+        .neq('node_id', nodeId)
+        .maybeSingle()
+
+      if (existingUserLink) {
+        const { data: existingNode } = await admin
+          .from('family_members')
+          .select('id, name, family_id, is_claimed, claimed_by_user_id')
+          .eq('id', (existingUserLink as any).node_id)
+          .maybeSingle()
+
+        const hasActiveClaim = existingNode &&
+          (existingNode as any).is_claimed &&
+          (existingNode as any).claimed_by_user_id === user.id
+
+        if (hasActiveClaim) {
+          // User already owns a claimed node in another family — offer to connect trees
+          const existingNodeFamilyId = (existingNode as any).family_id as string
+          if (existingNodeFamilyId !== targetFamilyId) {
+            const [fA, fB] = existingNodeFamilyId < targetFamilyId
+              ? [existingNodeFamilyId, targetFamilyId]
+              : [targetFamilyId, existingNodeFamilyId]
+
+            const { data: existingFamilyLink } = await admin
+              .from('family_links')
+              .select('id, status')
+              .eq('family_a_id', fA)
+              .eq('family_b_id', fB)
+              .maybeSingle()
+
+            const alreadyLinked = existingFamilyLink &&
+              ((existingFamilyLink as any).status === 'accepted' || (existingFamilyLink as any).status === 'pending')
+
+            if (!alreadyLinked) {
+              const [{ data: existingFamily }, { data: targetFamily }] = await Promise.all([
+                admin.from('families').select('name').eq('id', existingNodeFamilyId).maybeSingle() as any,
+                admin.from('families').select('name').eq('id', targetFamilyId).maybeSingle() as any,
+              ])
+              return NextResponse.json(
+                {
+                  error: 'SUGGEST_FAMILY_LINK',
+                  existingNodeId: (existingNode as any).id,
+                  existingNodeName: (existingNode as any).name,
+                  existingFamilyId: existingNodeFamilyId,
+                  existingFamilyName: (existingFamily as any)?.name ?? 'your family',
+                  targetNodeId: nodeId,
+                  targetFamilyId,
+                  targetFamilyName: (targetFamily as any)?.name ?? 'this family',
+                  message: `Your account is already linked to "${(existingNode as any).name}" in "${(existingFamily as any)?.name ?? 'your family'}". Instead of switching families, you can connect both trees — your profile will serve as the bridge between the two families.`,
+                },
+                { status: 409 }
+              )
+            }
+          }
+          // Already linked or same family — fall through to allow the switch
+        }
+      }
+
+      // No active claimed node in another family — show the normal "Switch & Claim" prompt
       const [{ data: currentFamily }, { data: targetFamily }] = await Promise.all([
         admin.from('families').select('name').eq('id', callerFamilyId!).maybeSingle() as any,
-        admin.from('families').select('name').eq('id', (node as any).family_id).maybeSingle() as any,
+        admin.from('families').select('name').eq('id', targetFamilyId).maybeSingle() as any,
       ])
       return NextResponse.json({
         error: 'CROSS_FAMILY_CLAIM',
