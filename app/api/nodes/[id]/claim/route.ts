@@ -204,7 +204,14 @@ export async function POST(
       id: string
       birth_year_hint?: number | null
     } | null = null
-    if (!authorized) {
+
+    // When a node is revoked, the same-family shortcut is NOT enough to bypass
+    // the revoke wall — only an explicit admin re-invitation can do that.
+    // So we always run the invite-code lookup when the node is revoked AND a
+    // code was supplied, even if the user is already in the same family.
+    const nodeIsRevoked = (node as any).claim_status === 'revoked'
+
+    if (!authorized || (inviteCode?.trim() && nodeIsRevoked)) {
       // SECURITY: An invite code is mandatory for cross-family claims.
       // Without a code we cannot verify the caller was the intended recipient —
       // any user who discovers a nodeId could otherwise claim it as long as any

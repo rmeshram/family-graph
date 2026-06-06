@@ -170,15 +170,6 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString()
   const linkStatus = callerIsAdminOfExistingFamily ? 'accepted' : 'pending'
 
-  // ── Write rate-limit marker ───────────────────────────────────────────────
-  await admin.from('family_link_notifications').insert({
-    link_id: '00000000-0000-0000-0000-000000000000', // placeholder, updated below
-    event_type: 'cross_claim_attempt',
-    recipient_family_id: claimFamilyId,
-    initiated_by_user_id: user.id,
-    created_at: now,
-  } as any).maybeSingle() // best-effort: ignore errors here
-
   // ── Create the family_links row ───────────────────────────────────────────
   const { data: link, error: linkErr } = await admin
     .from('family_links')
@@ -204,29 +195,41 @@ export async function POST(req: NextRequest) {
 
   const linkId = (link as any).id as string
 
-  // ── Fetch family names for notifications ──────────────────────────────────
+  // ── Fetch family names for the response ──────────────────────────────────
   const [{ data: claimFamily }, { data: existingFamily }] = await Promise.all([
     admin.from('families').select('name').eq('id', claimFamilyId).maybeSingle() as any,
     admin.from('families').select('name').eq('id', existingFamilyId).maybeSingle() as any,
   ])
 
-  // ── Notify the inviting family (claimFamilyId) that a link was initiated ──
-  await admin.from('family_link_notifications').insert({
-    link_id: linkId,
-    event_type: linkStatus === 'accepted' ? 'link_accepted' : 'link_requested',
-    recipient_family_id: claimFamilyId,
-    created_at: now,
-  } as any)
-
-  // ── If pending, notify the other family to accept ─────────────────────────
-  if (linkStatus === 'pending') {
-    await admin.from('family_link_notifications').insert({
+  // ── Notify BOTH families ──────────────────────────────────────────────────
+  // The event type is the same for both: pending → link_requested (needs action),
+  // accepted → link_accepted (informational). The existing-node family must be
+  // notified even on auto-accept so their admins know the connection was made.
+  const notifEvent = linkStatus === 'accepted' ? 'link_accepted' : 'link_requested'
+  await Promise.all([
+    // Rate-limit sentinel (also serves as an audit trail for the initiator)
+    admin.from('family_link_notifications').insert({
       link_id: linkId,
-      event_type: 'link_requested',
+      event_type: 'cross_claim_attempt',
+      recipient_family_id: claimFamilyId,
+      initiated_by_user_id: user.id,
+      created_at: now,
+    } as any),
+    // Inviting family notification
+    admin.from('family_link_notifications').insert({
+      link_id: linkId,
+      event_type: notifEvent,
+      recipient_family_id: claimFamilyId,
+      created_at: now,
+    } as any),
+    // Existing-node family notification — always, even on auto-accept
+    admin.from('family_link_notifications').insert({
+      link_id: linkId,
+      event_type: notifEvent,
       recipient_family_id: existingFamilyId,
       created_at: now,
-    } as any)
-  }
+    } as any),
+  ])
 
   return NextResponse.json({
     linkId,

@@ -36,6 +36,10 @@ export type NotifType =
   | 'memorial'
   | 'role_changed'
   | 'member_updated'
+  // Family link events
+  | 'link_requested'
+  | 'link_accepted'
+  | 'link_revoked'
 
 export interface AppNotification {
   id: string
@@ -153,6 +157,59 @@ export function useNotifications(
     const id = setInterval(load, 60_000)
     return () => clearInterval(id)
   }, [isAdmin, familyId])
+
+  // ── Family link notifications polling ────────────────────────────────
+  // Polls /api/family-links/pending every 60 s and surfaces:
+  //   incoming pending requests → link_requested (high priority, needs action)
+  //   recently accepted links (≤ 7 days) → link_accepted (medium, informational)
+  const [familyLinkNotifs, setFamilyLinkNotifs] = useState<AppNotification[]>([])
+  useEffect(() => {
+    if (!familyId) return
+
+    const load = async () => {
+      try {
+        const res = await fetch('/api/family-links/pending')
+        if (!res.ok) return
+        const { incoming = [], accepted = [] } = await res.json()
+        const notifs: AppNotification[] = []
+
+        for (const req of incoming as any[]) {
+          notifs.push({
+            id: `family-link-req-${req.id}`,
+            type: 'link_requested' as NotifType,
+            title: `Family connection request`,
+            body: `"${req.otherFamilyName}" wants to connect family trees. Go to Settings → Connected Families to accept.`,
+            timestamp: new Date(req.createdAt ?? Date.now()),
+            read: false,
+            href: '/dashboard',
+            priority: 'high' as NotifPriority,
+          })
+        }
+
+        const sevenDaysAgo = Date.now() - 7 * 86_400_000
+        for (const acc of accepted as any[]) {
+          if (!acc.updatedAt) continue
+          if (new Date(acc.updatedAt).getTime() < sevenDaysAgo) continue
+          notifs.push({
+            id: `family-link-acc-${acc.id}`,
+            type: 'link_accepted' as NotifType,
+            title: `Families connected`,
+            body: `Your family is now linked with "${acc.otherFamilyName}". Members from both trees can see each other.`,
+            timestamp: new Date(acc.updatedAt ?? Date.now()),
+            read: false,
+            href: '/dashboard',
+            priority: 'medium' as NotifPriority,
+          })
+        }
+
+        setFamilyLinkNotifs(notifs)
+      } catch { /* ignore */ }
+    }
+
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [familyId])
 
   // ── Realtime claim_audit_log subscription ─────────────────────────────
   // Listens for claim lifecycle events on the user's family and emits
@@ -853,13 +910,14 @@ export function useNotifications(
         ...visibilityNotifs,     // realtime: visibility changes
         ...roleNotifs,           // realtime: role changes
         ...profileUpdateNotifs,  // realtime: profile field changes (photo, bio, etc.)
+        ...familyLinkNotifs,     // polled: family link requests + recent accepted links
         ...notifications,        // computed: birthdays, events, members, reminders
       ]
       const deduped = deduplicateNotifs(merged)
       const sorted = sortNotifications(deduped)
       return sorted.map(n => ({ ...n, read: readIds.has(n.id) }))
     },
-    [notifications, claimNotifs, joinNotifs, memberAddedNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, profileUpdateNotifs, readIds]
+    [notifications, claimNotifs, joinNotifs, memberAddedNotifs, pendingClaimNotifs, storyNotifs, visibilityNotifs, roleNotifs, profileUpdateNotifs, familyLinkNotifs, readIds]
   )
 
   const unreadCount = useMemo(

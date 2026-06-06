@@ -43,16 +43,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .eq('id', user.id)
     .single()
 
-  if ((profile as any)?.role !== 'admin') {
-    return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
-  }
-
   const myFamilyId = (profile as any)?.family_id as string | null
   if (!myFamilyId) return NextResponse.json({ error: 'NO_FAMILY' }, { status: 400 })
 
   const { data: link } = await admin
     .from('family_links')
-    .select('id, family_a_id, family_b_id, status')
+    .select('id, family_a_id, family_b_id, status, initiated_by')
     .eq('id', id)
     .single()
 
@@ -61,6 +57,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const l = link as any
   if (l.family_a_id !== myFamilyId && l.family_b_id !== myFamilyId) {
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+  }
+
+  // Allow: family admin OR the original initiator of the link (even if a regular member).
+  // Rationale: the person who connected two trees should always be able to undo that action.
+  const isAdmin = (profile as any)?.role === 'admin'
+  const isInitiator = l.initiated_by === user.id
+  if (!isAdmin && !isInitiator) {
+    return NextResponse.json({ error: 'FORBIDDEN', message: 'Only a family admin or the person who created this connection can remove it.' }, { status: 403 })
   }
 
   if (l.status === 'revoked') {
