@@ -14,7 +14,6 @@ import { useMemo, useState } from 'react'
 import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
-import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
@@ -59,10 +58,18 @@ function genderColor(gender?: string) {
 }
 
 function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: FamilyMember[]): string {
-  const result = getRelationshipBetweenPeople(allMembers, self.id, member.id)
-  if (result.found && result.relationship) {
-    // Capitalise first letter for display
-    return result.relationship.charAt(0).toUpperCase() + result.relationship.slice(1)
+  if (self.parentIds.includes(member.id))
+    return member.gender === 'male' ? 'Father' : member.gender === 'female' ? 'Mother' : 'Parent'
+  if (member.parentIds.includes(self.id))
+    return member.gender === 'male' ? 'Son' : member.gender === 'female' ? 'Daughter' : 'Child'
+  if ((self.spouseIds ?? []).includes(member.id))
+    return member.gender === 'male' ? 'Husband' : member.gender === 'female' ? 'Wife' : 'Spouse'
+  if (self.parentIds.length > 0 && member.parentIds.some(pid => self.parentIds.includes(pid)))
+    return member.gender === 'male' ? 'Brother' : member.gender === 'female' ? 'Sister' : 'Sibling'
+  const parents = self.parentIds.map(pid => allMembers.find(m => m.id === pid)).filter(Boolean) as FamilyMember[]
+  for (const p of parents) {
+    if (p.parentIds.includes(member.id))
+      return member.gender === 'male' ? 'Grandfather' : member.gender === 'female' ? 'Grandmother' : 'Grandparent'
   }
   return 'Family member'
 }
@@ -203,7 +210,7 @@ export function FamilyMissionPanel({
       )}
 
       {/* ── Family Mission ──────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-border/40">
+      <div className="border-b border-border/40">
         <button type="button" onClick={() => setMissionsOpen(v => !v)}
           className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
           <div className="flex items-center gap-2">
@@ -226,7 +233,7 @@ export function FamilyMissionPanel({
                   style={{ width: `${progressPct}%` }} />
               </div>
             </div>
-            <div className="overflow-y-auto" style={{ maxHeight: '256px' }}>
+            <div className="overflow-y-auto" style={{ maxHeight: '240px' }}>
               <ul className="px-3 pb-3 space-y-0.5">
                 {steps.map(step => (
                   <li key={step.id}>

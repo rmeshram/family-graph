@@ -44,7 +44,7 @@ export const FEATURE_FLAGS = {
   /** Phone number + OTP sign-in / sign-up (WhatsApp / SMS).
    *  Requires Supabase Phone provider + an SMS/WhatsApp gateway configured in the Dashboard.
    *  Keep false until the gateway is ready — email auth continues to work independently. */
-  enablePhoneOtpAuth: false,
+  enablePhoneOtpAuth: true,
   /** Email + password authentication. Disable only if switching 100% to phone OTP. */
   enableEmailPasswordAuth: true,
   /** Hierarchical family tree view — screenshot-faithful layout (grandparents → parents → You → children).
