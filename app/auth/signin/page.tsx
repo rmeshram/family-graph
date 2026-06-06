@@ -188,6 +188,8 @@ function PhoneSignIn({ onSwitchToEmail }: { onSwitchToEmail?: () => void }) {
     setIsLoading(false)
     if (error) {
       const friendly = friendlyPhoneError(error.message)
+      // Surface raw error in dev so we can diagnose Twilio configuration issues
+      console.error('[OTP] sendOtp error:', error.message, error)
       setError(friendly)
       if (error.message.toLowerCase().includes('phone provider')) setIsProviderError(true)
       return
@@ -246,7 +248,7 @@ function PhoneSignIn({ onSwitchToEmail }: { onSwitchToEmail?: () => void }) {
                   className="pl-10 h-11 bg-muted/50 border-border font-mono tracking-wide" autoFocus />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">We'll send a 6-digit OTP via SMS or WhatsApp.</p>
+            <p className="text-xs text-muted-foreground">We'll send a 6-digit OTP via SMS.</p>
           </div>
           <Button className="w-full h-11" disabled={isLoading || !isValidIndianPhone(phone)} onClick={sendOtp}>
             {isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending OTP…</> : <>Send OTP <ArrowRight className="w-4 h-4 ml-2" /></>}
