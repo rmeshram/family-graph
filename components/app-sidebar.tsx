@@ -31,7 +31,7 @@ const ALL_NAV_ITEMS = [
   { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400', flag: null },
   { icon: Camera, label: 'Memory Vault', href: '/memory', color: 'text-amber-400', flag: null },
   { icon: Sparkles, label: 'AI Copilot', href: '/ai-copilot', color: 'text-violet-400', flag: 'enableAICopilot' as const },
-  { icon: CalendarDays, label: 'Events', href: '/events', color: 'text-pink-400', flag: null },
+  { icon: CalendarDays, label: 'Events', href: '/events', color: 'text-pink-400', flag: 'enableEvents' as const },
   { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500', flag: null },
   { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400', flag: 'enableMigrationMap' as const },
   { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400', flag: null },

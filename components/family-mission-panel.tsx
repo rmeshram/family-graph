@@ -86,7 +86,6 @@ function buildMissionSteps(
   hasOtherClaims: boolean,
   onQuickAddMember: (relType: QuickRelType, anchorId: string) => void,
   onAddStory: () => void,
-  onInviteMember: (member: FamilyMember) => void,
 ): MissionStep[] {
   if (!selfMember) return []
 
@@ -108,22 +107,6 @@ function buildMissionSteps(
     { id: 'add_father', label: 'Add father', emoji: '\u{1F468}', done: !!father, cta: 'Add', onAction: () => onQuickAddMember('father', selfMember.id) },
     { id: 'add_mother', label: 'Add mother', emoji: '\u{1F469}', done: !!mother, cta: 'Add', onAction: () => onQuickAddMember('mother', selfMember.id) },
     { id: 'add_sibling', label: 'Add a sibling', emoji: '\u{1F46B}', done: hasSibling, cta: 'Add', onAction: () => onQuickAddMember('sibling', selfMember.id) },
-    {
-      id: 'invite_father',
-      label: father ? `Invite ${father.name.split(' ')[0]}` : 'Invite father',
-      emoji: '\u{1F48C}',
-      done: !!father?.isClaimed,
-      cta: father ? 'Invite' : undefined,
-      onAction: father && !father.isClaimed ? () => onInviteMember(father) : undefined,
-    },
-    {
-      id: 'invite_mother',
-      label: mother ? `Invite ${mother.name.split(' ')[0]}` : 'Invite mother',
-      emoji: '\u{1F48C}',
-      done: !!mother?.isClaimed,
-      cta: mother ? 'Invite' : undefined,
-      onAction: mother && !mother.isClaimed ? () => onInviteMember(mother) : undefined,
-    },
     { id: 'add_spouse', label: 'Add spouse / partner', emoji: '\u{1F48D}', done: hasSpouse, cta: 'Add', onAction: () => onQuickAddMember('spouse', selfMember.id) },
     { id: 'add_child', label: 'Add a child', emoji: '\u{1F476}', done: hasChild, cta: 'Add', onAction: () => onQuickAddMember('child', selfMember.id) },
     { id: 'add_paternal_gf', label: "Father's father", emoji: '\u{1F474}', done: hasPatGrandFather, cta: 'Add', onAction: father ? () => onQuickAddMember('father', father.id) : () => onQuickAddMember('father', selfMember.id) },
@@ -155,8 +138,8 @@ export function FamilyMissionPanel({
   )
 
   const steps = useMemo(
-    () => buildMissionSteps(selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory, onInviteMember),
-    [selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory, onInviteMember]
+    () => buildMissionSteps(selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory),
+    [selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory]
   )
 
   const completedCount = steps.filter(s => s.done).length

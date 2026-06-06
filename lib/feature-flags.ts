@@ -8,12 +8,12 @@ export const FEATURE_FLAGS = {
   enableAICopilot: true,
   /** Stripe subscription / upgrade flow — not yet integrated */
   enableUpgradeFlow: false,
-  /** Migration map page — read-only, no real data wiring */
-  enableMigrationMap: true,
+  /** Migration map page — read-only, no real data wiring. Disabled until migration data is properly wired. */
+  enableMigrationMap: false,
   /** Family Poster generator — not yet production-ready */
-  enableFamilyPoster: true,
+  enableFamilyPoster: false,
   /** Kulgatha PDF export — not yet production-ready */
-  enableKulgathaPDF: true,
+  enableKulgathaPDF: false,
   /** Live Activity widget on the graph canvas. Off by default for MVP — noise > signal until graph has scale. */
   enableLiveActivityWidget: false,
   /** Presence avatars (who's online) on the dashboard header. Off until realtime presence is wired. */
@@ -57,6 +57,8 @@ export const FEATURE_FLAGS = {
   /** Generation-strip org chart view. Has generation label bug (gen=0 maps to Great Grandparents but is actually "You").
    *  Disabled — keeping code in case it's fixed and re-enabled later. */
   enableOrgChartView: false,
+  /** Events calendar page. Low value for MVP — re-enable once event RSVP + notifications are wired. */
+  enableEvents: false,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS
