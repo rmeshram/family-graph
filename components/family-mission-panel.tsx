@@ -14,6 +14,8 @@ import { useMemo, useState } from 'react'
 import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
+import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
+import type { QuickRelType } from '@/components/quick-add-member-dialog'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
@@ -39,6 +41,7 @@ export interface FamilyMissionPanelProps {
   isAdmin: boolean
   familyId: string | null
   onAddMember: () => void
+  onQuickAddMember: (relType: QuickRelType, anchorId: string) => void
   onAddStory: () => void
   onInviteMember: (member: FamilyMember) => void
   onEditSelf: () => void
@@ -81,8 +84,9 @@ function buildMissionSteps(
   members: FamilyMember[],
   hasStories: boolean,
   hasOtherClaims: boolean,
-  onAddMember: () => void,
+  onQuickAddMember: (relType: QuickRelType, anchorId: string) => void,
   onAddStory: () => void,
+  onInviteMember: (member: FamilyMember) => void,
 ): MissionStep[] {
   if (!selfMember) return []
 
@@ -100,32 +104,32 @@ function buildMissionSteps(
   const hasPatGrandMother = fatherParents.some(p => p.gender === 'female')
 
   return [
-    { id: 'add_self', label: 'Add yourself', emoji: '👤', done: true },
-    { id: 'add_father', label: 'Add father', emoji: '👨', done: !!father, cta: 'Add', onAction: onAddMember },
-    { id: 'add_mother', label: 'Add mother', emoji: '👩', done: !!mother, cta: 'Add', onAction: onAddMember },
-    { id: 'add_sibling', label: 'Add a sibling', emoji: '👫', done: hasSibling, cta: 'Add', onAction: onAddMember },
+    { id: 'add_self', label: 'Add yourself', emoji: '\u{1F464}', done: true },
+    { id: 'add_father', label: 'Add father', emoji: '\u{1F468}', done: !!father, cta: 'Add', onAction: () => onQuickAddMember('father', selfMember.id) },
+    { id: 'add_mother', label: 'Add mother', emoji: '\u{1F469}', done: !!mother, cta: 'Add', onAction: () => onQuickAddMember('mother', selfMember.id) },
+    { id: 'add_sibling', label: 'Add a sibling', emoji: '\u{1F46B}', done: hasSibling, cta: 'Add', onAction: () => onQuickAddMember('sibling', selfMember.id) },
     {
       id: 'invite_father',
       label: father ? `Invite ${father.name.split(' ')[0]}` : 'Invite father',
-      emoji: '💌',
+      emoji: '\u{1F48C}',
       done: !!father?.isClaimed,
       cta: father ? 'Invite' : undefined,
-      onAction: father && !father.isClaimed ? onAddMember : undefined,
+      onAction: father && !father.isClaimed ? () => onInviteMember(father) : undefined,
     },
     {
       id: 'invite_mother',
       label: mother ? `Invite ${mother.name.split(' ')[0]}` : 'Invite mother',
-      emoji: '💌',
+      emoji: '\u{1F48C}',
       done: !!mother?.isClaimed,
       cta: mother ? 'Invite' : undefined,
-      onAction: mother && !mother.isClaimed ? onAddMember : undefined,
+      onAction: mother && !mother.isClaimed ? () => onInviteMember(mother) : undefined,
     },
-    { id: 'add_spouse', label: 'Add spouse / partner', emoji: '💍', done: hasSpouse, cta: 'Add', onAction: onAddMember },
-    { id: 'add_child', label: 'Add a child', emoji: '👶', done: hasChild, cta: 'Add', onAction: onAddMember },
-    { id: 'add_paternal_gf', label: "Father's father", emoji: '👴', done: hasPatGrandFather, cta: 'Add', onAction: onAddMember },
-    { id: 'add_paternal_gm', label: "Father's mother", emoji: '👵', done: hasPatGrandMother, cta: 'Add', onAction: onAddMember },
-    { id: 'add_story', label: 'Add a memory or story', emoji: '📖', done: hasStories, cta: 'Add', onAction: onAddStory },
-    { id: 'family_claimed', label: 'Another member joined', emoji: '🎉', done: hasOtherClaims },
+    { id: 'add_spouse', label: 'Add spouse / partner', emoji: '\u{1F48D}', done: hasSpouse, cta: 'Add', onAction: () => onQuickAddMember('spouse', selfMember.id) },
+    { id: 'add_child', label: 'Add a child', emoji: '\u{1F476}', done: hasChild, cta: 'Add', onAction: () => onQuickAddMember('child', selfMember.id) },
+    { id: 'add_paternal_gf', label: "Father's father", emoji: '\u{1F474}', done: hasPatGrandFather, cta: 'Add', onAction: father ? () => onQuickAddMember('father', father.id) : () => onQuickAddMember('father', selfMember.id) },
+    { id: 'add_paternal_gm', label: "Father's mother", emoji: '\u{1F475}', done: hasPatGrandMother, cta: 'Add', onAction: father ? () => onQuickAddMember('mother', father.id) : () => onQuickAddMember('mother', selfMember.id) },
+    { id: 'add_story', label: 'Add a memory or story', emoji: '\u{1F4D6}', done: hasStories, cta: 'Add', onAction: onAddStory },
+    { id: 'family_claimed', label: 'Another member joined', emoji: '\u{1F389}', done: hasOtherClaims },
   ]
 }
 
@@ -136,7 +140,8 @@ export function FamilyMissionPanel({
   members,
   isAdmin: _isAdmin,
   familyId: _familyId,
-  onAddMember,
+  onAddMember: _onAddMember,
+  onQuickAddMember,
   onAddStory,
   onInviteMember,
   onEditSelf,
@@ -150,8 +155,8 @@ export function FamilyMissionPanel({
   )
 
   const steps = useMemo(
-    () => buildMissionSteps(selfMember, members, hasStories, hasOtherClaims, onAddMember, onAddStory),
-    [selfMember, members, hasStories, hasOtherClaims, onAddMember, onAddStory]
+    () => buildMissionSteps(selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory, onInviteMember),
+    [selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory, onInviteMember]
   )
 
   const completedCount = steps.filter(s => s.done).length

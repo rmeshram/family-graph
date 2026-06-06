@@ -1320,8 +1320,8 @@ export default function FamilyGraphApp() {
 
   const VIEW_MODES: { key: TreeViewMode; label: string; icon: React.ElementType }[] = [
     ...(FEATURE_FLAGS.enableHierarchicalTreeView ? [{ key: 'tree' as TreeViewMode, label: 'Tree', icon: TreePine }] : []),
-    { key: 'graph', label: 'Graph', icon: Network },
-    { key: 'orgchart', label: 'Org Chart', icon: GitBranch },
+    ...(FEATURE_FLAGS.enableGraphView ? [{ key: 'graph' as TreeViewMode, label: 'Graph', icon: Network }] : []),
+    ...(FEATURE_FLAGS.enableOrgChartView ? [{ key: 'orgchart' as TreeViewMode, label: 'Org Chart', icon: GitBranch }] : []),
     { key: 'list', label: 'List', icon: List },
     { key: 'universe', label: 'Universe', icon: Sparkles },
   ]

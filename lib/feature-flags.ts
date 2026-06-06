@@ -51,6 +51,12 @@ export const FEATURE_FLAGS = {
    *  Includes ghost-slot onboarding guide for 2-minute family setup.
    *  Set to true to show the "Tree" tab in the dashboard view switcher. */
   enableHierarchicalTreeView: true,
+  /** Original force-directed graph canvas. Superseded by Universe (same concept, more polish).
+   *  Disabled — keeping code for potential future differentiation. */
+  enableGraphView: false,
+  /** Generation-strip org chart view. Has generation label bug (gen=0 maps to Great Grandparents but is actually "You").
+   *  Disabled — keeping code in case it's fixed and re-enabled later. */
+  enableOrgChartView: false,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS
