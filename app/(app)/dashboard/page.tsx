@@ -895,6 +895,46 @@ export default function FamilyGraphApp() {
     [members, user?.id]
   )
 
+  // ── Mission progress (mobile strip) ─────────────────────────────────────────
+  // Mirrors buildMissionSteps logic but only computes done/total — no callbacks.
+  const missionProgress = useMemo(() => {
+    if (!selfMember) return { done: 0, total: 10 }
+    const byId = new Map(members.map(m => [m.id, m]))
+    const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
+    const father = parents.find(p => p.gender === 'male')
+    const mother = parents.find(p => p.gender === 'female')
+    const hasSpouse = (selfMember.spouseIds ?? []).some(sid => byId.has(sid))
+    const hasChild = members.some(m => m.parentIds.includes(selfMember.id))
+    const hasSibling = members.some(
+      m => m.id !== selfMember.id && m.parentIds.length > 0 &&
+        m.parentIds.some(pid => selfMember.parentIds.includes(pid))
+    )
+    const fatherParents = father ? father.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[] : []
+    const checks = [
+      true, // add self — always done
+      !!father, !!mother, hasSibling, hasSpouse, hasChild,
+      fatherParents.some(p => p.gender === 'male'),
+      fatherParents.some(p => p.gender === 'female'),
+      checklistHasStories,
+      checklistHasOtherClaims,
+    ]
+    return { done: checks.filter(Boolean).length, total: checks.length }
+  }, [selfMember, members, checklistHasStories, checklistHasOtherClaims])
+
+  // ── Mission drawer: auto-open once for new users ────────────────────────────
+  // Fires when user is on tree view, has < 4 members, and hasn't seen it yet.
+  useEffect(() => {
+    if (!isMobile || !selfMember || isDemoMode || isViewer || viewMode !== 'tree') return
+    if (missionProgress.done >= missionProgress.total) return
+    const key = `mission_intro_shown_${selfMember.id}`
+    if (typeof window !== 'undefined' && !localStorage.getItem(key) && members.length >= 2 && members.length < 6) {
+      localStorage.setItem(key, '1')
+      const t = setTimeout(() => setShowMissionDrawer(true), 1800)
+      return () => clearTimeout(t)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, selfMember?.id, isDemoMode, isViewer, viewMode])
+
   // ── Next Best Action ─────────────────────────────────────────────────────────────────
   // Computes ONE specific step the user should take right now, in priority order:
   // add father → add mother → invite each parent → add grandparents → invite others.
@@ -1529,18 +1569,6 @@ export default function FamilyGraphApp() {
             )}
 
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
-
-            {/* Mission button — mobile only, shows progress badge */}
-            {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer && isMobile && (
-              <Button
-                variant="ghost" size="sm"
-                onClick={() => setShowMissionDrawer(true)}
-                className="h-8 gap-1 text-xs text-primary hover:bg-primary/10 relative"
-              >
-                <Target className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Mission</span>
-              </Button>
-            )}
 
             {!isViewer && (
               <Button size="sm" onClick={() => setIsAddDialogOpen(true)} className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90">
@@ -2179,6 +2207,60 @@ export default function FamilyGraphApp() {
               />
             )}
 
+          {/* ── Mobile Mission Strip — sticky bottom, replaces silent icon button ── */}
+          {isMobile && viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
+            && !showMissionDrawer && missionProgress.done < missionProgress.total && (
+            <div
+              className="absolute bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-1 pointer-events-none"
+              style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowMissionDrawer(true)}
+                className="pointer-events-auto w-full flex items-center gap-3 rounded-2xl border border-primary/30 bg-card/95 backdrop-blur-sm px-4 py-3 shadow-lg shadow-primary/10 active:scale-[0.98] transition-transform"
+                style={{
+                  boxShadow: missionProgress.done <= 3
+                    ? '0 0 0 0 rgba(99,102,241,0.4)'
+                    : undefined,
+                  animation: missionProgress.done <= 3 ? 'missionPulse 2s ease-in-out infinite' : undefined,
+                }}
+              >
+                {/* Left: icon + label */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${missionProgress.done <= 3 ? 'bg-primary text-primary-foreground' : 'bg-primary/15 text-primary'}`}>
+                    <Target className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-[13px] font-semibold text-foreground leading-tight">Family Mission</p>
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      {missionProgress.done === 1 ? 'Just getting started!' :
+                       missionProgress.done <= 4 ? `${missionProgress.total - missionProgress.done} steps to go` :
+                       `${missionProgress.done} of ${missionProgress.total} complete`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Middle: progress bar */}
+                <div className="flex-1 min-w-0">
+                  <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-indigo-400 transition-all duration-500"
+                      style={{ width: `${Math.round((missionProgress.done / missionProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1 text-right tabular-nums">
+                    {missionProgress.done}/{missionProgress.total}
+                  </p>
+                </div>
+
+                {/* Right: CTA */}
+                <div className="shrink-0 flex items-center gap-1 text-[12px] font-semibold text-primary whitespace-nowrap">
+                  {missionProgress.done <= 2 ? 'Start →' : 'Continue →'}
+                </div>
+              </button>
+            </div>
+          )}
+
           {/* Family Mission Panel — mobile bottom drawer */}
           {isMobile && (
             <Drawer open={showMissionDrawer} onOpenChange={setShowMissionDrawer} direction="bottom">
@@ -2187,6 +2269,9 @@ export default function FamilyGraphApp() {
                   <div className="flex items-center gap-2">
                     <Target className="h-4 w-4 text-primary" />
                     <span className="font-semibold text-sm">Family Mission</span>
+                    <span className="text-[11px] text-muted-foreground tabular-nums ml-1">
+                      {missionProgress.done}/{missionProgress.total}
+                    </span>
                   </div>
                   <button onClick={() => setShowMissionDrawer(false)} className="text-muted-foreground hover:text-foreground">
                     <X className="h-4 w-4" />
