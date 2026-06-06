@@ -11,6 +11,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
@@ -130,6 +131,7 @@ export function FamilyMissionPanel({
   onEditSelf,
   hasStories,
 }: FamilyMissionPanelProps) {
+  const router = useRouter()
   const [missionsOpen, setMissionsOpen] = useState(true)
   const [waitingOpen, setWaitingOpen] = useState(true)
 
@@ -310,13 +312,13 @@ export function FamilyMissionPanel({
               </ul>
             )}
 
-            {waitingPeople.length > 0 && (
+            {waitingPeople.length > 1 && (
               <div className="px-4 pb-3">
                 <button type="button"
-                  onClick={() => { if (waitingPeople[0]) onInviteMember(waitingPeople[0].member) }}
+                  onClick={() => router.push('/invite')}
                   className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-border/40 py-2 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-border/70 transition-colors">
                   <UserPlus className="h-3 w-3" />
-                  View all invites
+                  View all invites ({waitingPeople.length})
                 </button>
               </div>
             )}

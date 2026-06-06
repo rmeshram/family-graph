@@ -150,36 +150,68 @@ export default function BiodataPage() {
   }
 
   // ── Matrimonial matching ──────────────────────────────────────────────────
+
+  // BFS to collect all relatives within `maxDegree` hops in the family graph.
+  // Edges: parentIds (child→parent), childOf (parent→child), spouseIds.
+  function getRelativesWithinDegree(anchorId: string, maxDegree: number): Set<string> {
+    const byId = new Map(allMembers.map(m => [m.id, m]))
+    const childrenOf = new Map<string, string[]>()
+    for (const m of allMembers) {
+      for (const pid of m.parentIds) {
+        if (!childrenOf.has(pid)) childrenOf.set(pid, [])
+        childrenOf.get(pid)!.push(m.id)
+      }
+    }
+    const visited = new Set<string>([anchorId])
+    let frontier = [anchorId]
+    for (let d = 0; d < maxDegree; d++) {
+      const next: string[] = []
+      for (const id of frontier) {
+        const m = byId.get(id)
+        if (!m) continue
+        const neighbours = [
+          ...m.parentIds,
+          ...(childrenOf.get(id) ?? []),
+          ...(m.spouseIds ?? []),
+        ]
+        for (const nid of neighbours) {
+          if (!visited.has(nid)) { visited.add(nid); next.push(nid) }
+        }
+      }
+      frontier = next
+    }
+    return visited
+  }
+
   const matches = useMemo<FamilyMember[]>(() => {
     if (!member) return []
-    const memberGotra = member.gotra?.toLowerCase()
+    const memberGotra = member.gotra?.toLowerCase().trim()
     const memberGender = member.gender
     const memberAge = age ?? 0
 
-    // Get all IDs that are direct family (self + relatives within 2 degrees)
-    const directIds = new Set<string>([
-      member.id,
-      ...member.parentIds,
-      ...member.spouseIds,
-      ...allMembers.filter(m =>
-        m.parentIds.some(pid => member.parentIds.includes(pid)) // siblings
-      ).map(m => m.id),
-    ])
+    // Exclude everyone within 3 degrees of relationship (covers parents, siblings,
+    // grandparents, aunts/uncles, first cousins, nieces/nephews, spouses).
+    // 3 degrees = the minimum safe social distance for matrimonial matching in
+    // Indian family culture; same-gotra is an additional gotra-exogamy check.
+    const closeRelatives = getRelativesWithinDegree(member.id, 3)
 
     return allMembers.filter(m => {
-      if (directIds.has(m.id)) return false
+      if (closeRelatives.has(m.id)) return false   // too close — skip
       if (m.isAlive === false) return false
       if (!m.birthYear) return false
       const mAge = CURRENT_YEAR - m.birthYear
       if (mAge < 18 || mAge > 45) return false
-      // Opposite gender (simple binary match for now)
+      // Strict opposite-gender only (matrimonial context)
       if (memberGender === 'male' && m.gender !== 'female') return false
       if (memberGender === 'female' && m.gender !== 'male') return false
-      // Different gotra (if both have gotra)
-      if (memberGotra && m.gotra && m.gotra.toLowerCase() === memberGotra) return false
+      if (memberGender !== 'male' && memberGender !== 'female') return false // skip 'other'
+      // Already married
+      if ((m.spouseIds ?? []).length > 0) return false
+      // Same gotra = gotra-exogamy violation — exclude
+      if (memberGotra && m.gotra && m.gotra.toLowerCase().trim() === memberGotra) return false
       return true
     }).sort((a, b) => {
-      // Rank: closer age range first, same religion/caste first
+      // Rank: same religion first, then by closest age
       const aAge = CURRENT_YEAR - (a.birthYear ?? 0)
       const bAge = CURRENT_YEAR - (b.birthYear ?? 0)
       const aDiff = Math.abs(aAge - memberAge)
@@ -188,6 +220,7 @@ export default function BiodataPage() {
       const bReligionMatch = b.religion === member.religion ? -1 : 0
       return (aReligionMatch - bReligionMatch) || (aDiff - bDiff)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [member, allMembers, age])
 
   // Find mutual connection (first common relative)
