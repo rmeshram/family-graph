@@ -150,7 +150,8 @@ export async function POST(
     restoredToNode = (otherNode as any) ?? null
 
     if (restoredToNode) {
-      // Restore the user to their other family (e.g. their own tree)
+      // Case 1: User has another actively-claimed node (e.g. their own tree).
+      // Restore profile to point at that node and family.
       await admin
         .from('profiles')
         .update({
@@ -159,11 +160,71 @@ export async function POST(
         } as any)
         .eq('id', revokedUserId)
     } else {
-      // No other home — null out both so onboarding/join flow activates
-      await admin
-        .from('profiles')
-        .update({ member_id: null, family_id: null } as any)
-        .eq('id', revokedUserId)
+      // Case 2: No other claimed node. Check the claim_audit_log for the
+      // 'claim_completed' entry on this node — if the user did a cross-family
+      // Switch & Claim (e.g. Meshram → fdf), the log records the family they
+      // were in BEFORE the switch so we can restore them there.
+      const { data: auditRow } = await admin
+        .from('claim_audit_log')
+        .select('metadata')
+        .eq('node_id', id)
+        .eq('actor_id', revokedUserId)
+        .eq('action', 'claim_completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const previousFamilyId = (auditRow as any)?.metadata?.previousFamilyId as string | null
+      const previousMemberId = (auditRow as any)?.metadata?.previousMemberId as string | null
+
+      if (previousFamilyId) {
+        // Verify the previous family still exists before restoring
+        const { data: prevFamily } = await admin
+          .from('families')
+          .select('id')
+          .eq('id', previousFamilyId)
+          .maybeSingle()
+
+        if (prevFamily) {
+          // Verify the previous member node still exists and is still claimed by this user
+          let restoredMemberId: string | null = null
+          if (previousMemberId) {
+            const { data: prevMember } = await admin
+              .from('family_members')
+              .select('id, is_claimed, claimed_by_user_id, claim_status')
+              .eq('id', previousMemberId)
+              .eq('family_id', previousFamilyId)
+              .is('deleted_at', null)
+              .maybeSingle()
+
+            const prevMemberValid =
+              prevMember &&
+              (prevMember as any).is_claimed === true &&
+              (prevMember as any).claimed_by_user_id === revokedUserId &&
+              (prevMember as any).claim_status !== 'revoked'
+
+            restoredMemberId = prevMemberValid ? previousMemberId : null
+          }
+
+          // Restore to previous family (with or without a claimed node)
+          await admin
+            .from('profiles')
+            .update({ family_id: previousFamilyId, member_id: restoredMemberId } as any)
+            .eq('id', revokedUserId)
+        } else {
+          // Previous family was deleted — fully orphan
+          await admin
+            .from('profiles')
+            .update({ member_id: null, family_id: null } as any)
+            .eq('id', revokedUserId)
+        }
+      } else {
+        // No recovery info — null out both so onboarding/join flow activates
+        await admin
+          .from('profiles')
+          .update({ member_id: null, family_id: null } as any)
+          .eq('id', revokedUserId)
+      }
     }
   }
 

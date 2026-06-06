@@ -724,7 +724,17 @@ export async function POST(
       family_id: (node as any).family_id,
       actor_id: user.id,
       action: 'claim_completed',
-      metadata: { score, reasons, requiresReview: false },
+      metadata: {
+        score,
+        reasons,
+        requiresReview: false,
+        // Save the user's PREVIOUS family context so it can be restored if this
+        // claim is later revoked (e.g. fdf admin revokes → user goes back to Meshram).
+        // profileMemberId and callerFamilyId were captured BEFORE this claim changed them.
+        previousFamilyId: isCrossFamily ? (callerFamilyId ?? null) : null,
+        previousMemberId: isCrossFamily ? (profileMemberId ?? null) : null,
+        wasCrossFamily: isCrossFamily,
+      },
     })
 
     // Link user → node (always for MVP auto-approve flow)
