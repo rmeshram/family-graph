@@ -1281,13 +1281,6 @@ export function HierarchicalTree({
 
       {showConfetti && <ConfettiBurst />}
 
-      {/* ── Progress pill (top-right, only after wizard) ─────────── */}
-      {selfMemberId && !showWizard && (
-        <div className="absolute top-4 right-4 z-40 pointer-events-none">
-          <ProgressPill members={members} selfId={selfMemberId} />
-        </div>
-      )}
-
       {/* ── Zoom controls (bottom-right) ─────────────────────────── */}
       <div
         className="absolute right-4 z-40 flex flex-col gap-1.5 pointer-events-auto"
