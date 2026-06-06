@@ -79,6 +79,17 @@ export default function JoinPage() {
     currentFamilyName: string
     targetFamilyName: string
   } | null>(null)
+  // Two-tree connection: set when the claim API returns SUGGEST_FAMILY_LINK
+  // to show the "Connect Families" card instead of a dead-end error.
+  const [familyLinkSuggestion, setFamilyLinkSuggestion] = useState<{
+    existingNodeId: string
+    existingNodeName: string
+    existingFamilyName: string
+    targetNodeId: string
+    targetFamilyName: string
+  } | null>(null)
+  const [familyLinkSubmitting, setFamilyLinkSubmitting] = useState(false)
+  const [familyLinkResult, setFamilyLinkResult] = useState<{ autoAccepted: boolean; claimFamilyName: string; existingFamilyName: string } | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -463,6 +474,20 @@ export default function JoinPage() {
           case 'ALREADY_LINKED_ACCOUNT':
             userMessage = serverMsg ?? 'Your account is already linked to a different profile in the family tree. Sign in with a different account, or ask the family admin to unlink your current profile first.'
             break
+          case 'SUGGEST_FAMILY_LINK': {
+            // The user already has a claimed node in another family. Instead of
+            // showing a dead-end error, surface the "Connect Families" card.
+            const raw = data as any
+            setFamilyLinkSuggestion({
+              existingNodeId: raw.existingNodeId,
+              existingNodeName: raw.existingNodeName,
+              existingFamilyName: raw.existingFamilyName,
+              targetNodeId: raw.targetNodeId,
+              targetFamilyName: raw.targetFamilyName,
+            })
+            setStatus('node_claim') // keep the node_claim UI visible behind the card
+            return
+          }
           case 'CLAIM_PENDING_ANOTHER_USER':
             userMessage = serverMsg ?? 'Another person is currently in the process of claiming this profile. Try again later or contact the family admin.'
             break
@@ -532,6 +557,42 @@ export default function JoinPage() {
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       nodeClaimSubmittingRef.current = false
+    }
+  }
+
+  // Two-tree connection: called when user clicks "Connect Families" on the
+  // SUGGEST_FAMILY_LINK card. Calls /api/family-links/cross-claim which creates
+  // a family_links row using the bridge node + the user's existing claimed node.
+  const handleConnectFamilies = async () => {
+    if (!familyLinkSuggestion) return
+    setFamilyLinkSubmitting(true)
+    setMessage('')
+    try {
+      const res = await fetch('/api/family-links/cross-claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          claimNodeId: familyLinkSuggestion.targetNodeId,
+          existingNodeId: familyLinkSuggestion.existingNodeId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setMessage(data.message ?? 'Could not connect the family trees. Please try again.')
+        return
+      }
+      setFamilyLinkResult({
+        autoAccepted: data.autoAccepted,
+        claimFamilyName: data.claimFamilyName,
+        existingFamilyName: data.existingFamilyName,
+      })
+      setFamilyLinkSuggestion(null)
+      setStatus('success')
+      setTimeout(() => { window.location.href = '/dashboard' }, 3000)
+    } catch {
+      setMessage('Something went wrong. Please try again.')
+    } finally {
+      setFamilyLinkSubmitting(false)
     }
   }
 
@@ -1073,8 +1134,60 @@ export default function JoinPage() {
                 </div>
               )}
 
+              {/* ── Two-tree connection suggestion ── */}
+              {familyLinkSuggestion && (
+                <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/30 p-4 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20">
+                      <GitBranch className="h-4 w-4 text-indigo-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-indigo-300">Connect both family trees</p>
+                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                        Your account is already linked to{' '}
+                        <strong className="text-foreground">{familyLinkSuggestion.existingNodeName}</strong>{' '}
+                        in <strong className="text-foreground">{familyLinkSuggestion.existingFamilyName}</strong>.
+                        Instead of claiming a separate profile, you can link both families together —
+                        your profile will serve as the bridge between the two trees.
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="space-y-1 pl-1">
+                    {[
+                      '🌳  Both family trees stay intact — no data is lost',
+                      '🔗  Members from both families will appear linked',
+                      `🪢  "${familyLinkSuggestion.targetFamilyName}" will see your family as connected relatives`,
+                    ].map(t => (
+                      <li key={t} className="text-xs text-muted-foreground">{t}</li>
+                    ))}
+                  </ul>
+                  {message && (
+                    <p className="text-xs text-destructive">{message}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => { setFamilyLinkSuggestion(null); setMessage('') }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                      onClick={handleConnectFamilies}
+                      disabled={familyLinkSubmitting}
+                    >
+                      {familyLinkSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitBranch className="h-3.5 w-3.5" />}
+                      Connect Families
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* ── Cross-family confirmation ── */}
-              {crossFamilyConfirmData ? (
+              {!familyLinkSuggestion && crossFamilyConfirmData ? (
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
                   <p className="text-sm font-semibold text-amber-400">⚠️ Family Switch Required</p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -1191,12 +1304,25 @@ export default function JoinPage() {
           {status === 'success' && (
             <div className="p-10 text-center space-y-3">
               <CheckCircle2 className="h-12 w-12 text-green-400 mx-auto" />
-              <h1 className="text-xl font-bold">Welcome to the family! 🙏</h1>
-              <p className="text-muted-foreground text-sm">
-                {selectedRel && selectedRel !== 'skip'
-                  ? `You're now connected as ${preview?.inviterName ? `${preview.inviterName}'s ${selectedRel}` : 'a family member'} in the tree.`
-                  : 'Redirecting to your family tree…'}
-              </p>
+              {familyLinkResult ? (
+                <>
+                  <h1 className="text-xl font-bold">Families connected! 🌳</h1>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {familyLinkResult.autoAccepted
+                      ? <>Both <strong>{familyLinkResult.existingFamilyName}</strong> and <strong>{familyLinkResult.claimFamilyName}</strong> are now linked. Members from both trees will appear connected.</>
+                      : <>A connection request has been sent to <strong>{familyLinkResult.existingFamilyName}</strong> admins. Once accepted, both trees will be linked.</>}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-xl font-bold">Welcome to the family! 🙏</h1>
+                  <p className="text-muted-foreground text-sm">
+                    {selectedRel && selectedRel !== 'skip'
+                      ? `You're now connected as ${preview?.inviterName ? `${preview.inviterName}'s ${selectedRel}` : 'a family member'} in the tree.`
+                      : 'Redirecting to your family tree…'}
+                  </p>
+                </>
+              )}
               <p className="text-xs text-muted-foreground animate-pulse">Redirecting…</p>
             </div>
           )}

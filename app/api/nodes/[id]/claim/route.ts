@@ -362,7 +362,7 @@ export async function POST(
       // Check if the stale link is still actively claimed by this user.
       const { data: staleLinkedNode } = await admin
         .from('family_members')
-        .select('is_claimed, claimed_by_user_id')
+        .select('id, name, family_id, is_claimed, claimed_by_user_id')
         .eq('id', (existingLink as any).node_id)
         .maybeSingle()
       const isStale = !staleLinkedNode ||
@@ -372,6 +372,56 @@ export async function POST(
         // Auto-heal: remove the stale link so the claim can proceed.
         await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
       } else {
+        // ── Two-tree connection: SUGGEST_FAMILY_LINK ─────────────────────────
+        // The caller already owns a node in another family (their own tree) and
+        // is trying to claim a node in this family. Rather than hard-blocking
+        // them, check if the two families can be linked via the family_links
+        // system. If so, surface a suggestion so they can connect the trees
+        // instead of hitting a dead-end error.
+        const existingNodeFamilyId = (staleLinkedNode as any).family_id as string | null
+        const targetFamilyId = (node as any).family_id as string
+
+        // Only suggest if the two families are genuinely different and not already linked
+        if (existingNodeFamilyId && existingNodeFamilyId !== targetFamilyId) {
+          const [fA, fB] = existingNodeFamilyId < targetFamilyId
+            ? [existingNodeFamilyId, targetFamilyId]
+            : [targetFamilyId, existingNodeFamilyId]
+
+          const { data: existingFamilyLink } = await admin
+            .from('family_links')
+            .select('id, status')
+            .eq('family_a_id', fA)
+            .eq('family_b_id', fB)
+            .maybeSingle()
+
+          // Only suggest if not already linked (accepted) or pending
+          const alreadyLinked = existingFamilyLink &&
+            ((existingFamilyLink as any).status === 'accepted' || (existingFamilyLink as any).status === 'pending')
+
+          if (!alreadyLinked) {
+            // Fetch family names for a helpful UI message
+            const [{ data: existingFamily }, { data: targetFamily }] = await Promise.all([
+              admin.from('families').select('name').eq('id', existingNodeFamilyId).maybeSingle() as any,
+              admin.from('families').select('name').eq('id', targetFamilyId).maybeSingle() as any,
+            ])
+            return NextResponse.json(
+              {
+                error: 'SUGGEST_FAMILY_LINK',
+                existingNodeId: (staleLinkedNode as any).id,
+                existingNodeName: (staleLinkedNode as any).name,
+                existingFamilyId: existingNodeFamilyId,
+                existingFamilyName: (existingFamily as any)?.name ?? 'your family',
+                targetNodeId: nodeId,
+                targetFamilyId,
+                targetFamilyName: (targetFamily as any)?.name ?? 'this family',
+                message: `Your account is already linked to "${(staleLinkedNode as any).name}" in "${(existingFamily as any)?.name ?? 'your family'}". Instead of claiming a separate profile, you can connect both family trees — your profile will serve as the bridge between the two families.`,
+              },
+              { status: 409 }
+            )
+          }
+        }
+
+        // Families already linked or same family — fall back to the original hard block
         return NextResponse.json(
           {
             error: 'ALREADY_LINKED_ACCOUNT',
