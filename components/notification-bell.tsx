@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   Bell, Users, Camera, ChevronRight, Calendar, UserCheck, ShieldAlert,
-  BookOpen, GitMerge, Eye, Heart, Flame, AlertCircle, UserCog, Shield,
+  BookOpen, GitMerge, Eye, Heart, Flame, AlertCircle, UserCog, Shield, Link2, Unlink,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,10 @@ const TYPE_ICON: Record<string, React.ElementType> = {
   visibility_changed: Eye,
   role_changed: Shield,
   member_updated: UserCog,
+  // Family link events
+  link_requested: Link2,
+  link_accepted: Link2,
+  link_revoked: Unlink,
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -59,6 +63,10 @@ const TYPE_COLOR: Record<string, string> = {
   visibility_changed: 'bg-slate-500/10 text-slate-400',
   role_changed: 'bg-indigo-500/10 text-indigo-400',
   member_updated: 'bg-sky-500/10 text-sky-400',
+  // Family link events
+  link_requested: 'bg-teal-500/10 text-teal-400',
+  link_accepted: 'bg-teal-500/10 text-teal-400',
+  link_revoked: 'bg-red-500/10 text-red-400',
 }
 
 const PRIORITY_DOT: Record<string, string> = {

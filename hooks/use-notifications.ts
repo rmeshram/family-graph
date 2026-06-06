@@ -938,13 +938,14 @@ export function useNotifications(
         ...roleNotifs.map(n => n.id),
         ...profileUpdateNotifs.map(n => n.id),
         ...memberAddedNotifs.map(n => n.id),
+        ...familyLinkNotifs.map(n => n.id),
       ])
       // LOW-02: write to user-scoped key
       const key = currentUserId ? `${STORAGE_KEY}_${currentUserId}` : STORAGE_KEY
       try { localStorage.setItem(key, JSON.stringify([...allIds])) } catch { /* ignore */ }
       return allIds
     })
-  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, memberAddedNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs, currentUserId])
+  }, [notifications, storyNotifs, visibilityNotifs, claimNotifs, joinNotifs, memberAddedNotifs, pendingClaimNotifs, roleNotifs, profileUpdateNotifs, familyLinkNotifs, currentUserId])
 
   return { notifications: notificationsWithRead, unreadCount, markAllRead }
 }
