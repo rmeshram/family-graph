@@ -13,9 +13,12 @@ create index if not exists idx_family_links_status_pairs
   on public.family_links (family_a_id, family_b_id)
   where status in ('pending', 'accepted');
 
--- 2. Add initiated_by_user_id to family_link_notifications (nullable — existing rows unaffected)
+-- 2. Add new columns to family_link_notifications (nullable — existing rows unaffected)
 alter table public.family_link_notifications
   add column if not exists initiated_by_user_id uuid references auth.users(id) on delete set null;
+
+alter table public.family_link_notifications
+  add column if not exists event_type text;
 
 -- Index for rate-limit query: count recent cross_claim_attempt rows per user
 create index if not exists idx_fln_rate_limit
