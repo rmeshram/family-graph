@@ -445,11 +445,6 @@ const TreeNodeCard = memo(function TreeNodeCard({
             <Crown className="h-4 w-4 fill-amber-400" />
           </div>
         )}
-        {node.isInLaw && !isSelf && (
-          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-10 bg-rose-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full leading-none whitespace-nowrap">
-            In-law
-          </div>
-        )}
         <span className="absolute top-1.5 right-2 text-[9px] font-bold opacity-55" style={{ color }}>
           {member.gender === 'male' ? '♂' : member.gender === 'female' ? '♀' : ''}
         </span>
