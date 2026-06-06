@@ -2155,6 +2155,7 @@ export default function FamilyGraphApp() {
                 isAdmin={isAdmin}
                 familyId={familyId}
                 onAddMember={() => setIsAddDialogOpen(true)}
+                onQuickAddMember={(relType, anchorId) => handleAddRelative(anchorId, relType)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
                 onInviteMember={(m) => setInviteToClaimTarget(m)}
                 onEditSelf={() => setEditingMember(selfMember)}
