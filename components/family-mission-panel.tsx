@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users, Camera } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ export interface FamilyMissionPanelProps {
   onAddMember: () => void
   onAddStory: () => void
   onInviteMember: (member: FamilyMember) => void
+  onEditSelf: () => void
   hasStories: boolean
 }
 
@@ -152,6 +153,7 @@ export function FamilyMissionPanel({
   onAddMember,
   onAddStory,
   onInviteMember,
+  onEditSelf,
   hasStories,
 }: FamilyMissionPanelProps) {
   const [missionsOpen, setMissionsOpen] = useState(true)
@@ -181,9 +183,52 @@ export function FamilyMissionPanel({
 
   const BORDER = '1px solid hsl(var(--border) / 0.4)'
 
+  // Profile completeness — primary action when photo or birth year is missing
+  const missingProfileFields = selfMember ? [
+    !selfMember.photoUrl && 'photo',
+    !selfMember.birthYear && 'birth year',
+    !selfMember.occupation && 'occupation',
+  ].filter(Boolean) as string[] : []
+  const profileComplete = missingProfileFields.length === 0
+
   return (
     <div className="flex h-full flex-col w-72 shrink-0 overflow-hidden"
       style={{ borderLeft: BORDER, background: 'var(--surface-header, hsl(var(--card)))' }}>
+
+      {/* ── Complete Your Profile — primary action, pinned top ───────── */}
+      {!profileComplete && selfMember && (
+        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-amber-500/30 bg-amber-500/8 px-3 py-2.5"
+          style={{ borderBottom: 'none' }}>
+          <div className="flex items-center gap-2.5">
+            <div className="relative shrink-0">
+              <Avatar className="h-9 w-9">
+                {selfMember.photoUrl
+                  ? <AvatarImage src={selfMember.photoUrl} alt={selfMember.name} />
+                  : null}
+                <AvatarFallback className="text-[11px] font-bold text-white"
+                  style={{ background: genderColor(selfMember.gender) }}>
+                  {getInitials(selfMember.name)}
+                </AvatarFallback>
+              </Avatar>
+              {!selfMember.photoUrl && (
+                <div className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500">
+                  <Camera className="h-2 w-2 text-white" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-semibold text-foreground leading-snug">Complete your profile</p>
+              <p className="text-[10px] text-amber-400/80 leading-tight mt-0.5">
+                Missing: {missingProfileFields.join(', ')}
+              </p>
+            </div>
+            <button type="button" onClick={onEditSelf}
+              className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap">
+              Update →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Family Mission ───────────────────────────────────────────── */}
       <div className="flex flex-col shrink-0" style={{ borderBottom: BORDER }}>

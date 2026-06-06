@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useFocusMode } from '@/app/(app)/layout'
 import { FamilyMember, Story, FamilyEvent } from '@/lib/types'
 import { sampleFamilyMembers } from '@/lib/sample-data'
@@ -554,6 +554,8 @@ export default function FamilyGraphApp() {
 
   // ?welcome=1 is appended by onboarding — show first-step overlay once.
   // ?view=tree (from sidebar "View Details") switches to the tree view with the Family Mission panel.
+  // Using useSearchParams so this effect re-fires even when the user is already on /dashboard.
+  const searchParams = useSearchParams()
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -571,7 +573,8 @@ export default function FamilyGraphApp() {
       url.searchParams.delete('view')
       window.history.replaceState({}, '', url.toString())
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Guard: if the user has no family_id yet, they skipped onboarding — send them back.
   // This handles back-button bypasses and direct /dashboard navigation after email signup.
@@ -2155,6 +2158,7 @@ export default function FamilyGraphApp() {
                 onAddMember={() => setIsAddDialogOpen(true)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
                 onInviteMember={(m) => setInviteToClaimTarget(m)}
+                onEditSelf={() => setEditingMember(selfMember)}
                 hasStories={checklistHasStories}
               />
             )}
