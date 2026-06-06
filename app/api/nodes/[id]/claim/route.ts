@@ -730,9 +730,12 @@ export async function POST(
         requiresReview: false,
         // Save the user's PREVIOUS family context so it can be restored if this
         // claim is later revoked (e.g. fdf admin revokes → user goes back to Meshram).
-        // profileMemberId and callerFamilyId were captured BEFORE this claim changed them.
+        // profileMemberId, callerFamilyId, and callerRole were captured BEFORE this
+        // claim changed them. Role is critical — the user may have been 'admin' in
+        // their previous family and must be restored to that role, not left as 'contributor'.
         previousFamilyId: isCrossFamily ? (callerFamilyId ?? null) : null,
         previousMemberId: isCrossFamily ? (profileMemberId ?? null) : null,
+        previousRole: isCrossFamily ? ((callerProfile as any)?.role ?? null) : null,
         wasCrossFamily: isCrossFamily,
       },
     })

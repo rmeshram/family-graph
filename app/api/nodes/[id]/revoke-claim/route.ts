@@ -152,11 +152,36 @@ export async function POST(
     if (restoredToNode) {
       // Case 1: User has another actively-claimed node (e.g. their own tree).
       // Restore profile to point at that node and family.
+      // Also restore their role in that family — look it up from families or
+      // fall back to 'contributor' if not determinable.
+      const { data: restoredProfile } = await admin
+        .from('profiles')
+        .select('role')
+        .eq('id', revokedUserId)
+        .maybeSingle()
+      // Check if they are admin in the family being restored to by looking at
+      // the audit log for their original claim there.
+      const { data: priorAudit } = await admin
+        .from('claim_audit_log')
+        .select('metadata')
+        .eq('actor_id', revokedUserId)
+        .eq('action', 'claim_completed')
+        .eq('family_id', restoredToNode.family_id)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      // If the audit row for that family has a previousRole, the user switched
+      // away FROM that family and that was their role there. Otherwise keep current.
+      const restoredRole =
+        (priorAudit as any)?.metadata?.previousRole ??
+        (restoredProfile as any)?.role ??
+        'contributor'
       await admin
         .from('profiles')
         .update({
           member_id: restoredToNode.id,
           family_id: restoredToNode.family_id,
+          role: restoredRole,
         } as any)
         .eq('id', revokedUserId)
     } else {
@@ -176,6 +201,7 @@ export async function POST(
 
       const previousFamilyId = (auditRow as any)?.metadata?.previousFamilyId as string | null
       const previousMemberId = (auditRow as any)?.metadata?.previousMemberId as string | null
+      const previousRole = (auditRow as any)?.metadata?.previousRole as string | null
 
       if (previousFamilyId) {
         // Verify the previous family still exists before restoring
@@ -206,10 +232,17 @@ export async function POST(
             restoredMemberId = prevMemberValid ? previousMemberId : null
           }
 
-          // Restore to previous family (with or without a claimed node)
+          // Restore to previous family (with or without a claimed node).
+          // Critically: restore their original role (e.g. 'admin') — the claim
+          // route set role='contributor' when they switched, so without this
+          // the user permanently loses their admin status in their own family.
           await admin
             .from('profiles')
-            .update({ family_id: previousFamilyId, member_id: restoredMemberId } as any)
+            .update({
+              family_id: previousFamilyId,
+              member_id: restoredMemberId,
+              role: previousRole ?? 'contributor',
+            } as any)
             .eq('id', revokedUserId)
         } else {
           // Previous family was deleted — fully orphan
