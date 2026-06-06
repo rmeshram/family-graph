@@ -107,15 +107,20 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   // ── Family Health stats ────────────────────────────────────────────────────
+  const MEMBER_TARGET = 30
   const health = useMemo(() => {
     const total = sidebarMembers.length
-    if (total === 0) return { pct: 0, waitingToJoin: 0, unclaimed: 0, missingParents: 0, missingSpouses: 0 }
+    if (total === 0) return {
+      pct: 0, waitingToJoin: 0, unclaimed: 0, missingParents: 0, missingSpouses: 0,
+      membersAdded: 0, claimed: 0, photos: 0,
+      memberScore: 0, claimedScore: 0, photoScore: 0,
+    }
 
     const claimed = sidebarMembers.filter(m => m.isClaimed).length
     const photos = sidebarMembers.filter(m => !!m.photoUrl).length
 
     // Health % = weighted: members(30%) + claimed(40%) + photos(30%)
-    const memberScore = Math.min(total / 30, 1)
+    const memberScore = Math.min(total / MEMBER_TARGET, 1)
     const claimedScore = total > 0 ? claimed / total : 0
     const photoScore = total > 0 ? photos / total : 0
     const pct = Math.round((memberScore * 0.3 + claimedScore * 0.4 + photoScore * 0.3) * 100)
@@ -125,7 +130,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
     const missingParents = sidebarMembers.filter(m => (m.parentIds ?? []).length === 0).length
     const missingSpouses = sidebarMembers.filter(m => (m.spouseIds ?? []).length === 0 && m.isAlive !== false).length
 
-    return { pct, waitingToJoin, unclaimed, missingParents, missingSpouses }
+    return { pct, waitingToJoin, unclaimed, missingParents, missingSpouses, membersAdded: total, claimed, photos, memberScore, claimedScore, photoScore }
   }, [sidebarMembers])
 
   // ── Unclaimed badge for Invite Family nav item ─────────────────────────────
@@ -210,42 +215,70 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
       <div className="mx-3 mt-3 mb-1 rounded-2xl border border-border/40 overflow-hidden shrink-0"
         style={{ background: 'hsl(var(--muted) / 0.15)' }}>
         {/* Title row */}
-        <div className="flex items-center justify-between px-3.5 pt-3 pb-0">
+        <div className="flex items-center justify-between px-3.5 pt-3 pb-2">
           <div className="flex items-center gap-1.5">
             <span className="text-[13px]">✦</span>
             <span className="text-[12px] font-semibold text-foreground">Family Health</span>
           </div>
+          <span className="text-[11px] font-bold text-primary tabular-nums">{health.pct}%</span>
         </div>
 
-        {/* Donut + percentage */}
-        <div className="flex items-center gap-4 px-3.5 pt-3 pb-2">
-          <div className="relative">
-            <DonutRing pct={health.pct} size={80} />
-            <div className="absolute inset-0 flex flex-col items-center justify-center rotate-0">
-              <span className="text-[18px] font-extrabold text-foreground leading-none">{health.pct}%</span>
-              <span className="text-[9px] text-muted-foreground">Complete</span>
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            {/* <Link href="/dashboard?view=tree"
-              className="flex items-center gap-1 text-[12px] font-semibold text-primary hover:text-primary/80 transition-colors">
-              View Details <ChevronRight className="h-3 w-3" />
-            </Link> */}
+        {/* Overall progress bar */}
+        <div className="px-3.5 pb-3">
+          <div className="h-1.5 rounded-full bg-muted/60 overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${health.pct}%`, background: 'linear-gradient(90deg, #6366f1, #22d3ee, #34d399)' }} />
           </div>
         </div>
 
-        {/* 4 health stats */}
-        <div className="border-t border-border/30 divide-y divide-border/20">
+        {/* 3 drivers — each with label, fraction, mini bar */}
+        <div className="border-t border-border/30 divide-y divide-border/20 px-3.5">
           {[
-            { icon: Users, value: health.waitingToJoin, label: 'Waiting to join', color: 'text-blue-400' },
-            { icon: UserX, value: health.unclaimed, label: 'Unclaimed profiles', color: 'text-amber-400' },
-            { icon: TreeDeciduous, value: health.missingParents, label: 'Missing parents', color: 'text-rose-400' },
-            { icon: Heart, value: health.missingSpouses, label: 'Missing spouses', color: 'text-pink-400' },
-          ].map(({ icon: Icon, value, label, color }) => (
-            <div key={label} className="flex items-center gap-2.5 px-3.5 py-2">
-              <Icon className={cn('h-3.5 w-3.5 shrink-0', color)} />
-              <span className="text-[13px] font-bold text-foreground tabular-nums w-6 shrink-0">{value}</span>
-              <span className="text-[11px] text-muted-foreground">{label}</span>
+            {
+              label: 'Members added',
+              sublabel: `invite more family — goal: ${MEMBER_TARGET}`,
+              current: health.membersAdded,
+              target: MEMBER_TARGET,
+              pct: Math.round(health.memberScore * 100),
+              color: '#6366f1',
+              weight: '30%',
+            },
+            {
+              label: 'Profiles claimed',
+              sublabel: 'invite members to join the app',
+              current: health.claimed,
+              target: health.membersAdded,
+              pct: Math.round(health.claimedScore * 100),
+              color: '#22d3ee',
+              weight: '40%',
+            },
+            {
+              label: 'Photos added',
+              sublabel: 'edit each member and add a photo',
+              current: health.photos,
+              target: health.membersAdded,
+              pct: Math.round(health.photoScore * 100),
+              color: '#34d399',
+              weight: '30%',
+            },
+          ].map(({ label, sublabel, current, target, pct, color, weight }) => (
+            <div key={label} className="py-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[11px] font-semibold text-foreground truncate">{label}</span>
+                  <span className="text-[9px] text-muted-foreground/60 shrink-0">({weight})</span>
+                </div>
+                <span className="text-[11px] font-bold tabular-nums shrink-0 ml-2" style={{ color }}>
+                  {current}/{target}
+                </span>
+              </div>
+              <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
+              </div>
+              {pct < 100 && (
+                <p className="text-[9px] text-muted-foreground/60 mt-0.5 truncate">{sublabel}</p>
+              )}
             </div>
           ))}
         </div>
