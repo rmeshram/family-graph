@@ -135,11 +135,25 @@ export function enrichMembersWithDerivedEdges(
   }
 
   const getSelfGrandparentId = (): string => {
+    // Try ALL of creator's parents to find one with real grandparents in the DB.
+    // Critical when creator.parentIds[0] is the mother (Ratnamala — no stored parents)
+    // but creator.parentIds[1] is the father (Sukhdeo — has parentIds=[Dayaram]).
+    // Using only parentIds[0] would fall through to the virtual VGP, attaching uncle
+    // nodes as Dayaram's sibling instead of his sibling-equivalent, giving the wrong
+    // LCA depth and producing "Paternal Uncle" instead of "Brother" for Sukhdeo's view.
+    for (const cpid of creator.parentIds) {
+      if (!memberIdSet.has(cpid)) continue
+      const rp = members.find(m => m.id === cpid)
+      if (rp?.parentIds.length) return rp.parentIds[0]
+      const ov = extras.get(cpid)?.parentIds
+      if (ov?.length) return ov[0]
+    }
+    // No parent with a real grandparent found — fall back to virtual chain VP → VGP
     const pid = getSelfParentId()
-    const realParent = members.find(m => m.id === pid)
-    if (realParent?.parentIds.length) return realParent.parentIds[0]
-    const ov = extras.get(pid)?.parentIds
-    if (ov?.length) return ov[0]
+    const rpFb = members.find(m => m.id === pid)
+    if (rpFb?.parentIds.length) return rpFb.parentIds[0]
+    const ovFb = extras.get(pid)?.parentIds
+    if (ovFb?.length) return ovFb[0]
     if (!vgpReady) { vgpReady = true; ensureVirt(VGP, [], []); addP(pid, VGP) }
     return VGP
   }
@@ -219,7 +233,15 @@ export function enrichMembersWithDerivedEdges(
       || ((rel.startsWith('uncle') || rel.startsWith('aunt')) && !rel.includes('in-law'))
       || rel.includes('paternal-uncle') || rel.includes('maternal-uncle')
       || rel.includes('paternal-aunt') || rel.includes('maternal-aunt'))) {
-      addP(m.id, getSelfGrandparentId())
+      // Marriage-side relatives (Chachi/Mami = uncle's wife labeled 'aunt' in DB) already
+      // have a real SPOUSE edge to their husband in spouseIds. If we also connect them as
+      // grandparent's child they get a false 1-hop SIBLING edge from Sukhdeo that beats
+      // the correct 2-hop SIBLING>SPOUSE ('Bhabhi') path. Skip grandparent connection for
+      // them — after the husband (blood uncle) is enriched, they're reachable via SPOUSE.
+      const hasSpouseInFamily =
+        m.spouseIds.some(sp => memberIdSet.has(sp) && sp !== sid) ||
+        members.some(other => other.id !== m.id && other.id !== sid && (other.spouseIds ?? []).includes(m.id))
+      if (!hasSpouseInFamily) addP(m.id, getSelfGrandparentId())
     } else if (rel === 'nephew' || rel === 'niece') {
       addP(m.id, getSelfSiblingId())
     } else if (['father-in-law', 'mother-in-law', 'parent-in-law'].includes(rel)) {
