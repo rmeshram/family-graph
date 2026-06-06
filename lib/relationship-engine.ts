@@ -245,7 +245,8 @@ function classifyFromLCA(
     if (depthA === 1) return male ? 'Father' : female ? 'Mother' : 'Parent'
     if (depthA === 2) {
       const pp = pathwayParent()
-      const pM = pp ? isMale(pp) : false, pF = pp ? isFemale(pp) : false
+      const pM = pp ? isMale(pp) || inferGender(pp) === 'male' : false
+      const pF = pp ? isFemale(pp) || inferGender(pp) === 'female' : false
       if (male) return pM ? 'Paternal Grandfather' : pF ? 'Maternal Grandfather' : 'Grandfather'
       if (female) return pM ? 'Paternal Grandmother' : pF ? 'Maternal Grandmother' : 'Grandmother'
       return 'Grandparent'
@@ -270,7 +271,8 @@ function classifyFromLCA(
   // Uncle / Aunt
   if (depthA === 2 && depthB === 1) {
     const pp = pathwayParent()
-    const pM = pp ? isMale(pp) : false, pF = pp ? isFemale(pp) : false
+    const pig = pp ? inferGender(pp) : null
+    const pM = pig === 'male', pF = pig === 'female'
     if (male) return pM ? 'Paternal Uncle (Chacha/Tau)' : pF ? 'Maternal Uncle (Mama)' : 'Uncle'
     if (female) return pM ? 'Paternal Aunt (Bua)' : pF ? 'Maternal Aunt (Mausi/Mami)' : 'Aunt'
     return 'Uncle/Aunt'
@@ -317,8 +319,34 @@ function classifyFromLCA(
 function isMale(m?: FamilyMember) { return m?.gender === 'male' }
 function isFemale(m?: FamilyMember) { return m?.gender === 'female' }
 
+/**
+ * Infer gender when the explicit `gender` field is absent.
+ * Falls back to the `relationship` field which often carries a gender signal
+ * (e.g. relationship='father' → male, relationship='mother' → female).
+ * Returns 'male' | 'female' | null (null = truly unknown).
+ */
+function inferGender(m?: FamilyMember): 'male' | 'female' | null {
+  if (!m) return null
+  if (m.gender === 'male') return 'male'
+  if (m.gender === 'female') return 'female'
+  // Use relationship field as a gender hint when gender is unset
+  const rel = (m.relationship ?? '').toLowerCase()
+  const maleRels = ['father', 'grandfather', 'brother', 'son', 'grandson', 'husband',
+    'uncle', 'nephew', 'great-grandfather', 'stepfather', 'stepson', 'great-uncle',
+    'paternal grandfather', 'maternal grandfather', 'father-in-law', 'brother-in-law',
+    'son-in-law', 'great-uncle']
+  const femaleRels = ['mother', 'grandmother', 'sister', 'daughter', 'granddaughter',
+    'wife', 'aunt', 'niece', 'great-grandmother', 'stepmother', 'stepdaughter',
+    'great-aunt', 'paternal grandmother', 'maternal grandmother', 'mother-in-law',
+    'sister-in-law', 'daughter-in-law']
+  if (maleRels.some(r => rel === r || rel.startsWith(r))) return 'male'
+  if (femaleRels.some(r => rel === r || rel.startsWith(r))) return 'female'
+  return null
+}
+
 function edgeStepLabel(type: EdgeType, target: FamilyMember): string {
-  const m = isMale(target), f = isFemale(target)
+  const g = inferGender(target)
+  const m = g === 'male', f = g === 'female'
   if (type === 'PARENT') return m ? 'Father' : f ? 'Mother' : 'Parent'
   if (type === 'CHILD') return m ? 'Son' : f ? 'Daughter' : 'Child'
   if (type === 'SIBLING') return m ? 'Brother' : f ? 'Sister' : 'Sibling'
@@ -338,13 +366,15 @@ function resolveLabel(
   lca?: LCAResult | null,
 ): string {
   const target = memberMap.get(peoplePath[peoplePath.length - 1])
-  const male = isMale(target)
-  const female = isFemale(target)
+  const tg = inferGender(target)
+  const male = tg === 'male'
+  const female = tg === 'female'
 
   if (normalized === 'PARENT>SIBLING' || normalized === 'PARENT>PARENT>CHILD') {
     const intermediateParent = memberMap.get(peoplePath[1])
     if (intermediateParent) {
-      const pM = isMale(intermediateParent), pF = isFemale(intermediateParent)
+      const pig = inferGender(intermediateParent)
+      const pM = pig === 'male', pF = pig === 'female'
       if (male) return pM ? 'Paternal Uncle (Chacha/Tau)' : pF ? 'Maternal Uncle (Mama)' : 'Uncle'
       if (female) return pM ? 'Paternal Aunt (Bua)' : pF ? 'Maternal Aunt (Mausi/Mami)' : 'Aunt'
     }
