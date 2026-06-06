@@ -126,137 +126,125 @@ export async function POST(
 
   await admin.from('user_node_links').delete().eq('node_id', id)
 
-  // Clear profiles.member_id for the user whose claim was just revoked so the
-  // app immediately stops showing stale "Unlink My Profile" UI for that user.
-  // Also restore their family context:
-  //   - If they have another active claimed node in a different family (e.g. their
-  //     own tree that they switched away from), point their profile back to it.
-  //   - Otherwise null out family_id too so the onboarding/join flow activates
-  //     rather than leaving them stranded as a ghost member of the revoking family.
+  // Handle the revoked user's profile state.
+  //
+  // KEY DESIGN PRINCIPLE (billion-dollar app model):
+  //   A user's identity = their PRIMARY family (profiles.family_id) + their
+  //   primary claimed node there (profiles.member_id). These must NEVER be
+  //   affected by an admin action in a DIFFERENT family.
+  //
+  //   Scenario: Shubham (Meshram admin) accepted a cross-family invite into fdf.
+  //   fdf admin revokes → only the fdf node is unclaimed. Shubham's Meshram
+  //   account (family_id, member_id, role) must be completely untouched.
+  //
+  // TWO CASES:
+  //   A) Revoked node is in a DIFFERENT family than user's profiles.family_id
+  //      → This was a cross-family/secondary claim. Just clean up user_node_links.
+  //        The user's primary profile is already correct. No profile update needed.
+  //   B) Revoked node is in the SAME family as profiles.family_id
+  //      → The user's primary claim was revoked. Restore their previous context
+  //        from the audit log, or orphan them if no prior family exists.
+
   const revokedUserId = (node as any).claimed_by_user_id as string | null
   let restoredToNode: { id: string; family_id: string } | null = null
+
   if (revokedUserId) {
-    // Look for another node claimed by this user in a DIFFERENT family
-    const { data: otherNode } = await admin
-      .from('family_members')
-      .select('id, family_id')
-      .eq('claimed_by_user_id', revokedUserId)
-      .eq('is_claimed', true)
-      .neq('id', id)              // exclude the node just revoked
-      .is('deleted_at', null)
-      .limit(1)
+    const { data: revokedUserProfile } = await admin
+      .from('profiles')
+      .select('family_id, member_id, role')
+      .eq('id', revokedUserId)
       .maybeSingle()
 
-    restoredToNode = (otherNode as any) ?? null
+    const userPrimaryFamilyId = (revokedUserProfile as any)?.family_id as string | null
+    const nodeFamilyId = (node as any).family_id as string
+    const isCrossFamilyRevoke = userPrimaryFamilyId && userPrimaryFamilyId !== nodeFamilyId
 
-    if (restoredToNode) {
-      // Case 1: User has another actively-claimed node (e.g. their own tree).
-      // Restore profile to point at that node and family.
-      // Also restore their role in that family — look it up from families or
-      // fall back to 'contributor' if not determinable.
-      const { data: restoredProfile } = await admin
-        .from('profiles')
-        .select('role')
-        .eq('id', revokedUserId)
-        .maybeSingle()
-      // Check if they are admin in the family being restored to by looking at
-      // the audit log for their original claim there.
-      const { data: priorAudit } = await admin
-        .from('claim_audit_log')
-        .select('metadata')
-        .eq('actor_id', revokedUserId)
-        .eq('action', 'claim_completed')
-        .eq('family_id', restoredToNode.family_id)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-      // If the audit row for that family has a previousRole, the user switched
-      // away FROM that family and that was their role there. Otherwise keep current.
-      const restoredRole =
-        (priorAudit as any)?.metadata?.previousRole ??
-        (restoredProfile as any)?.role ??
-        'contributor'
-      await admin
-        .from('profiles')
-        .update({
-          member_id: restoredToNode.id,
-          family_id: restoredToNode.family_id,
-          role: restoredRole,
-        } as any)
-        .eq('id', revokedUserId)
+    if (isCrossFamilyRevoke) {
+      // Case A: This node was a cross-family secondary claim.
+      // The user's primary family (Meshram) is untouched — just clean up the link.
+      // No profile update needed at all.
     } else {
-      // Case 2: No other claimed node. Check the claim_audit_log for the
-      // 'claim_completed' entry on this node — if the user did a cross-family
-      // Switch & Claim (e.g. Meshram → fdf), the log records the family they
-      // were in BEFORE the switch so we can restore them there.
-      const { data: auditRow } = await admin
-        .from('claim_audit_log')
-        .select('metadata')
-        .eq('node_id', id)
-        .eq('actor_id', revokedUserId)
-        .eq('action', 'claim_completed')
-        .order('created_at', { ascending: false })
+      // Case B: Revoked their primary family node. Restore previous state.
+      const { data: otherNode } = await admin
+        .from('family_members')
+        .select('id, family_id')
+        .eq('claimed_by_user_id', revokedUserId)
+        .eq('is_claimed', true)
+        .neq('id', id)
+        .is('deleted_at', null)
         .limit(1)
         .maybeSingle()
 
-      const previousFamilyId = (auditRow as any)?.metadata?.previousFamilyId as string | null
-      const previousMemberId = (auditRow as any)?.metadata?.previousMemberId as string | null
-      const previousRole = (auditRow as any)?.metadata?.previousRole as string | null
+      restoredToNode = (otherNode as any) ?? null
 
-      if (previousFamilyId) {
-        // Verify the previous family still exists before restoring
-        const { data: prevFamily } = await admin
-          .from('families')
-          .select('id')
-          .eq('id', previousFamilyId)
+      if (restoredToNode) {
+        // Another claimed node exists — restore to it.
+        const { data: priorAudit } = await admin
+          .from('claim_audit_log')
+          .select('metadata')
+          .eq('actor_id', revokedUserId)
+          .eq('action', 'claim_completed')
+          .eq('family_id', restoredToNode.family_id)
+          .order('created_at', { ascending: true })
+          .limit(1)
           .maybeSingle()
-
-        if (prevFamily) {
-          // Verify the previous member node still exists and is still claimed by this user
-          let restoredMemberId: string | null = null
-          if (previousMemberId) {
-            const { data: prevMember } = await admin
-              .from('family_members')
-              .select('id, is_claimed, claimed_by_user_id, claim_status')
-              .eq('id', previousMemberId)
-              .eq('family_id', previousFamilyId)
-              .is('deleted_at', null)
-              .maybeSingle()
-
-            const prevMemberValid =
-              prevMember &&
-              (prevMember as any).is_claimed === true &&
-              (prevMember as any).claimed_by_user_id === revokedUserId &&
-              (prevMember as any).claim_status !== 'revoked'
-
-            restoredMemberId = prevMemberValid ? previousMemberId : null
-          }
-
-          // Restore to previous family (with or without a claimed node).
-          // Critically: restore their original role (e.g. 'admin') — the claim
-          // route set role='contributor' when they switched, so without this
-          // the user permanently loses their admin status in their own family.
-          await admin
-            .from('profiles')
-            .update({
-              family_id: previousFamilyId,
-              member_id: restoredMemberId,
-              role: previousRole ?? 'contributor',
-            } as any)
-            .eq('id', revokedUserId)
-        } else {
-          // Previous family was deleted — fully orphan
-          await admin
-            .from('profiles')
-            .update({ member_id: null, family_id: null } as any)
-            .eq('id', revokedUserId)
-        }
-      } else {
-        // No recovery info — null out both so onboarding/join flow activates
+        const restoredRole =
+          (priorAudit as any)?.metadata?.previousRole ??
+          (revokedUserProfile as any)?.role ??
+          'contributor'
         await admin
           .from('profiles')
-          .update({ member_id: null, family_id: null } as any)
+          .update({ member_id: restoredToNode.id, family_id: restoredToNode.family_id, role: restoredRole } as any)
           .eq('id', revokedUserId)
+      } else {
+        // No other claimed node — check audit log for previous family context.
+        const { data: auditRow } = await admin
+          .from('claim_audit_log')
+          .select('metadata')
+          .eq('node_id', id)
+          .eq('actor_id', revokedUserId)
+          .eq('action', 'claim_completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        const previousFamilyId = (auditRow as any)?.metadata?.previousFamilyId as string | null
+        const previousMemberId = (auditRow as any)?.metadata?.previousMemberId as string | null
+        const previousRole = (auditRow as any)?.metadata?.previousRole as string | null
+
+        if (previousFamilyId) {
+          const { data: prevFamily } = await admin
+            .from('families').select('id').eq('id', previousFamilyId).maybeSingle()
+
+          if (prevFamily) {
+            let restoredMemberId: string | null = null
+            if (previousMemberId) {
+              const { data: prevMember } = await admin
+                .from('family_members')
+                .select('id, is_claimed, claimed_by_user_id, claim_status')
+                .eq('id', previousMemberId)
+                .eq('family_id', previousFamilyId)
+                .is('deleted_at', null)
+                .maybeSingle()
+              const valid =
+                prevMember &&
+                (prevMember as any).is_claimed === true &&
+                (prevMember as any).claimed_by_user_id === revokedUserId &&
+                (prevMember as any).claim_status !== 'revoked'
+              restoredMemberId = valid ? previousMemberId : null
+            }
+            await admin
+              .from('profiles')
+              .update({ family_id: previousFamilyId, member_id: restoredMemberId, role: previousRole ?? 'contributor' } as any)
+              .eq('id', revokedUserId)
+          } else {
+            // Previous family deleted — fully orphan
+            await admin.from('profiles').update({ member_id: null, family_id: null } as any).eq('id', revokedUserId)
+          }
+        } else {
+          // No recovery info — orphan
+          await admin.from('profiles').update({ member_id: null, family_id: null } as any).eq('id', revokedUserId)
+        }
       }
     }
   }

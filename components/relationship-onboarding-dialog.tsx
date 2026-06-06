@@ -226,12 +226,12 @@ export function RelationshipOnboardingDialog({
             )}
             <div>
               <DialogTitle className="text-base font-semibold leading-snug">
-                {step === 'search' && 'Who do you know in this family?'}
+                {step === 'search' && 'Find your place in the family tree'}
                 {step === 'relationship' && `How are you related to ${refMember?.name.split(' ')[0]}?`}
                 {step === 'candidates' && (candidates.length > 0 ? 'Is one of these you?' : 'You\'re not in the tree yet')}
               </DialogTitle>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                {step === 'search' && "Pick someone you know — we'll figure out your place from there."}
+                {step === 'search' && 'Search for someone already in this family — we\'ll use them as a reference to locate your node.'}
                 {step === 'relationship' && 'Select the relationship that best describes you.'}
                 {step === 'candidates' && candidates.length > 0
                   ? `Found ${candidates.length} possible match${candidates.length > 1 ? 'es' : ''} as ${refMember?.name.split(' ')[0]}'s ${relLabel}.`
@@ -246,6 +246,11 @@ export function RelationshipOnboardingDialog({
         {/* ── Step 1: Search for reference person ──────────────────── */}
         {step === 'search' && (
           <div className="p-4 space-y-3">
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium tracking-wide uppercase">
+              <span className="flex items-center justify-center h-4 w-4 rounded-full bg-primary/20 text-primary text-[10px] font-bold">1</span>
+              <span>Step 1 of 3 — Pick someone you know</span>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
@@ -257,7 +262,7 @@ export function RelationshipOnboardingDialog({
               />
             </div>
 
-            <div className="space-y-0.5 max-h-72 overflow-y-auto -mx-1 px-1">
+            <div className="space-y-0.5 max-h-64 overflow-y-auto -mx-1 px-1">
               {filtered.map(m => (
                 <button
                   key={m.id}
@@ -295,6 +300,11 @@ export function RelationshipOnboardingDialog({
         {/* ── Step 2: Pick relationship type ───────────────────────── */}
         {step === 'relationship' && refMember && (
           <div className="p-4 space-y-3">
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium tracking-wide uppercase">
+              <span className="flex items-center justify-center h-4 w-4 rounded-full bg-primary/20 text-primary text-[10px] font-bold">2</span>
+              <span>Step 2 of 3 — Select your relationship</span>
+            </div>
             {/* Reference person reminder */}
             <div className="flex items-center gap-2.5 rounded-xl bg-muted/40 border border-border/30 px-3 py-2.5">
               <Avatar className="h-8 w-8 shrink-0">
@@ -332,6 +342,11 @@ export function RelationshipOnboardingDialog({
         {/* ── Step 3: Pick candidate node ──────────────────────────── */}
         {step === 'candidates' && (
           <div className="p-4 space-y-3">
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium tracking-wide uppercase">
+              <span className="flex items-center justify-center h-4 w-4 rounded-full bg-primary/20 text-primary text-[10px] font-bold">3</span>
+              <span>Step 3 of 3 — Claim your profile</span>
+            </div>
             {claimError && (
               <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
                 {claimError}
