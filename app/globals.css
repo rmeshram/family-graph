@@ -545,9 +545,12 @@
 
 /* Mission strip — attention pulse for new users (< 4 steps done) */
 @keyframes missionPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35), 0 8px 24px rgba(99, 102, 241, 0.12);
   }
+
   50% {
     box-shadow: 0 0 0 6px rgba(99, 102, 241, 0), 0 8px 32px rgba(99, 102, 241, 0.22);
   }

@@ -932,7 +932,7 @@ export default function FamilyGraphApp() {
       const t = setTimeout(() => setShowMissionDrawer(true), 1800)
       return () => clearTimeout(t)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile, selfMember?.id, isDemoMode, isViewer, viewMode])
 
   // ── Next Best Action ─────────────────────────────────────────────────────────────────
@@ -2210,56 +2210,56 @@ export default function FamilyGraphApp() {
           {/* ── Mobile Mission Strip — sticky bottom, replaces silent icon button ── */}
           {isMobile && viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
             && !showMissionDrawer && missionProgress.done < missionProgress.total && (
-            <div
-              className="absolute bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-1 pointer-events-none"
-              style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
-            >
-              <button
-                type="button"
-                onClick={() => setShowMissionDrawer(true)}
-                className="pointer-events-auto w-full flex items-center gap-3 rounded-2xl border border-primary/30 bg-card/95 backdrop-blur-sm px-4 py-3 shadow-lg shadow-primary/10 active:scale-[0.98] transition-transform"
-                style={{
-                  boxShadow: missionProgress.done <= 3
-                    ? '0 0 0 0 rgba(99,102,241,0.4)'
-                    : undefined,
-                  animation: missionProgress.done <= 3 ? 'missionPulse 2s ease-in-out infinite' : undefined,
-                }}
+              <div
+                className="absolute bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-1 pointer-events-none"
+                style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
               >
-                {/* Left: icon + label */}
-                <div className="flex items-center gap-2.5 shrink-0">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${missionProgress.done <= 3 ? 'bg-primary text-primary-foreground' : 'bg-primary/15 text-primary'}`}>
-                    <Target className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+                <button
+                  type="button"
+                  onClick={() => setShowMissionDrawer(true)}
+                  className="pointer-events-auto w-full flex items-center gap-3 rounded-2xl border border-primary/30 bg-card/95 backdrop-blur-sm px-4 py-3 shadow-lg shadow-primary/10 active:scale-[0.98] transition-transform"
+                  style={{
+                    boxShadow: missionProgress.done <= 3
+                      ? '0 0 0 0 rgba(99,102,241,0.4)'
+                      : undefined,
+                    animation: missionProgress.done <= 3 ? 'missionPulse 2s ease-in-out infinite' : undefined,
+                  }}
+                >
+                  {/* Left: icon + label */}
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${missionProgress.done <= 3 ? 'bg-primary text-primary-foreground' : 'bg-primary/15 text-primary'}`}>
+                      <Target className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-[13px] font-semibold text-foreground leading-tight">Family Mission</p>
+                      <p className="text-[11px] text-muted-foreground leading-tight">
+                        {missionProgress.done === 1 ? 'Just getting started!' :
+                          missionProgress.done <= 4 ? `${missionProgress.total - missionProgress.done} steps to go` :
+                            `${missionProgress.done} of ${missionProgress.total} complete`}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-left">
-                    <p className="text-[13px] font-semibold text-foreground leading-tight">Family Mission</p>
-                    <p className="text-[11px] text-muted-foreground leading-tight">
-                      {missionProgress.done === 1 ? 'Just getting started!' :
-                       missionProgress.done <= 4 ? `${missionProgress.total - missionProgress.done} steps to go` :
-                       `${missionProgress.done} of ${missionProgress.total} complete`}
+
+                  {/* Middle: progress bar */}
+                  <div className="flex-1 min-w-0">
+                    <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-primary to-indigo-400 transition-all duration-500"
+                        style={{ width: `${Math.round((missionProgress.done / missionProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1 text-right tabular-nums">
+                      {missionProgress.done}/{missionProgress.total}
                     </p>
                   </div>
-                </div>
 
-                {/* Middle: progress bar */}
-                <div className="flex-1 min-w-0">
-                  <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-primary to-indigo-400 transition-all duration-500"
-                      style={{ width: `${Math.round((missionProgress.done / missionProgress.total) * 100)}%` }}
-                    />
+                  {/* Right: CTA */}
+                  <div className="shrink-0 flex items-center gap-1 text-[12px] font-semibold text-primary whitespace-nowrap">
+                    {missionProgress.done <= 2 ? 'Start →' : 'Continue →'}
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1 text-right tabular-nums">
-                    {missionProgress.done}/{missionProgress.total}
-                  </p>
-                </div>
-
-                {/* Right: CTA */}
-                <div className="shrink-0 flex items-center gap-1 text-[12px] font-semibold text-primary whitespace-nowrap">
-                  {missionProgress.done <= 2 ? 'Start →' : 'Continue →'}
-                </div>
-              </button>
-            </div>
-          )}
+                </button>
+              </div>
+            )}
 
           {/* Family Mission Panel — mobile bottom drawer */}
           {isMobile && (
