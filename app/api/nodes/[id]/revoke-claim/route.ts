@@ -128,13 +128,43 @@ export async function POST(
 
   // Clear profiles.member_id for the user whose claim was just revoked so the
   // app immediately stops showing stale "Unlink My Profile" UI for that user.
+  // Also restore their family context:
+  //   - If they have another active claimed node in a different family (e.g. their
+  //     own tree that they switched away from), point their profile back to it.
+  //   - Otherwise null out family_id too so the onboarding/join flow activates
+  //     rather than leaving them stranded as a ghost member of the revoking family.
   const revokedUserId = (node as any).claimed_by_user_id as string | null
+  let restoredToNode: { id: string; family_id: string } | null = null
   if (revokedUserId) {
-    await admin
-      .from('profiles')
-      .update({ member_id: null } as any)
-      .eq('id', revokedUserId)
-      .eq('member_id', id) // guard: only clear if still pointing at this node
+    // Look for another node claimed by this user in a DIFFERENT family
+    const { data: otherNode } = await admin
+      .from('family_members')
+      .select('id, family_id')
+      .eq('claimed_by_user_id', revokedUserId)
+      .eq('is_claimed', true)
+      .neq('id', id)              // exclude the node just revoked
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle()
+
+    restoredToNode = (otherNode as any) ?? null
+
+    if (restoredToNode) {
+      // Restore the user to their other family (e.g. their own tree)
+      await admin
+        .from('profiles')
+        .update({
+          member_id: restoredToNode.id,
+          family_id: restoredToNode.family_id,
+        } as any)
+        .eq('id', revokedUserId)
+    } else {
+      // No other home — null out both so onboarding/join flow activates
+      await admin
+        .from('profiles')
+        .update({ member_id: null, family_id: null } as any)
+        .eq('id', revokedUserId)
+    }
   }
 
   await admin.from('claim_audit_log').insert({
@@ -145,6 +175,8 @@ export async function POST(
     metadata: {
       reason: body.reason,
       revokedFromUserId: (node as any).claimed_by_user_id,
+      restoredToNodeId: restoredToNode?.id ?? null,
+      restoredToFamilyId: restoredToNode?.family_id ?? null,
     },
   })
 
