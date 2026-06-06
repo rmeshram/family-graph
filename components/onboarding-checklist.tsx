@@ -174,8 +174,8 @@ export function OnboardingChecklist({
     },
     ...(father ? [{
       id: 'invite_father',
-      label: `Invite ${father.name.split(' ')[0]}`,
-      detail: 'Let them claim their profile',
+      label: `Invite ${father.name.split(' ')[0]} to join`,
+      detail: 'They can edit their profile & add relatives',
       emoji: '💌',
       done: !!father.isClaimed,
       cta: 'Invite',
@@ -183,8 +183,8 @@ export function OnboardingChecklist({
     }] : []),
     ...(mother ? [{
       id: 'invite_mother',
-      label: `Invite ${mother.name.split(' ')[0]}`,
-      detail: 'Let them claim their profile',
+      label: `Invite ${mother.name.split(' ')[0]} to join`,
+      detail: 'They can edit their profile & add relatives',
       emoji: '💌',
       done: !!mother.isClaimed,
       cta: 'Invite',
@@ -192,8 +192,8 @@ export function OnboardingChecklist({
     }] : []),
     ...(firstUnclaimedSibling ? [{
       id: 'invite_sibling',
-      label: `Invite ${firstUnclaimedSibling.name.split(' ')[0]}`,
-      detail: 'Share the family tree',
+      label: `Invite ${firstUnclaimedSibling.name.split(' ')[0]} to join`,
+      detail: 'The tree grows when they add their branch',
       emoji: '📨',
       done: false,
       cta: 'Invite',

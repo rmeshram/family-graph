@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { UserPlus, Send, RefreshCw, Copy, Check, Shield, MessageCircle } from 'lucide-react'
+import { UserPlus, Send, RefreshCw, Copy, Check, Shield, MessageCircle, Pencil, Eye, GitBranch, Bell } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -162,6 +162,24 @@ export function InviteToClaimDialog({
             </Badge>
           </div>
 
+          {/* Why claim? — benefits for the invitee */}
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">Why should they claim?</p>
+            <ul className="space-y-1.5">
+              {([
+                { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'Edit their own profile, add a photo & bio' },
+                { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'Control who sees their profile' },
+                { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Add their spouse, children & relatives' },
+                { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'Get birthday & family update notifications' },
+              ] as { icon: React.ReactNode; text: string }[]).map(({ icon, text }) => (
+                <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {icon}
+                  <span>{text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
           {/* Security note */}
           <div className="flex items-start gap-2 rounded-lg bg-blue-500/8 border border-blue-500/20 p-3 text-xs text-blue-300">
             <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0" />
@@ -229,7 +247,7 @@ export function InviteToClaimDialog({
                 className="w-full bg-[#25D366] hover:bg-[#1fba59] text-white font-medium"
                 onClick={() => {
                   const waText = encodeURIComponent(
-                    `Hi ${member.name},\n\nI've added you to our family tree on Family Graph.\n\nJoin here: ${inviteLink}\n\nYou can:\n• View family connections\n• Add your family branch\n• Help complete our family tree`
+                    `Hi ${member.name},\n\nI've added you to our family tree on Family Graph. Claim your profile to:\n• Edit your own bio, photo & details\n• Control who sees your profile\n• Add your spouse, children & relatives\n• Get birthday & family update notifications\n\nClaim here (valid 72 hrs): ${inviteLink}`
                   )
                   window.open(`https://wa.me/?text=${waText}`, '_blank', 'noopener,noreferrer')
                 }}

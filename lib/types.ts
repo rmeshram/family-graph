@@ -143,11 +143,11 @@ export interface FamilyMember {
   showAsAnonymous?: boolean
   /** When true, this profile is visible for matrimony / community search */
   isBiodataVisible?: boolean
-  
+
   // ──────────────────────────────────────────────────────────────────────────
   // Extended Biodata Fields (Migration 028)
   // ──────────────────────────────────────────────────────────────────────────
-  
+
   // Physical & Personal Details
   heightCm?: number  // Height in centimeters
   weightKg?: number  // Weight in kilograms
@@ -155,20 +155,20 @@ export interface FamilyMember {
   bloodGroup?: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-'
   disability?: string  // Full disclosure for matrimony
   maritalStatus?: 'never_married' | 'divorced' | 'widowed' | 'separated'
-  
+
   // Astrological (User enters manually - no API integration)
   timeOfBirth?: string  // HH:mm format
   placeOfBirth?: string  // For kundli
   manglik?: boolean  // Manglik dosha status
   rashi?: string  // Zodiac sign (Indian astrology)
   nakshatra?: string  // Birth star
-  
+
   // Education & Career (Extended)
   educationLevel?: 'below_10th' | '10th_pass' | '12th_pass' | 'diploma' | 'graduate' | 'post_graduate' | 'doctorate'
   educationField?: string  // e.g., "Computer Engineering", "MBBS"
   occupationCategory?: 'government' | 'private' | 'business' | 'professional' | 'student' | 'homemaker' | 'retired' | 'not_working'
   annualIncomeRange?: 'below_2lakh' | '2_to_5lakh' | '5_to_10lakh' | '10_to_15lakh' | '15_to_25lakh' | '25_to_50lakh' | '50lakh_plus'
-  
+
   // Family Details (Extended)
   fatherOccupation?: string
   motherOccupation?: string
@@ -179,7 +179,7 @@ export interface FamilyMember {
   brothersMarried?: number
   sistersMarried?: number
   ancestralProperty?: string
-  
+
   // Partner Expectations
   partnerExpectations?: string  // Free text
   preferredLocations?: string[]  // Cities/countries
@@ -187,22 +187,22 @@ export interface FamilyMember {
   preferredAgeMax?: number
   preferredHeightMinCm?: number
   preferredHeightMaxCm?: number
-  
+
   // Residency & Relocation
   residencyStatus?: 'indian_citizen' | 'nri' | 'green_card' | 'work_visa' | 'citizen_other' | 'student_visa'
   currentCountry?: string
   willingToRelocate?: boolean
-  
+
   // Biodata Photos (separate from profile photo)
   biodataPhotoUrl?: string  // Professional passport-style photo
   fullLengthPhotoUrl?: string  // Full-length photo (optional)
-  
+
   // Biodata Analytics (free - no payment needed)
   biodataViewsCount?: number
   biodataPdfDownloads?: number
   biodataWhatsappShares?: number
   biodataLastUpdatedAt?: string
-  
+
   // Extended & affiliated family network
   networkGroup?: 'core' | 'extended' | 'affiliated'
   affiliatedFamilyId?: string     // shared key for all members of same external family cluster

@@ -65,12 +65,17 @@ export function SuggestedMergesBanner({
   useEffect(() => {
     if (!members.length) return
     const dismissed = getDismissed()
-    const found = detectDuplicatePairs(members).filter(
-      p => !dismissed.has(pairKey(p))
-    )
+    const found = detectDuplicatePairs(members).filter(p => {
+      // Never suppress exact same-name pairs via sessionStorage dismiss —
+      // these are almost certainly real duplicates and the user must resolve them.
+      const exactSameName =
+        p.primary.name.trim().toLowerCase() === p.duplicate.name.trim().toLowerCase()
+      if (exactSameName) return true
+      return !dismissed.has(pairKey(p))
+    })
     setVisiblePairs(found)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanTrigger, members.length])
+  }, [scanTrigger, members.length, members])
 
   const dismiss = (pair: DuplicatePair) => {
     addDismissed(pairKey(pair))

@@ -348,6 +348,23 @@ export function AddMemberDialog({
       if (fatherId && fatherId === selfId) e.fatherId = 'Cannot be your own parent'
       if (motherId && motherId === selfId) e.motherId = 'Cannot be your own parent'
     }
+    // Issue 5: Structural duplicate-relationship enforcement
+    // A person cannot have two biological fathers or two biological mothers.
+    // Step/foster parents are OK in addition to a biological parent.
+    if (!editingMember && selfMemberId) {
+      const self = existingMembers.find(m => m.id === selfMemberId)
+      if (self) {
+        const existingParents = existingMembers.filter(m => (self.parentIds ?? []).includes(m.id))
+        const isBioFather = /^(father)$/i.test(relationship)
+        const isBioMother = /^(mother)$/i.test(relationship)
+        if (isBioFather && existingParents.some(p => p.gender === 'male')) {
+          e.relationship = `A father is already in your tree (${existingParents.find(p => p.gender === 'male')?.name ?? 'existing'}). Use stepfather or foster-father if this is a different role, or edit the existing father node instead.`
+        }
+        if (isBioMother && existingParents.some(p => p.gender === 'female')) {
+          e.relationship = `A mother is already in your tree (${existingParents.find(p => p.gender === 'female')?.name ?? 'existing'}). Use stepmother or foster-mother if this is a different role, or edit the existing mother node instead.`
+        }
+      }
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }

@@ -2162,17 +2162,17 @@ export default function FamilyGraphApp() {
               Hidden when a higher-priority panel (AI, Invite, PathFinder, MemberDetail) opens. */}
           {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
             && !showAIWidget && !showInviteWidget && !selectedMember && (
-            <FamilyMissionPanel
-              selfMember={selfMember}
-              members={members}
-              isAdmin={isAdmin}
-              familyId={familyId}
-              onAddMember={() => setIsAddDialogOpen(true)}
-              onAddStory={() => setIsStoryDialogOpen(true)}
-              onInviteMember={(m) => setInviteToClaimTarget(m)}
-              hasStories={checklistHasStories}
-            />
-          )}
+              <FamilyMissionPanel
+                selfMember={selfMember}
+                members={members}
+                isAdmin={isAdmin}
+                familyId={familyId}
+                onAddMember={() => setIsAddDialogOpen(true)}
+                onAddStory={() => setIsStoryDialogOpen(true)}
+                onInviteMember={(m) => setInviteToClaimTarget(m)}
+                hasStories={checklistHasStories}
+              />
+            )}
 
           {/* Member Detail — aside on desktop, bottom sheet on mobile */}
           {selectedMemberDisplay && !showAIWidget && !showInviteWidget && !pathFinderOpen && !isMobile && (

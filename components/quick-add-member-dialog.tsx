@@ -168,6 +168,23 @@ export function QuickAddMemberDialog({
 
     const storedName = normalizeStoredName(name)
 
+    // Issue 5: Block structural duplicates — two fathers / two mothers
+    if (existingMembers?.length && (relType === 'father' || relType === 'mother')) {
+      const existingParents = existingMembers.filter(m =>
+        (anchorMember.parentIds ?? []).includes(m.id)
+      )
+      if (relType === 'father' && existingParents.some(p => p.gender === 'male')) {
+        const existing = existingParents.find(p => p.gender === 'male')
+        setSubmitError(`${existing?.name ?? 'A father'} is already in the tree. Edit that profile instead, or choose Stepfather if this is a different person.`)
+        return
+      }
+      if (relType === 'mother' && existingParents.some(p => p.gender === 'female')) {
+        const existing = existingParents.find(p => p.gender === 'female')
+        setSubmitError(`${existing?.name ?? 'A mother'} is already in the tree. Edit that profile instead, or choose Stepmother if this is a different person.`)
+        return
+      }
+    }
+
     if (existingMembers?.length) {
       // 1. Hard block: exact name match — no bypass.
       const exactMatch = findExactNameMatch(existingMembers, storedName, anchorMember.id)

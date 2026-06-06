@@ -136,11 +136,18 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
   const fatherMother = fatherParents.find(p => p.gender === 'female') ?? (fatherParents.length > 1 ? fatherParents[1] : undefined) as FamilyMember | undefined
   const motherFather = motherParents.find(p => p.gender === 'male') ?? (motherParents[0] as FamilyMember | undefined)
   const motherMother = motherParents.find(p => p.gender === 'female') ?? (motherParents.length > 1 ? motherParents[1] : undefined) as FamilyMember | undefined
-  const primarySpouse = (self.spouseIds ?? []).map(sid => byId.get(sid)).filter(Boolean)[0] as FamilyMember | undefined
-  const siblingMembers = members.filter(m =>
-    m.id !== self.id && m.parentIds.length > 0 && m.parentIds.some(pid => self.parentIds.includes(pid))
+  // Build set of core family IDs so sibling/child arrays never double-place them
+  const coreIds = new Set<string>(
+    [fatherFather, fatherMother, motherFather, motherMother, father, mother, self]
+      .filter(Boolean).map(m => m!.id)
   )
-  const childMembers = members.filter(m => m.parentIds.includes(self.id))
+  const primarySpouse = (self.spouseIds ?? []).map(sid => byId.get(sid)).filter(Boolean)[0] as FamilyMember | undefined
+  if (primarySpouse) coreIds.add(primarySpouse.id)
+
+  const siblingMembers = members.filter(m =>
+    !coreIds.has(m.id) && m.parentIds.length > 0 && m.parentIds.some(pid => self.parentIds.includes(pid))
+  )
+  const childMembers = members.filter(m => !coreIds.has(m.id) && m.parentIds.includes(self.id))
 
   // X positions
   // pgPairW = width of one grandparent pair (2 nodes + 1 gap)
@@ -266,13 +273,33 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
     })
   }
 
+  // ── Deduplicate nodes — same member can be placed in multiple roles if the
+  // family data has cross-links (e.g. spouse who shares a parent with self in a
+  // cross-cousin marriage, or a father whose parentIds accidentally overlap self's
+  // parentIds making them appear as a sibling too).
+  // Priority: the most semantically specific role wins. Roles earlier in the list
+  // beat roles later (lower number = higher priority).
+  const ROLE_PRIORITY: Record<string, number> = {
+    self: 0, father: 1, mother: 2,
+    fatherFather: 3, fatherMother: 4, motherFather: 5, motherMother: 6,
+    spouse: 7, child: 8, sibling: 9, other: 10,
+  }
+  const dedupMap = new Map<string, LayoutNode>()
+  for (const n of nodes) {
+    const cur = dedupMap.get(n.id)
+    if (!cur || (ROLE_PRIORITY[n.role] ?? 10) < (ROLE_PRIORITY[cur.role] ?? 10)) {
+      dedupMap.set(n.id, n)
+    }
+  }
+  const dedupedNodes = [...dedupMap.values()]
+
   // ── Edges: computed after ALL nodes are placed ─────────────────────────────
   const edges: EdgeDef[] = []
-  const pos = new Map(nodes.map(n => [n.id, { x: n.x, y: n.y }]))
+  const pos = new Map(dedupedNodes.map(n => [n.id, { x: n.x, y: n.y }]))
   const edgeSet = new Set<string>()
 
   // Blood edges
-  nodes.forEach(n => {
+  dedupedNodes.forEach(n => {
     n.member.parentIds.forEach(pid => {
       const key = `b-${pid}-${n.id}`
       if (!edgeSet.has(key) && pos.has(pid)) {
@@ -284,7 +311,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
   })
 
   // Spouse edges
-  nodes.forEach(n => {
+  dedupedNodes.forEach(n => {
     ; (n.member.spouseIds ?? []).forEach(sid => {
       const key = [n.id, sid].sort().join('|')
       if (edgeSet.has(key) || !pos.has(sid)) return
@@ -296,7 +323,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
     })
   })
 
-  return { nodes, ghosts, edges }
+  return { nodes: dedupedNodes, ghosts, edges }
 }
 
 // ─── SVG edge layer ──────────────────────────────────────────────────────────
@@ -546,16 +573,12 @@ function ProgressPill({ members, selfId }: { members: FamilyMember[]; selfId: st
       🎉 Family complete!
     </div>
   )
-  const secsLeft = (7 - count) * 8
-  const timeLabel = secsLeft < 60 ? `~${secsLeft}s left` : `~${Math.ceil(secsLeft / 60)}m left`
   return (
     <div className="flex items-center gap-2 rounded-full border border-border/50 bg-card/90 backdrop-blur-sm px-3 py-1.5 text-[11px] font-medium shadow-sm">
       <div className="relative h-1.5 w-20 rounded-full bg-muted overflow-hidden">
         <div className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-500" style={{ width: `${Math.round((count / 7) * 100)}%` }} />
       </div>
-      <span className="text-muted-foreground">{count}/7</span>
-      <span className="opacity-40 text-muted-foreground">·</span>
-      <span className="text-muted-foreground">{timeLabel}</span>
+      <span className="text-muted-foreground">{count}/7 members</span>
     </div>
   )
 }
@@ -679,11 +702,14 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
   // Permanently dismissed steps ("No" was answered) — loaded once from localStorage.
   const [dismissed] = useState(() => getWizardDismissed(selfId))
 
-  // Compute pending steps ONCE on mount — exclude already-dismissed and structurally satisfied.
-  const [pendingSteps] = useState(() =>
-    WIZARD_STEPS_DEF
+  // Compute pending steps REACTIVELY from live members so that if father/mother were
+  // already added (before the wizard opened, or via the ghost slots while wizard is open),
+  // those steps are never shown. This fixes the "wizard asks about father I already added" bug.
+  const pendingSteps = useMemo(
+    () => WIZARD_STEPS_DEF
       .filter(s => s.checkMissing(members, selfId))
-      .filter(s => !dismissed.has(s.relType))
+      .filter(s => !dismissed.has(s.relType)),
+    [members, selfId, dismissed]
   )
   const [stepIdx, setStepIdx] = useState(0)
   const [name, setName] = useState('')
@@ -954,16 +980,22 @@ export function HierarchicalTree({
   // isUserInteracted: set true when user pans/zooms; suppresses auto-fit after that
   const isUserInteracted = useRef(false)
 
-  // Wizard state — persisted in sessionStorage
+  // Wizard state — persisted in localStorage so it survives new tabs/sessions.
+  // Previously used sessionStorage which caused the wizard to re-appear on every new session.
   const [wizardDone, setWizardDone] = useState(() =>
-    typeof window !== 'undefined' && sessionStorage.getItem('fg_wizard_done') === '1'
+    typeof window !== 'undefined' &&
+    (localStorage.getItem(`fg_wizard_done_${selfMemberId ?? ''}`) === '1' ||
+      sessionStorage.getItem('fg_wizard_done') === '1')
   )
 
   // When parent forces the wizard open, clear the done state
   useEffect(() => {
     if (forceWizard) {
       setWizardDone(false)
-      if (typeof window !== 'undefined') sessionStorage.removeItem('fg_wizard_done')
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('fg_wizard_done')
+        if (selfMemberId) localStorage.removeItem(`fg_wizard_done_${selfMemberId}`)
+      }
     }
   }, [forceWizard])
   const [showConfetti, setShowConfetti] = useState(false)
@@ -975,7 +1007,10 @@ export function HierarchicalTree({
 
   const handleWizardDone = useCallback(() => {
     setWizardDone(true)
-    if (typeof window !== 'undefined') sessionStorage.setItem('fg_wizard_done', '1')
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('fg_wizard_done', '1')
+      if (selfMemberId) localStorage.setItem(`fg_wizard_done_${selfMemberId}`, '1')
+    }
     if (members.length > 1) {
       setShowConfetti(true)
       setTimeout(() => setShowConfetti(false), 1100)

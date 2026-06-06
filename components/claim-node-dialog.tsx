@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { UserCheck, Lock, Globe, Users, AlertCircle, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { UserCheck, Lock, Globe, Users, AlertCircle, ShieldCheck, CheckCircle2, AlertTriangle, Pencil, Bell, Eye, GitBranch } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -163,6 +163,26 @@ export function ClaimNodeDialog({
                 : `Verify your identity to claim "${member.name}"`}
           </DialogDescription>
         </DialogHeader>
+
+        {/* ── Why claim? benefits block ─────────────────────── */}
+        {!alreadyClaimed && !claimedByMe && !alreadyLinkedElsewhere && !member.isDeceased && (
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">What you get by claiming</p>
+            <ul className="space-y-1.5">
+              {([
+                { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'Edit your own bio, photo & details' },
+                { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'Control who sees your profile (public / family / private)' },
+                { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Add your spouse, children & relatives' },
+                { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'Get notified about family updates & birthdays' },
+              ] as { icon: React.ReactNode; text: string }[]).map(({ icon, text }) => (
+                <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {icon}
+                  <span>{text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* ── One-account guard ─────────────────────────────── */}
         {!alreadyClaimed && !claimedByMe && alreadyLinkedElsewhere && (

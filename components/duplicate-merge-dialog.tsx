@@ -50,8 +50,14 @@ export function detectDuplicatePairs(members: FamilyMember[]): DuplicatePair[] {
       const a = members[i]
       const b = members[j]
 
-      // Skip already-claimed nodes (user has already confirmed their identity)
-      if (a.isClaimed && b.isClaimed) continue
+      // Skip already-claimed nodes only when they are claimed by DIFFERENT users —
+      // two nodes each claimed by a different real person cannot be the same person.
+      // If both are claimed by the SAME user, or one/both are unclaimed, still check.
+      if (
+        a.isClaimed && b.isClaimed &&
+        a.claimedByUserId && b.claimedByUserId &&
+        a.claimedByUserId !== b.claimedByUserId
+      ) continue
 
       const key = [a.id, b.id].sort().join('|')
       if (seen.has(key)) continue
