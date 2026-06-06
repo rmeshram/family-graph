@@ -699,10 +699,8 @@ interface SpeedWizardProps {
 }
 
 function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWizardProps) {
-  // Permanently dismissed steps ("No" was answered).
-  // Stored as React state so pendingSteps re-filters immediately within the same session;
-  // also persisted to localStorage so they survive wizard re-opens and page refreshes.
-  const [dismissed, setDismissed] = useState(() => getWizardDismissed(selfId))
+  // Permanently dismissed steps ("No" was answered) — loaded once from localStorage.
+  const [dismissed] = useState(() => getWizardDismissed(selfId))
 
   // Compute pending steps REACTIVELY from live members so that if father/mother were
   // already added (before the wizard opened, or via the ghost slots while wizard is open),
@@ -750,13 +748,9 @@ function SpeedWizard({ selfId, selfName, members, onQuickAdd, onDone }: SpeedWiz
     else setStepIdx(i => i + 1)
   }, [stepIdx, pendingSteps.length, onDone])
 
-  // handleSkip: advance to next step. permanent=true saves to localStorage AND React state
-  // so the step is filtered out immediately (within-session) AND on future wizard opens.
+  // handleSkip: advance to next step. permanent=true saves to localStorage so it never shows again.
   const handleSkip = useCallback((permanent = false) => {
-    if (permanent && currentStep) {
-      saveWizardDismissed(selfId, currentStep.relType)
-      setDismissed(prev => { const next = new Set(prev); next.add(currentStep.relType); return next })
-    }
+    if (permanent && currentStep) saveWizardDismissed(selfId, currentStep.relType)
     advance()
   }, [currentStep, selfId, advance])
 

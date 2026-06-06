@@ -26,18 +26,18 @@ import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 const ALL_NAV_ITEMS = [
-  { icon: GitBranch, label: 'Family Tree', href: '/dashboard', color: 'text-primary', flag: null },
-  { icon: UserPlus, label: 'Invite Family', href: '/invite', color: 'text-green-400', flag: null },
-  { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400', flag: null },
-  { icon: Camera, label: 'Memory Vault', href: '/memory', color: 'text-amber-400', flag: null },
-  { icon: Sparkles, label: 'AI Copilot', href: '/ai-copilot', color: 'text-violet-400', flag: 'enableAICopilot' as const },
-  { icon: CalendarDays, label: 'Events', href: '/events', color: 'text-pink-400', flag: null },
-  { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500', flag: null },
-  { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400', flag: 'enableMigrationMap' as const },
-  { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400', flag: null },
-  { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400', flag: 'enableFamilyPoster' as const },
-  { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400', flag: 'enableKulgathaPDF' as const },
-  { icon: Shield, label: 'Moderation', href: '/moderation', color: 'text-violet-400', flag: 'enableModeratorUI' as const },
+  { icon: GitBranch,    label: 'Family Tree',   href: '/dashboard',  color: 'text-primary',     flag: null },
+  { icon: UserPlus,     label: 'Invite Family', href: '/invite',     color: 'text-green-400',   flag: null },
+  { icon: Clock,        label: 'Timeline',      href: '/timeline',   color: 'text-blue-400',    flag: null },
+  { icon: Camera,       label: 'Memory Vault',  href: '/memory',     color: 'text-amber-400',   flag: null },
+  { icon: Sparkles,     label: 'AI Copilot',    href: '/ai-copilot', color: 'text-violet-400',  flag: 'enableAICopilot' as const },
+  { icon: CalendarDays, label: 'Events',        href: '/events',     color: 'text-pink-400',    flag: null },
+  { icon: Sun,          label: 'On This Day',   href: '/today',      color: 'text-amber-500',   flag: null },
+  { icon: Map,          label: 'Migration Map', href: '/migration',  color: 'text-cyan-400',    flag: 'enableMigrationMap' as const },
+  { icon: FileText,     label: 'Biodata',       href: '/biodata',    color: 'text-orange-400',  flag: null },
+  { icon: Printer,      label: 'Family Poster', href: '/poster',     color: 'text-rose-400',    flag: 'enableFamilyPoster' as const },
+  { icon: BookOpen,     label: 'Kulgatha PDF',  href: '/kulgatha',   color: 'text-emerald-400', flag: 'enableKulgathaPDF' as const },
+  { icon: Shield,       label: 'Moderation',    href: '/moderation', color: 'text-violet-400',  flag: 'enableModeratorUI' as const },
 ]
 const NAV_ITEMS = ALL_NAV_ITEMS.filter(item => item.flag === null || FEATURE_FLAGS[item.flag])
 
@@ -111,17 +111,17 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
     const total = sidebarMembers.length
     if (total === 0) return { pct: 0, waitingToJoin: 0, unclaimed: 0, missingParents: 0, missingSpouses: 0 }
 
-    const claimed = sidebarMembers.filter(m => m.isClaimed).length
-    const photos = sidebarMembers.filter(m => !!m.photoUrl).length
+    const claimed    = sidebarMembers.filter(m => m.isClaimed).length
+    const photos     = sidebarMembers.filter(m => !!m.photoUrl).length
 
     // Health % = weighted: members(30%) + claimed(40%) + photos(30%)
-    const memberScore = Math.min(total / 30, 1)
+    const memberScore  = Math.min(total / 30, 1)
     const claimedScore = total > 0 ? claimed / total : 0
-    const photoScore = total > 0 ? photos / total : 0
+    const photoScore   = total > 0 ? photos / total : 0
     const pct = Math.round((memberScore * 0.3 + claimedScore * 0.4 + photoScore * 0.3) * 100)
 
-    const waitingToJoin = sidebarMembers.filter(m => !m.isClaimed).length
-    const unclaimed = sidebarMembers.filter(m => !m.isClaimed && (m as any).claimStatus === 'unclaimed').length
+    const waitingToJoin  = sidebarMembers.filter(m => !m.isClaimed).length
+    const unclaimed      = sidebarMembers.filter(m => !m.isClaimed && (m as any).claimStatus === 'unclaimed').length
     const missingParents = sidebarMembers.filter(m => (m.parentIds ?? []).length === 0).length
     const missingSpouses = sidebarMembers.filter(m => (m.spouseIds ?? []).length === 0 && m.isAlive !== false).length
 
@@ -227,7 +227,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <Link href="/dashboard?view=tree"
+          <Link href="/dashboard?view=tree"
               className="flex items-center gap-1 text-[12px] font-semibold text-primary hover:text-primary/80 transition-colors">
               View Details <ChevronRight className="h-3 w-3" />
             </Link>
@@ -237,10 +237,10 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
         {/* 4 health stats */}
         <div className="border-t border-border/30 divide-y divide-border/20">
           {[
-            { icon: Users, value: health.waitingToJoin, label: 'Waiting to join', color: 'text-blue-400' },
-            { icon: UserX, value: health.unclaimed, label: 'Unclaimed profiles', color: 'text-amber-400' },
-            { icon: TreeDeciduous, value: health.missingParents, label: 'Missing parents', color: 'text-rose-400' },
-            { icon: Heart, value: health.missingSpouses, label: 'Missing spouses', color: 'text-pink-400' },
+            { icon: Users,       value: health.waitingToJoin,  label: 'Waiting to join',    color: 'text-blue-400' },
+            { icon: UserX,       value: health.unclaimed,       label: 'Unclaimed profiles', color: 'text-amber-400' },
+            { icon: TreeDeciduous, value: health.missingParents, label: 'Missing parents',   color: 'text-rose-400' },
+            { icon: Heart,       value: health.missingSpouses,  label: 'Missing spouses',    color: 'text-pink-400' },
           ].map(({ icon: Icon, value, label, color }) => (
             <div key={label} className="flex items-center gap-2.5 px-3.5 py-2">
               <Icon className={cn('h-3.5 w-3.5 shrink-0', color)} />

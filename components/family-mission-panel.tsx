@@ -14,8 +14,8 @@ import { useMemo, useState } from 'react'
 import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
-import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,10 +59,18 @@ function genderColor(gender?: string) {
 }
 
 function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: FamilyMember[]): string {
-  const result = getRelationshipBetweenPeople(allMembers, self.id, member.id)
-  if (result.found && result.relationship) {
-    // Capitalise first letter for display
-    return result.relationship.charAt(0).toUpperCase() + result.relationship.slice(1)
+  if (self.parentIds.includes(member.id))
+    return member.gender === 'male' ? 'Father' : member.gender === 'female' ? 'Mother' : 'Parent'
+  if (member.parentIds.includes(self.id))
+    return member.gender === 'male' ? 'Son' : member.gender === 'female' ? 'Daughter' : 'Child'
+  if ((self.spouseIds ?? []).includes(member.id))
+    return member.gender === 'male' ? 'Husband' : member.gender === 'female' ? 'Wife' : 'Spouse'
+  if (self.parentIds.length > 0 && member.parentIds.some(pid => self.parentIds.includes(pid)))
+    return member.gender === 'male' ? 'Brother' : member.gender === 'female' ? 'Sister' : 'Sibling'
+  const parents = self.parentIds.map(pid => allMembers.find(m => m.id === pid)).filter(Boolean) as FamilyMember[]
+  for (const p of parents) {
+    if (p.parentIds.includes(member.id))
+      return member.gender === 'male' ? 'Grandfather' : member.gender === 'female' ? 'Grandmother' : 'Grandparent'
   }
   return 'Family member'
 }
@@ -203,7 +211,7 @@ export function FamilyMissionPanel({
       )}
 
       {/* ── Family Mission ──────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-border/40">
+      <div className="border-b border-border/40">
         <button type="button" onClick={() => setMissionsOpen(v => !v)}
           className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
           <div className="flex items-center gap-2">
@@ -226,7 +234,7 @@ export function FamilyMissionPanel({
                   style={{ width: `${progressPct}%` }} />
               </div>
             </div>
-            <div className="overflow-y-auto" style={{ maxHeight: '256px' }}>
+            <ScrollArea className="max-h-64">
               <ul className="px-3 pb-3 space-y-0.5">
                 {steps.map(step => (
                   <li key={step.id}>
@@ -257,7 +265,7 @@ export function FamilyMissionPanel({
                   </li>
                 ))}
               </ul>
-            </div>
+            </ScrollArea>
           </>
         )}
       </div>
@@ -281,7 +289,7 @@ export function FamilyMissionPanel({
         </button>
 
         {waitingOpen && (
-          <div className="flex-1 overflow-y-auto">
+          <ScrollArea className="flex-1">
             {waitingPeople.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center px-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 mb-2">
@@ -325,7 +333,7 @@ export function FamilyMissionPanel({
                 </button>
               </div>
             )}
-          </div>
+          </ScrollArea>
         )}
       </div>
     </div>
