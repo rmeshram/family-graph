@@ -124,17 +124,39 @@ function buildMissionSteps(
 
   const skipped = new Set(wizardSkipped)
   const byId = new Map(members.map(m => [m.id, m]))
+
+  // parentIds may be empty if members were added with `relationship` field only
+  // (no bidirectional parent_ids link written). Fall back to relationship-field lookup
+  // so the mission reflects the real tree state.
   const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
-  const father = parents.find(p => p.gender === 'male')
-  const mother = parents.find(p => p.gender === 'female')
+  let father = parents.find(p => p.gender === 'male')
+    ?? members.find(m => m.id !== selfMember.id && m.gender === 'male' && (m.relationship === 'father' || m.relationship === 'dad'))
+  let mother = parents.find(p => p.gender === 'female')
+    ?? members.find(m => m.id !== selfMember.id && m.gender === 'female' && (m.relationship === 'mother' || m.relationship === 'mom'))
+  // If still not found by relationship label, check if any member lists selfMember as a child
+  if (!father) father = members.find(m => m.gender === 'male' && (m.parentIds ?? []).length === 0 && members.some(c => c.id === selfMember.id && c.parentIds.includes(m.id)))
+  if (!mother) mother = members.find(m => m.gender === 'female' && (m.parentIds ?? []).length === 0 && members.some(c => c.id === selfMember.id && c.parentIds.includes(m.id)))
+
+  // Merge parentIds from DB + inferred parent IDs for grandparent lookups
+  const effectiveParentIds = [
+    ...selfMember.parentIds,
+    ...(father && !selfMember.parentIds.includes(father.id) ? [father.id] : []),
+    ...(mother && !selfMember.parentIds.includes(mother.id) ? [mother.id] : []),
+  ]
+
   const hasSpouse = (selfMember.spouseIds ?? []).some(sid => byId.has(sid))
+    || members.some(m => m.id !== selfMember.id && (m.relationship === 'spouse' || m.relationship === 'wife' || m.relationship === 'husband' || m.relationship === 'partner'))
   const hasChild = members.some(m => m.parentIds.includes(selfMember.id))
+    || members.some(m => m.relationship === 'son' || m.relationship === 'daughter' || m.relationship === 'child')
   const hasSibling = members.some(
-    m => m.id !== selfMember.id && m.parentIds.length > 0 && m.parentIds.some(pid => selfMember.parentIds.includes(pid))
-  )
+    m => m.id !== selfMember.id && m.parentIds.length > 0 && m.parentIds.some(pid => effectiveParentIds.includes(pid))
+  ) || members.some(m => m.id !== selfMember.id && (m.relationship === 'brother' || m.relationship === 'sister' || m.relationship === 'sibling'))
+
   const fatherParents = father ? father.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[] : []
   const hasPatGrandFather = fatherParents.some(p => p.gender === 'male')
+    || members.some(m => m.gender === 'male' && (m.relationship === 'paternal-grandfather' || m.relationship === 'grandfather'))
   const hasPatGrandMother = fatherParents.some(p => p.gender === 'female')
+    || members.some(m => m.gender === 'female' && (m.relationship === 'paternal-grandmother' || m.relationship === 'grandmother'))
 
   // A step is "done" if the data is present OR the user explicitly said they don't have it.
   const done = (id: string, dataPresent: boolean) => dataPresent || skipped.has(`mission_${id}`)

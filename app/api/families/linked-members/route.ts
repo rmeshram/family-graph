@@ -88,7 +88,7 @@ export async function GET() {
   }
 
   // Fetch all members from linked families (admin client bypasses RLS)
-  const { data: memberRows } = await admin
+  const { data: memberRows, error: memberErr } = await admin
     .from('family_members')
     .select(`
       id, family_id, name, birth_year, death_year, birth_place, current_place,
@@ -97,8 +97,11 @@ export async function GET() {
       is_deceased, added_at, claimed_by_user_id
     `)
     .in('family_id', linkedFamilyIds)
-    .is('deleted_at', null)
     .order('generation', { ascending: true })
+
+  if (memberErr) {
+    console.error('[linked-members] family_members query failed:', memberErr.message)
+  }
 
   let linkedMembers = (memberRows ?? []).map((row: any) => ({
     id: row.id,
