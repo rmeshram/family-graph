@@ -12,7 +12,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users, TrendingUp } from 'lucide-react'
+import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users, TrendingUp, Clock, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
@@ -422,7 +422,9 @@ export function FamilyMissionPanel({
               </div>
             ) : (
               <ul className="px-3 py-2 space-y-1">
-                {waitingPeople.map(({ member, relationship }) => (
+                {waitingPeople.map(({ member, relationship }) => {
+                  const inviteSent = member.claimStatus === 'invite_sent'
+                  return (
                   <li key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/30 transition-colors">
                     <Avatar className="h-8 w-8 shrink-0">
                       {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} />}
@@ -433,15 +435,28 @@ export function FamilyMissionPanel({
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{relationship}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[10px] text-muted-foreground">{relationship}</p>
+                        {inviteSent && (
+                          <span className="flex items-center gap-0.5 text-[9px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-full px-1.5 py-0.5 leading-none">
+                            <Clock className="h-2 w-2" />
+                            Invite sent
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <Button size="sm" onClick={() => onInviteMember(member)}
-                      className="h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold bg-emerald-600 hover:bg-emerald-500 text-white border-0">
-                      <MessageCircle className="h-3 w-3" />
-                      Invite
+                      className={cn(
+                        "h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold border-0",
+                        inviteSent
+                          ? "bg-sky-600/80 hover:bg-sky-500 text-white"
+                          : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                      )}>
+                      {inviteSent ? <><Send className="h-3 w-3" />Resend</> : <><MessageCircle className="h-3 w-3" />Invite</>}
                     </Button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
 

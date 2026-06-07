@@ -362,12 +362,16 @@ export function useNotifications(
           if (!next.is_claimed || prev.is_claimed) return
           const nodeName = next.name ?? 'A family member'
           const initials = nodeName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          // If the node was in invite_sent state, they joined because of your invite
+          const wasInvited = prev.claim_status === 'invite_sent'
           setJoinNotifs(existing => {
             const notif: AppNotification = {
               id: `joined-rt-${next.id}`,
               type: 'member_joined',
-              title: `${nodeName} joined the family`,
-              body: 'They have claimed their profile.',
+              title: `🎉 ${nodeName} joined the family!`,
+              body: wasInvited
+                ? 'Your invite worked — they\'ve claimed their profile.'
+                : 'They have claimed their profile.',
               memberName: nodeName,
               memberInitials: initials,
               timestamp: new Date(),
