@@ -155,16 +155,66 @@ export async function POST(req: NextRequest) {
 
   if (strongMatch) {
     // Auto-claim the matching node instead of creating a duplicate
-    const { error: claimErr } = await admin
+    const now = new Date().toISOString()
+    const { data: claimResult, error: claimErr } = await admin
       .from('family_members')
-      .update({ claimed_by_user_id: user.id, is_claimed: true })
+      .update({
+        claimed_by_user_id: user.id,
+        is_claimed: true,
+        claim_status: 'claimed',
+        claimed_at: now,
+      })
       .eq('id', (strongMatch as any).id)
       .eq('is_claimed', false)
-    if (claimErr) {
-      return NextResponse.json({ error: 'CLAIM_FAILED', message: claimErr.message }, { status: 500 })
+      .select('id')
+    if (claimErr || !(claimResult as any[])?.length) {
+      return NextResponse.json({ error: 'CLAIM_FAILED', message: claimErr?.message ?? 'Node already claimed by another user.' }, { status: 409 })
     }
-    await admin.from('profiles').update({ member_id: (strongMatch as any).id } as any).eq('id', user.id)
-    return NextResponse.json({ memberId: (strongMatch as any).id, reused: true })
+    const claimedNodeId: string = (strongMatch as any).id
+
+    // ISSUE-01: consume the invite (increment used_count; set consumed_at if single-use)
+    const maxUses: number | null = (invite as any).max_uses ?? null
+    const usedCount: number = (invite as any).used_count ?? 0
+    const isSingleUse = maxUses === 1
+    const { data: consumeResult } = await admin
+      .from('invite_links')
+      .update({
+        used_count: usedCount + 1,
+        consumed_at: isSingleUse ? now : null,
+      } as any)
+      .eq('id', (invite as any).id)
+      .lt('used_count', maxUses ?? 999999)
+      .select('id')
+    if (!(consumeResult as any[])?.length) {
+      // Race — another concurrent join consumed the last slot
+      // Roll back claim
+      await admin.from('family_members')
+        .update({ claimed_by_user_id: null, is_claimed: false, claim_status: 'unclaimed', claimed_at: null })
+        .eq('id', claimedNodeId)
+      return NextResponse.json({ error: 'INVITE_AT_LIMIT', message: 'This invite has reached its use limit.' }, { status: 409 })
+    }
+
+    // ISSUE-02: create user_node_links row
+    await admin.from('user_node_links' as any).upsert({
+      user_id: user.id,
+      node_id: claimedNodeId,
+      family_id: familyId,
+      is_primary: true,
+      linked_at: now,
+    }, { onConflict: 'user_id,node_id' })
+
+    await admin.from('profiles').update({ member_id: claimedNodeId, family_id: familyId } as any).eq('id', user.id)
+
+    // Audit log
+    await admin.from('claim_audit_log' as any).insert({
+      node_id: claimedNodeId,
+      family_id: familyId,
+      actor_id: user.id,
+      action: 'claim_completed',
+      metadata: { method: 'auto_claim_phone_email_match', invite_id: (invite as any).id },
+    })
+
+    return NextResponse.json({ memberId: claimedNodeId, reused: true })
   }
 
   // Hard blocks: exact phone/email/name duplicates
@@ -243,10 +293,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'INSERT_FAILED', message: insertErr.message }, { status: 500 })
   }
 
-  // Link profile → new node
+  const newNodeId: string = (newMember as any).id
+  const now = new Date().toISOString()
+
+  // ISSUE-01: consume the invite (increment used_count; set consumed_at if single-use)
+  const maxUses: number | null = (invite as any).max_uses ?? null
+  const usedCount: number = (invite as any).used_count ?? 0
+  const isSingleUse = maxUses === 1
+  const { data: consumeResult } = await admin
+    .from('invite_links')
+    .update({
+      used_count: usedCount + 1,
+      consumed_at: isSingleUse ? now : null,
+    } as any)
+    .eq('id', (invite as any).id)
+    .lt('used_count', maxUses ?? 999999)
+    .select('id')
+  if (!(consumeResult as any[])?.length) {
+    // Race — another join consumed the last slot after our validation passed
+    // Soft-delete the node we just created to avoid a ghost member
+    await admin.from('family_members').update({ deleted_at: now } as any).eq('id', newNodeId)
+    return NextResponse.json({ error: 'INVITE_AT_LIMIT', message: 'This invite has reached its use limit.' }, { status: 409 })
+  }
+
+  // ISSUE-02: create user_node_links row
+  await admin.from('user_node_links' as any).upsert({
+    user_id: user.id,
+    node_id: newNodeId,
+    family_id: familyId,
+    is_primary: true,
+    linked_at: now,
+  }, { onConflict: 'user_id,node_id' })
+
+  // Link profile → new node AND ensure family_id is set
   await admin.from('profiles')
-    .update({ member_id: (newMember as any).id } as any)
+    .update({ member_id: newNodeId, family_id: familyId } as any)
     .eq('id', user.id)
 
-  return NextResponse.json({ memberId: (newMember as any).id, reused: false })
+  // Audit log
+  await admin.from('claim_audit_log' as any).insert({
+    node_id: newNodeId,
+    family_id: familyId,
+    actor_id: user.id,
+    action: 'claim_completed',
+    metadata: { method: 'join_create_new_node', invite_id: (invite as any).id },
+  })
+
+  return NextResponse.json({ memberId: newNodeId, reused: false })
 }

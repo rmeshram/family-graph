@@ -62,10 +62,24 @@ export async function POST(
     return NextResponse.json({ error: 'Caller has no family' }, { status: 400 })
   }
 
-  // Verify target user belongs to the same family
+  // ISSUE-09: last-admin guard — prevent removing the only admin
+  if ((callerProfile as any)?.role === 'admin') {
+    const { count: adminCount } = await admin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('family_id', callerFamilyId)
+      .eq('role', 'admin')
+    if ((adminCount ?? 0) <= 1 && user.id === userId) {
+      // Caller is trying to remove themselves as the sole admin — already blocked above
+      // (self-remove blocked at line ~48). But guard anyway.
+      return NextResponse.json({ error: 'LAST_ADMIN', message: 'Cannot remove the only admin of a family.' }, { status: 409 })
+    }
+  }
+
+  // Verify target user belongs to the same family and get their claimed node
   const { data: targetProfile } = await admin
     .from('profiles')
-    .select('family_id')
+    .select('family_id, member_id')
     .eq('id', userId)
     .single()
 
@@ -73,9 +87,52 @@ export async function POST(
     return NextResponse.json({ error: 'FORBIDDEN — target user is not in your family' }, { status: 403 })
   }
 
+  const targetMemberId: string | null = (targetProfile as any)?.member_id ?? null
+
+  // ISSUE-09: if the target is an admin, ensure they're not the last admin
+  const { data: targetProfileRole } = await admin
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .single()
+  if ((targetProfileRole as any)?.role === 'admin') {
+    const { count: adminCount } = await admin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('family_id', callerFamilyId)
+      .eq('role', 'admin')
+    if ((adminCount ?? 0) <= 1) {
+      return NextResponse.json({ error: 'LAST_ADMIN', message: 'Cannot remove the only admin of a family. Promote another admin first.' }, { status: 409 })
+    }
+  }
+
+  const now = new Date().toISOString()
+
+  // ISSUE-08: unclaim the removed user's node before clearing their profile
+  if (targetMemberId) {
+    await admin.from('family_members').update({
+      is_claimed: false,
+      claimed_by_user_id: null,
+      claim_status: 'unclaimed',
+      claimed_at: null,
+    } as any).eq('id', targetMemberId).eq('claimed_by_user_id', userId)
+
+    // Remove user_node_links rows for the target user
+    await admin.from('user_node_links' as any).delete().eq('user_id', userId)
+
+    // Audit log
+    await admin.from('claim_audit_log' as any).insert({
+      node_id: targetMemberId,
+      family_id: callerFamilyId,
+      actor_id: user.id,
+      action: 'claim_revoked',
+      metadata: { reason: 'member_removed_by_admin', removed_at: now },
+    })
+  }
+
   const { error } = await admin
     .from('profiles')
-    .update({ family_id: null, role: 'viewer' } as any)
+    .update({ family_id: null, role: 'viewer', member_id: null } as any)
     .eq('id', userId)
 
   if (error) {

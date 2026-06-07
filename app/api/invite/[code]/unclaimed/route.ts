@@ -1,10 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+// ── Auth client — required for verifying session ─────────────────────────────
+async function authedClient() {
+  const cs = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cs.getAll(),
+        setAll: (c) => {
+          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
+        },
+      },
+    }
+  )
+}
 
 // ── Service-role client — bypasses RLS ──────────────────────────────────────
 // Safe here because:
-//   1. Caller must supply a valid (non-expired, non-consumed) invite code
-//   2. We only return unclaimed nodes — no sensitive personal data
+//   1. Caller must be authenticated (checked below)
+//   2. Caller must supply a valid (non-expired, non-consumed) invite code
+//   3. phone and email are NOT returned in the response (stripped to prevent PII leak)
 function adminClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +38,13 @@ export async function GET(
 ) {
   const { code } = await params
   if (!code) return NextResponse.json({ error: 'Missing code' }, { status: 400 })
+
+  // ISSUE-04: require authentication — this endpoint previously leaked phone/email unauthenticated
+  const supabaseAuth = await authedClient()
+  const { data: { user } } = await supabaseAuth.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'UNAUTHENTICATED', message: 'Sign in to view family members.' }, { status: 401 })
+  }
 
   const supabase = adminClient()
 
@@ -43,9 +69,11 @@ export async function GET(
   }
 
   // Fetch unclaimed nodes from this family
+  // ISSUE-04: phone and email are intentionally excluded — they are PII and must
+  // not be exposed even to authenticated users who haven't yet joined the family.
   const { data: nodes, error: nodesErr } = await supabase
     .from('family_members')
-    .select('id, name, relationship, generation, birth_year, phone, email, gender')
+    .select('id, name, relationship, generation, birth_year, gender')
     .eq('family_id', invite.family_id)
     .eq('is_claimed', false)
     .order('generation', { ascending: true })

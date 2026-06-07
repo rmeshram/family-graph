@@ -76,12 +76,28 @@ export async function PATCH(
   // Verify target user belongs to the same family
   const { data: targetProfile } = await admin
     .from('profiles')
-    .select('family_id')
+    .select('family_id, role')
     .eq('id', userId)
     .single()
 
   if ((targetProfile as any)?.family_id !== callerFamilyId) {
     return NextResponse.json({ error: 'FORBIDDEN — target user is not in your family' }, { status: 403 })
+  }
+
+  // ISSUE-09: last-admin guard — prevent demoting the only admin
+  const targetCurrentRole: string = (targetProfile as any)?.role ?? 'viewer'
+  if (targetCurrentRole === 'admin' && role !== 'admin') {
+    const { count: adminCount } = await admin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('family_id', callerFamilyId)
+      .eq('role', 'admin')
+    if ((adminCount ?? 0) <= 1) {
+      return NextResponse.json({
+        error: 'LAST_ADMIN',
+        message: 'Cannot demote the only admin of a family. Promote another member to admin first.',
+      }, { status: 409 })
+    }
   }
 
   const { error } = await admin
