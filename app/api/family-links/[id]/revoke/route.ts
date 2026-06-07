@@ -92,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     actor_id: user.id,
     action: 'link_revoked',
     metadata: { link_id: id, family_a: l.family_a_id, family_b: l.family_b_id, revoked_by_initiator: isInitiator },
-  }).then(() => {})
+  }).then(() => { })
 
   // ISSUE-17: upsert with ignoreDuplicates — prevents a second notification row
   // if two concurrent revoke requests both reach this point.

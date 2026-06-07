@@ -371,12 +371,12 @@ export async function POST(
   // After merge, suggestions that referenced the archived duplicate would show
   // a broken/invisible node to admins reviewing the cross-family dashboard.
   await (admin.from('cross_family_node_matches') as any)
-    .update({ node_a_id: primaryId }).eq('node_a_id', targetId).then(() => {})
+    .update({ node_a_id: primaryId }).eq('node_a_id', targetId).then(() => { })
   await (admin.from('cross_family_node_matches') as any)
-    .update({ node_b_id: primaryId }).eq('node_b_id', targetId).then(() => {})
+    .update({ node_b_id: primaryId }).eq('node_b_id', targetId).then(() => { })
   // Remove self-referential rows created if primary appeared on both sides before retarget
   await (admin.from('cross_family_node_matches') as any)
-    .delete().eq('node_a_id', primaryId).eq('node_b_id', primaryId).then(() => {})
+    .delete().eq('node_a_id', primaryId).eq('node_b_id', primaryId).then(() => { })
 
   // ── 8. Audit log ───────────────────────────────────────────────────────────
   await admin.from('claim_audit_log').insert({
