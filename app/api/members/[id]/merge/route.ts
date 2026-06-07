@@ -346,6 +346,16 @@ export async function POST(
     .eq('id', targetId)
   if (deleteErr) return NextResponse.json({ error: `Merge applied but could not archive duplicate: ${deleteErr.message}` }, { status: 500 })
 
+  // Bug G: Invalidate any open node_claim invites that still point to the archived
+  // duplicate. Users following a stale link get a graceful NODE_ARCHIVED error
+  // (already handled), but leaving them unconsumed is confusing for admins reviewing
+  // the invite dashboard and can be misleading in rate-limit counts.
+  await admin
+    .from('invite_links')
+    .update({ consumed_at: new Date().toISOString() } as any)
+    .eq('node_id', targetId)
+    .is('consumed_at', null)
+
   // ── 8. Audit log ────────────────────────────────────────────────────────────
   await admin.from('claim_audit_log').insert({
     node_id: primaryId,

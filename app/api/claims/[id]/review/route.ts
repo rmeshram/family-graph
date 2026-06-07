@@ -193,7 +193,7 @@ export async function POST(
   const now = new Date().toISOString()
 
   const { count: rejUpdated } = await (admin.from('claim_requests') as any)
-    .update({ status: 'rejected', updated_at: now })
+    .update({ status: 'rejected', updated_at: now, reviewed_by: user.id, reviewed_at: now })
     .eq('id', id)
     .eq('status', 'pending')
     .select('*', { count: 'exact', head: true })

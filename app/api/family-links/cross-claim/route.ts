@@ -6,7 +6,7 @@ function adminClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false } }
+    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
   )
 }
 
@@ -19,7 +19,7 @@ async function authedClient() {
       cookies: {
         getAll: () => cs.getAll(),
         setAll: (c) => {
-          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch {}
+          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
         },
       },
     }
@@ -212,10 +212,57 @@ export async function POST(req: NextRequest) {
 
   if (linkErr || !link) {
     console.error('[cross-claim] family_links insert error:', linkErr)
+    // Bug D: concurrent cross-claims hit the UNIQUE (family_a_id, family_b_id) constraint.
+    if ((linkErr as any)?.code === '23505') {
+      return NextResponse.json({ error: 'REQUEST_PENDING', message: 'A connection request between these families already exists.' }, { status: 409 })
+    }
     return NextResponse.json({ error: 'DB_ERROR', message: 'Could not create the family connection. Please try again.' }, { status: 500 })
   }
 
   const linkId = (link as any).id as string
+
+  // ── Bug A: Claim the bridge node for this user ────────────────────────────
+  // The route previously only created the family_links row and returned success,
+  // leaving claimNodeId with is_claimed=false. The user was redirected to the
+  // dashboard believing they owned the bridge profile — but they didn't.
+  // Now we complete the claim writes before returning.
+  const claimNow = new Date().toISOString()
+  const { error: bridgeClaimErr } = await admin
+    .from('family_members')
+    .update({
+      is_claimed: true,
+      claim_status: 'claimed',
+      claimed_by_user_id: user.id,
+      claimed_at: claimNow,
+    } as any)
+    .eq('id', claimNodeId)
+    .eq('is_claimed', false) // optimistic lock: fail if someone else claimed it in the race window
+
+  if (bridgeClaimErr) {
+    // Roll back the family link — we couldn't complete the claim
+    await admin.from('family_links').delete().eq('id', linkId)
+    console.error('[cross-claim] bridge node claim failed:', bridgeClaimErr)
+    return NextResponse.json({ error: 'BRIDGE_CLAIM_FAILED', message: 'Could not claim the bridge profile. Please try again.' }, { status: 500 })
+  }
+
+  // Upsert user_node_links for the bridge node.
+  // is_primary=false: the user's primary identity stays in their original family.
+  await admin.from('user_node_links').upsert({
+    user_id: user.id,
+    node_id: claimNodeId,
+    family_id: claimFamilyId,
+    is_primary: false,
+    linked_at: claimNow,
+  } as any, { onConflict: 'user_id,node_id' })
+
+  // Audit the bridge node claim
+  await admin.from('claim_audit_log').insert({
+    node_id: claimNodeId,
+    family_id: claimFamilyId,
+    actor_id: user.id,
+    action: 'claim_completed',
+    metadata: { via: 'cross_claim', family_link_id: linkId, existingNodeId, existingFamilyId },
+  } as any)
 
   // ── Fetch family names for the response ──────────────────────────────────
   const [{ data: claimFamily }, { data: existingFamily }] = await Promise.all([
@@ -224,23 +271,13 @@ export async function POST(req: NextRequest) {
   ])
 
   // ── Notify BOTH families ──────────────────────────────────────────────────
-  // The event type is the same for both: pending → link_requested (needs action),
-  // accepted → link_accepted (informational). The existing-node family must be
-  // notified even on auto-accept so their admins know the connection was made.
   const notifEvent = linkStatus === 'accepted' ? 'link_accepted' : 'link_requested'
   await Promise.all([
-    // RF-12: Rate-limit sentinel — tracks per-user cross-claim attempts.
-    // Previously missing source_family_id + new_member_id (NOT NULL cols) caused
-    // all three inserts to fail silently, so the rate counter was always 0.
-    admin.from('family_link_notifications').insert({
-      link_id: linkId,
-      event_type: 'cross_claim_attempt',
-      recipient_family_id: claimFamilyId,
-      source_family_id: existingFamilyId,
-      new_member_id: claimNodeId,
-      initiated_by_user_id: user.id,
-      created_at: now,
-    } as any),
+    // Bug C: Previously this batch wrote a second 'cross_claim_attempt' row here,
+    // doubling the rate-limit counter per attempt (~2.5 real attempts before limit).
+    // The sentinel written at the top of the handler already counts this attempt.
+    // Only write the actionable link notifications now.
+    //
     // Inviting family notification
     admin.from('family_link_notifications').insert({
       link_id: linkId,

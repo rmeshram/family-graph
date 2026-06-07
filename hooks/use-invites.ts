@@ -215,6 +215,12 @@ interface JoinOpts {
   gender?: 'male' | 'female' | 'other'
   /** If set, claim this existing node instead of creating a new one */
   claimMemberId?: string
+  /**
+   * Bug B: User explicitly confirmed they want to leave their current family
+   * and join the invited family. Must be true before joinWithCode will overwrite
+   * profiles.family_id when the user has an active claimed node elsewhere.
+   */
+  confirmCrossFamily?: boolean
 }
 
 export function useJoinFamily() {
@@ -278,7 +284,7 @@ export function useJoinFamily() {
     if (profile?.member_id) {
       const { data: existingMember } = await supabase
         .from('family_members')
-        .select('id, family_id')
+        .select('id, family_id, name, is_claimed, claimed_by_user_id')
         .eq('id', profile.member_id)
         .single()
       if (existingMember?.family_id === invite.family_id) {
@@ -302,6 +308,35 @@ export function useJoinFamily() {
           throw new Error('This invite was just used by someone else. Please request a new one.')
         }
         return invite.family_id
+      }
+
+      // Bug B: Before silently overwriting family_id, check if the user has an
+      // ACTIVE claimed node in their current family. If they do, switching families
+      // orphans that node (it becomes unclaimed) and the user loses all context
+      // from their original tree — with no warning. Require explicit confirmation.
+      //
+      // We check is_claimed=true AND claimed_by_user_id=userId to distinguish
+      // "I created a family but never claimed a node" (safe to overwrite) from
+      // "I am a full member of Family A" (destructive to overwrite silently).
+      const isMemberActivelyClaimed =
+        (existingMember as any).is_claimed === true &&
+        (existingMember as any).claimed_by_user_id === userId
+
+      if (isMemberActivelyClaimed && !opts?.confirmCrossFamily) {
+        // Surface a typed error so the caller can show a confirmation dialog
+        // instead of silently proceeding. The join page catches this and renders
+        // a "You are already in another family" prompt with a Confirm / Cancel choice.
+        const err = new Error('CROSS_FAMILY_JOIN') as Error & {
+          code: string
+          existingFamilyId: string
+          existingNodeId: string
+          existingNodeName: string
+        }
+        err.code = 'CROSS_FAMILY_JOIN'
+        err.existingFamilyId = (existingMember?.family_id ?? '') as string
+        err.existingNodeId = (existingMember?.id ?? '') as string
+        err.existingNodeName = ((existingMember as any)?.name ?? '') as string
+        throw err
       }
 
       // Guard: user already has a member node in a DIFFERENT family.

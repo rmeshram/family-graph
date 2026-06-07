@@ -79,6 +79,12 @@ export default function JoinPage() {
     currentFamilyName: string
     targetFamilyName: string
   } | null>(null)
+  // Bug B: set when joinWithCode throws CROSS_FAMILY_JOIN — user has active claimed
+  // node in another family and must explicitly confirm before we overwrite family_id.
+  const [crossFamilyJoinConfirm, setCrossFamilyJoinConfirm] = useState<{
+    existingNodeName: string
+    claimIdPending: string | null | undefined
+  } | null>(null)
   // Two-tree connection: set when the claim API returns SUGGEST_FAMILY_LINK
   // to show the "Connect Families" card instead of a dead-end error.
   const [familyLinkSuggestion, setFamilyLinkSuggestion] = useState<{
@@ -385,6 +391,14 @@ export default function JoinPage() {
       // Full page navigation forces AuthProvider to re-fetch updated profile (new member_id)
       setTimeout(() => { window.location.href = '/dashboard' }, 2000)
     } catch (e: unknown) {
+      // Bug B: User has an active claimed node in another family — require confirmation
+      // before overwriting their family_id. Show an inline prompt instead of an error.
+      if (e instanceof Error && (e as any).code === 'CROSS_FAMILY_JOIN') {
+        const typedErr = e as any
+        setCrossFamilyJoinConfirm({ existingNodeName: typedErr.existingNodeName ?? '', claimIdPending: claimId })
+        setStatus('claim') // stay on the claim screen behind the prompt
+        return
+      }
       setStatus('error')
       setMessage(e instanceof Error ? e.message : 'Something went wrong')
     }
@@ -815,7 +829,51 @@ export default function JoinPage() {
           {status === 'claim' && (
             <div className="p-6 space-y-5">
 
-              {/* Case A: scored matches exist → ranked candidate list */}
+              {/* Bug B: Cross-family join confirmation — user already has a claimed node
+                  in another family and must explicitly confirm before we switch them. */}
+              {crossFamilyJoinConfirm && (
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-amber-400">⚠️ You&apos;re already in a family</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Your account is linked to <strong className="text-foreground">{crossFamilyJoinConfirm.existingNodeName || 'a profile'}</strong> in another family.
+                    Joining this family will move your account here. Your existing family data stays intact — other members can still see it.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 rounded-lg border border-border/60 bg-transparent py-2 text-xs font-medium text-muted-foreground hover:bg-muted/20"
+                      onClick={() => setCrossFamilyJoinConfirm(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="flex-1 rounded-lg bg-amber-500 hover:bg-amber-600 py-2 text-xs font-medium text-white"
+                      onClick={async () => {
+                        const pending = crossFamilyJoinConfirm.claimIdPending
+                        setCrossFamilyJoinConfirm(null)
+                        setStatus('joining')
+                        try {
+                          const { data: { user } } = await supabase.auth.getUser()
+                          if (!user) return
+                          await joinWithCode(code, user.id, {
+                            displayName: displayName.trim() || undefined,
+                            relationshipToInviter: selectedRel ?? 'skip',
+                            gender: selectedGender ?? undefined,
+                            claimMemberId: pending ?? undefined,
+                            confirmCrossFamily: true,
+                          })
+                          setStatus('success')
+                          setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+                        } catch (err: unknown) {
+                          setStatus('error')
+                          setMessage(err instanceof Error ? err.message : 'Something went wrong')
+                        }
+                      }}
+                    >
+                      Switch &amp; Join
+                    </button>
+                  </div>
+                </div>
+              )}
               {scoredMatches.length > 0 ? (
                 <>
                   <div className="text-center space-y-1">
