@@ -269,6 +269,30 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ISSUE-06: validate parentIds and spouseIds — every ID must belong to this family.
+  // Without this check an attacker with a valid invite code can inject edges to
+  // arbitrary nodes (including nodes from other families they cannot see via RLS).
+  const allEdgeIds = [...new Set([...(parentIds ?? []), ...(spouseIds ?? [])])]
+  if (allEdgeIds.length > 0) {
+    const { data: validNodes, error: edgeValidErr } = await admin
+      .from('family_members')
+      .select('id')
+      .eq('family_id', familyId)
+      .in('id', allEdgeIds)
+      .is('deleted_at' as any, null)
+    if (edgeValidErr) {
+      return NextResponse.json({ error: 'VALIDATION_FAILED', message: 'Could not validate parent/spouse IDs.' }, { status: 500 })
+    }
+    const validIdSet = new Set((validNodes ?? []).map((n: any) => n.id as string))
+    const invalidIds = allEdgeIds.filter(id => !validIdSet.has(id))
+    if (invalidIds.length > 0) {
+      return NextResponse.json({
+        error: 'INVALID_EDGE_IDS',
+        message: 'One or more parent/spouse IDs do not belong to this family or do not exist.',
+      }, { status: 422 })
+    }
+  }
+
   // ── Create the new member ────────────────────────────────────────────────────
   const { data: newMember, error: insertErr } = await admin
     .from('family_members')

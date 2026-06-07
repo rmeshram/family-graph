@@ -52,13 +52,23 @@ export async function POST(
   // Verify the link exists and caller is in family_b (the receiving family)
   const { data: link } = await admin
     .from('family_links')
-    .select('id, family_a_id, family_b_id, status')
+    .select('id, family_a_id, family_b_id, status, initiated_by')
     .eq('id', linkId)
     .single()
 
   if (!link) return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
   if ((link as any).status !== 'pending') {
     return NextResponse.json({ error: 'NOT_PENDING' }, { status: 409 })
+  }
+
+  // ISSUE-12: prevent the original initiator from accepting their own request.
+  // After UUID normalization the initiator's family may end up as family_b,
+  // giving them the opportunity to act as the responder. Explicitly block this.
+  if (action === 'accept' && (link as any).initiated_by === user.id) {
+    return NextResponse.json({
+      error: 'CANNOT_ACCEPT_OWN_REQUEST',
+      message: 'You cannot accept a connection request that you initiated.',
+    }, { status: 403 })
   }
 
   // Caller must be admin of family_b

@@ -112,6 +112,14 @@ export async function DELETE(req: Request) {
   // explicit cleanup ensures intent is clear and avoids race with trigger timing.
   await admin.from('user_node_links').delete().eq('user_id', user.id)
 
+  // ── Step 2.7: Anonymize authored family content ───────────────────────────
+  // ISSUE-23: stories, memories, and voice notes belong to the family, not the
+  // leaving user. Null out the author FK instead of deleting the content so the
+  // family retains their history. The rows are preserved as anonymous contributions.
+  await admin.from('stories').update({ author_id: null } as any).eq('author_id', user.id).then(() => {})
+  await admin.from('memories').update({ uploaded_by: null } as any).eq('uploaded_by', user.id).then(() => {})
+  await admin.from('voice_notes').update({ recorded_by: null } as any).eq('recorded_by', user.id).then(() => {})
+
   // ── Step 3: Delete the auth account (cascades profile row) ────────────────
   const { error: deleteErr } = await admin.auth.admin.deleteUser(user.id)
   if (deleteErr) {

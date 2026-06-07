@@ -119,10 +119,21 @@ export async function POST(
 
   // ── 2. Merge scalar fields ──────────────────────────────────────────────────
   const merged: Record<string, unknown> = {}
+  // ISSUE-20: track cases where both sides have different non-null values.
+  // Primary wins (its value is kept), but the discarded duplicate value is logged
+  // in the audit entry so an admin can review and manually correct if needed.
+  const conflicts: Record<string, { primary: unknown; duplicate: unknown }> = {}
   for (const field of MERGEABLE_SCALAR_FIELDS) {
     const pVal = (primary as any)[field]
     const dVal = (duplicate as any)[field]
     merged[field] = pVal !== null && pVal !== undefined ? pVal : dVal
+    if (
+      pVal !== null && pVal !== undefined &&
+      dVal !== null && dVal !== undefined &&
+      String(pVal) !== String(dVal)
+    ) {
+      conflicts[field] = { primary: pVal, duplicate: dVal }
+    }
   }
 
   // ── 3. Merge array fields ──────────────────────────────────────────────────
@@ -356,12 +367,27 @@ export async function POST(
     .eq('node_id', targetId)
     .is('consumed_at', null)
 
-  // ── 8. Audit log ────────────────────────────────────────────────────────────
+  // ISSUE-14: retarget cross_family_node_matches to the surviving primary.
+  // After merge, suggestions that referenced the archived duplicate would show
+  // a broken/invisible node to admins reviewing the cross-family dashboard.
+  await (admin.from('cross_family_node_matches') as any)
+    .update({ node_a_id: primaryId }).eq('node_a_id', targetId).then(() => {})
+  await (admin.from('cross_family_node_matches') as any)
+    .update({ node_b_id: primaryId }).eq('node_b_id', targetId).then(() => {})
+  // Remove self-referential rows created if primary appeared on both sides before retarget
+  await (admin.from('cross_family_node_matches') as any)
+    .delete().eq('node_a_id', primaryId).eq('node_b_id', primaryId).then(() => {})
+
+  // ── 8. Audit log ───────────────────────────────────────────────────────────
   await admin.from('claim_audit_log').insert({
     node_id: primaryId,
     actor_id: user.id,
     action: 'nodes_merged', // 'nodes_merged' matches the DB constraint (migration 033)
-    metadata: { absorbed_id: targetId },
+    metadata: {
+      absorbed_id: targetId,
+      // ISSUE-20: include any scalar conflicts so admins can review discarded data
+      ...(Object.keys(conflicts).length > 0 ? { scalar_conflicts: conflicts } : {}),
+    },
   }).then(() => { })
 
   // Return the updated primary

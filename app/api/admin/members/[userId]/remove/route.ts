@@ -140,5 +140,12 @@ export async function POST(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // ISSUE-18: invalidate all active sessions for the removed user.
+  // Their JWT is still valid until its expiry (~1 hour); signing them out revokes
+  // the refresh token so they cannot renew after the current JWT expires.
+  try {
+    await (admin as any).auth.admin.signOut(userId)
+  } catch { /* best-effort — sessions expire naturally within 1 hour */ }
+
   return NextResponse.json({ ok: true, userId })
 }

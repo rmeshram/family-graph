@@ -86,6 +86,24 @@ export function useInvites(familyId: string | null) {
       throw new Error('This profile is already claimed. Revoke the existing claim before sending a new invite.')
     }
 
+    // ISSUE-05: prevent creating a second active invite for the same unclaimed node.
+    // Return the existing invite URL so the admin can reshare it without minting a
+    // second valid token. Revoke the existing invite first if a fresh one is needed.
+    const { data: existingInvite } = await (supabase.from('invite_links') as any)
+      .select('id, code, expires_at')
+      .eq('node_id', nodeId)
+      .eq('invite_type', 'node_claim')
+      .is('consumed_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+    if (existingInvite) {
+      return {
+        ...(existingInvite as any),
+        link: `${getOrigin()}/join/${(existingInvite as any).code}`,
+        reused: true,
+      }
+    }
+
     const code = randomCode(8)
     const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString()
 
