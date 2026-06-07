@@ -6,6 +6,17 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Check, X, TreePine, ChevronDown, ChevronUp } from 'lucide-react'
 
+/**
+ * isEffectivelyClaimed — true when a member has joined the app, regardless of
+ * which column was set. Guards against the legacy join-create inconsistency
+ * (ISSUE-03) that set claimed_by_user_id without setting is_claimed=true,
+ * causing real members to appear as "invite pending" in the wizard.
+ */
+function isEffectivelyClaimed(m: FamilyMember | null | undefined): boolean {
+  if (!m) return false
+  return m.isClaimed === true || !!m.claimedByUserId || m.claimStatus === 'claimed'
+}
+
 export interface OnboardingChecklistProps {
   selfMember: FamilyMember | null
   members: FamilyMember[]
@@ -112,7 +123,7 @@ export function OnboardingChecklist({
   }, [father, members])
   const firstUnclaimedSibling = useMemo(() =>
     members.find(m =>
-      !m.isClaimed && m.id !== selfMember?.id &&
+      !isEffectivelyClaimed(m) && m.id !== selfMember?.id &&
       m.id !== father?.id && m.id !== mother?.id &&
       selfParentIds.length > 0 && m.parentIds?.some(pid => selfParentIds.includes(pid))
     ) ?? null,
@@ -177,7 +188,7 @@ export function OnboardingChecklist({
       label: `Invite ${father.name.split(' ')[0]} to join`,
       detail: 'They can edit their profile & add relatives',
       emoji: '💌',
-      done: !!father.isClaimed,
+      done: isEffectivelyClaimed(father),
       cta: 'Invite',
       onCta: onInviteMember ? () => onInviteMember(father!) : onInvite,
     }] : []),
@@ -186,7 +197,7 @@ export function OnboardingChecklist({
       label: `Invite ${mother.name.split(' ')[0]} to join`,
       detail: 'They can edit their profile & add relatives',
       emoji: '💌',
-      done: !!mother.isClaimed,
+      done: isEffectivelyClaimed(mother),
       cta: 'Invite',
       onCta: onInviteMember ? () => onInviteMember(mother!) : onInvite,
     }] : []),

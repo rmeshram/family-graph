@@ -69,6 +69,23 @@ function genderColor(gender?: string) {
   return 'hsl(160 45% 52%)'
 }
 
+/**
+ * isEffectivelyClaimed — true if a member has joined the family app,
+ * regardless of which column was written by which code path.
+ *
+ * Defends against the legacy join-create inconsistency (ISSUE-03) where
+ * claimed_by_user_id was set but is_claimed was left false, causing a real
+ * member (e.g. "James Jackson") to appear as "People Waiting to Join".
+ *
+ * Checks all three signals:
+ *   • is_claimed === true          (canonical state-machine flag)
+ *   • claimed_by_user_id is set    (legacy join-create path)
+ *   • claim_status === 'claimed'   (new claim flow)
+ */
+function isEffectivelyClaimed(m: FamilyMember): boolean {
+  return m.isClaimed === true || !!m.claimedByUserId || m.claimStatus === 'claimed'
+}
+
 function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: FamilyMember[]): string {
   if (self.parentIds.includes(member.id))
     return member.gender === 'male' ? 'Father' : member.gender === 'female' ? 'Mother' : 'Parent'
@@ -158,7 +175,7 @@ export function FamilyMissionPanel({
   const [waitingOpen, setWaitingOpen] = useState(true)
 
   const hasOtherClaims = members.some(
-    m => m.isClaimed && m.claimedByUserId && m.claimedByUserId !== selfMember?.id
+    m => isEffectivelyClaimed(m) && !!m.claimedByUserId && m.claimedByUserId !== selfMember?.id
   )
 
   const steps = useMemo(
@@ -173,7 +190,7 @@ export function FamilyMissionPanel({
   const waitingPeople = useMemo<WaitingPerson[]>(() => {
     if (!selfMember) return []
     return members
-      .filter(m => !m.isClaimed && m.id !== selfMember.id)
+      .filter(m => !isEffectivelyClaimed(m) && m.id !== selfMember.id)
       .slice(0, 8)
       .map(m => ({ member: m, relationship: inferRelLabel(m, selfMember, members) }))
   }, [members, selfMember])
