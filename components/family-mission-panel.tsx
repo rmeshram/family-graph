@@ -272,15 +272,15 @@ export function FamilyMissionPanel({
                           {step.cta}
                         </button>
                       )}
-                      {/* "Don't have" — only shown on skippable steps not yet skipped */}
+                      {/* "N/A" — skip skippable steps that don't apply */}
                       {!step.done && step.skippable && SKIPPABLE_STEP_IDS.has(step.id) && (
                         <button
                           type="button"
-                          title="Mark as not applicable"
+                          title="Doesn't apply to me"
                           onClick={() => onSkipStep(step.id)}
-                          className="shrink-0 rounded-md border border-border/20 px-1.5 py-0.5 text-[9px] text-muted-foreground/50 hover:text-muted-foreground hover:border-border/50 transition-colors"
+                          className="shrink-0 rounded-md border border-border/40 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-400 transition-colors"
                         >
-                          ✗
+                          N/A
                         </button>
                       )}
                     </div>
