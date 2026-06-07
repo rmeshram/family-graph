@@ -141,7 +141,7 @@ export function MemberDetail({
     .slice(0, 2)
 
   const parents = allMembers.filter((m) => member.parentIds.includes(m.id))
-  const spouses = allMembers.filter((m) => member.spouseIds.includes(m.id))
+  const spouses = allMembers.filter((m) => member.spouseIds.includes(m.id) || m.spouseIds.includes(member.id))
   const children = allMembers.filter((m) => m.parentIds.includes(member.id))
   const siblings = allMembers.filter(
     (m) => m.id !== member.id && m.parentIds.some((pid) => member.parentIds.includes(pid))

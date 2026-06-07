@@ -98,6 +98,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
   const handleSignOut = async () => { await signOut(); router.push('/auth/signin') }
 
   const displayName = profile?.display_name
+    ?? (selfMemberId ? sidebarMembers.find(m => m.id === selfMemberId)?.name : undefined)
     ?? user?.phone?.replace('+91', '')
     ?? user?.email?.split('@')[0]
     ?? 'Family Member'
@@ -176,7 +177,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
 
       {/* User avatar */}
       <Avatar className="h-8 w-8 shrink-0">
-        {profile?.avatar_url && <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">{initials || 'FG'}</AvatarFallback>}
+        {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={displayName} />}
         <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">{initials || 'FG'}</AvatarFallback>
       </Avatar>
     </div>
@@ -337,7 +338,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
       <div className="shrink-0 border-t border-border/40 p-3 space-y-1.5">
         <div className="flex items-center gap-2.5 rounded-xl bg-muted/30 border border-border/50 p-2.5">
           <Avatar className="h-8 w-8 shrink-0">
-            {profile?.avatar_url && <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">{initials || 'FG'}</AvatarFallback>}
+            {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={displayName} />}
             <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">{initials || 'FG'}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">

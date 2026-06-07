@@ -44,6 +44,10 @@ export function InviteToClaimDialog({
   useEffect(() => {
     if (!open || !member) return
     setDobHint(member.birthYear ? String(member.birthYear) : '')
+    // Reset invite link whenever dialog opens for a (possibly different) member
+    setInviteLink(null)
+    setExpiresAt(null)
+    setCopied(false)
   }, [open, member])
 
   if (!member) return null

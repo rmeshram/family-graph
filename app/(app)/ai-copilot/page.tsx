@@ -311,7 +311,7 @@ const MEMORY_PROMPTS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AICopilotPage() {
-  const { familyId, user, loading: authLoading } = useAuth()
+  const { familyId, user, profile, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
   const isDemoMode = !authLoading && !user
   const members = isDemoMode ? sampleFamilyMembers : (familyId && !loading ? dbMembers : [])
@@ -387,6 +387,7 @@ export default function AICopilotPage() {
         body: JSON.stringify({
           messages: updatedHistory,
           members: members.map(toCompactMember).filter(Boolean),
+          selfMemberId: members.find(m => m.claimedByUserId === user?.id)?.id ?? null,
         }),
       })
 
