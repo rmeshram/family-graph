@@ -252,7 +252,11 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       })
     }
 
-    //  Affiliated clusters: anchor to junction node, place to the right 
+    //  Affiliated clusters: stack all to the RIGHT of the core tree so
+    //  multiple merged families never overlap each other.
+    //  Each cluster's ideal y is its junction node's y; we then enforce a
+    //  minimum vertical gap so clusters with the same (or adjacent) junction
+    //  nodes don't collide.
     const affiliatedMembers = visibleMembers.filter(m => m.networkGroup === 'affiliated')
     const clusterMap = new Map<string, typeof affiliatedMembers>()
     affiliatedMembers.forEach(m => {
@@ -261,38 +265,62 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       clusterMap.get(m.affiliatedFamilyId)!.push(m)
     })
 
-    const clusterGap = 340 // horizontal offset from junction node
+    const affNodeWidth = 120
+    const affHGap = 32
+    const coreMaxX = positions.length > 0 ? Math.max(...positions.map(p => p.x)) : dimensions.width / 2
+    // Place all affiliated clusters to the right of the core tree with a fixed margin
+    const clusterAnchorX = coreMaxX + 180
 
+    // Pre-compute each cluster's height so we can assign non-overlapping y positions.
+    type ClusterSpec = {
+      clusterId: string
+      clusterMembers: typeof affiliatedMembers
+      junctionPos: { x: number; y: number } | null
+      idealY: number   // preferred y = junction node y
+      height: number   // pixel height of this cluster's rendered subtree
+    }
+    const specs: ClusterSpec[] = []
     clusterMap.forEach((clusterMembers, clusterId) => {
-      if (collapsedClusters.has(clusterId)) return // collapsed: don't add positions
-
-      // Find junction position
+      if (collapsedClusters.has(clusterId)) return
       const junctionId = clusterMembers[0]?.affiliatedJunctionId
-      const junctionPos = junctionId ? positions.find(p => p.id === junctionId) : null
-      const anchorX = junctionPos ? junctionPos.x + clusterGap : dimensions.width - 200
-      const anchorY = junctionPos ? junctionPos.y : 200
+      const junctionPos = junctionId ? positions.find(p => p.id === junctionId) ?? null : null
+      // Compute generation span → pixel height
+      const gens = clusterMembers.map(m => m.generation ?? 3)
+      const minGen = Math.min(...gens)
+      const maxGen = Math.max(...gens)
+      const genSpan = maxGen - minGen   // 0 if all same generation
+      const height = genSpan * (nodeHeight + verticalGap) + nodeHeight + 80
+      specs.push({ clusterId, clusterMembers, junctionPos, idealY: junctionPos?.y ?? 200, height })
+    })
 
-      // Group cluster members by generation
-      const clusterGens = new Map<number, typeof clusterMembers>()
-      clusterMembers.forEach(m => {
+    // Sort by ideal y so clusters are stacked in the same top-to-bottom order
+    // as their junction nodes appear in the core tree.
+    specs.sort((a, b) => a.idealY - b.idealY)
+
+    // Assign non-overlapping anchor y positions.
+    // Each cluster's top starts at max(idealY, prevBottom + gap).
+    let nextAvailableY = 60
+    const CLUSTER_VGAP = 100
+
+    specs.forEach(spec => {
+      const anchorY = Math.max(spec.idealY, nextAvailableY)
+      nextAvailableY = anchorY + spec.height + CLUSTER_VGAP
+
+      // Group by generation and lay out within this cluster
+      const clusterGens = new Map<number, typeof affiliatedMembers>()
+      spec.clusterMembers.forEach(m => {
         const gen = m.generation
         if (!clusterGens.has(gen)) clusterGens.set(gen, [])
         clusterGens.get(gen)!.push(m)
       })
-
-      const affNodeWidth = 120
-      const affHGap = 32
-      let yOffset = 0
-
-      // Sort gens ascending
       const sortedGens = [...clusterGens.keys()].sort((a, b) => a - b)
       const firstGen = sortedGens[0] ?? 0
 
       sortedGens.forEach(gen => {
         const genMembers = clusterGens.get(gen)!
         const totalWidth = genMembers.length * affNodeWidth + (genMembers.length - 1) * affHGap
-        const startX = anchorX - totalWidth / 2
-        yOffset = (gen - firstGen) * (nodeHeight + verticalGap)
+        const startX = clusterAnchorX - totalWidth / 2
+        const yOffset = (gen - firstGen) * (nodeHeight + verticalGap)
         genMembers.forEach((member, index) => {
           positions.push({
             id: member.id,
@@ -306,7 +334,16 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     return positions
   }, [members, dimensions.width, collapsedIds, collapsedClusters])
 
-  //  Affiliated cluster metadata (bounds, junction pos) 
+  //  Color palette rotated across affiliated family clusters (teal, violet, rose, amber, green)
+  const AFFILIATED_PALETTE = [
+    { stroke: '#14B8A6', fill: 'rgba(20,184,166,0.07)', text: 'rgba(20,184,166,0.80)', badge: 'rgba(20,184,166,0.18)' },
+    { stroke: '#8B5CF6', fill: 'rgba(139,92,246,0.07)', text: 'rgba(167,139,250,0.80)', badge: 'rgba(139,92,246,0.18)' },
+    { stroke: '#F43F5E', fill: 'rgba(244,63,94,0.07)',  text: 'rgba(251,113,133,0.80)', badge: 'rgba(244,63,94,0.18)'  },
+    { stroke: '#F59E0B', fill: 'rgba(245,158,11,0.07)', text: 'rgba(252,211,77,0.80)',  badge: 'rgba(245,158,11,0.18)' },
+    { stroke: '#22C55E', fill: 'rgba(34,197,94,0.07)',  text: 'rgba(134,239,172,0.80)', badge: 'rgba(34,197,94,0.18)'  },
+  ]
+
+  //  Affiliated cluster metadata (bounds, junction pos, per-family color)
   interface ClusterMeta {
     id: string
     name: string
@@ -314,6 +351,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     memberCount: number  // total (including collapsed)
     bounds: { x: number; y: number; w: number; h: number }
     nodeIds: string[]
+    color: typeof AFFILIATED_PALETTE[number]
   }
 
   const affiliatedClusters = useMemo<ClusterMeta[]>(() => {
@@ -325,12 +363,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     })
 
     const posMap = new Map(nodePositions.map(p => [p.id, p]))
+    // Sort cluster IDs consistently by name so color assignment is stable across renders
+    const sortedEntries = [...clusterMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))
 
-    return [...clusterMap.entries()].map(([id, meta]) => {
+    return sortedEntries.map(([id, meta], idx) => {
+      const color = AFFILIATED_PALETTE[idx % AFFILIATED_PALETTE.length]
       const junctionPos = meta.junctionId ? posMap.get(meta.junctionId) ?? null : null
       const clusterPositions = meta.ids.map(nid => posMap.get(nid)).filter(Boolean) as NodePosition[]
       if (clusterPositions.length === 0) {
-        return { id, name: meta.name, junctionPos, memberCount: meta.ids.length, bounds: { x: 0, y: 0, w: 0, h: 0 }, nodeIds: meta.ids }
+        return { id, name: meta.name, junctionPos, memberCount: meta.ids.length, bounds: { x: 0, y: 0, w: 0, h: 0 }, nodeIds: meta.ids, color }
       }
       const xs = clusterPositions.map(p => p.x)
       const ys = clusterPositions.map(p => p.y)
@@ -340,6 +381,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
         name: meta.name,
         junctionPos,
         memberCount: meta.ids.length,
+        color,
         nodeIds: meta.ids,
         bounds: {
           x: Math.min(...xs) - pad,
@@ -963,6 +1005,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
             if (collapsedClusters.has(cluster.id) || cluster.bounds.w < 10) return null
+            const { stroke, fill, text } = cluster.color
             return (
               <g key={`cluster-bg-${cluster.id}`}>
                 <rect
@@ -971,8 +1014,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   width={cluster.bounds.w}
                   height={cluster.bounds.h}
                   rx={24}
-                  fill="rgba(20,184,166,0.06)"
-                  stroke="rgba(20,184,166,0.28)"
+                  fill={fill}
+                  stroke={stroke}
+                  strokeOpacity={0.35}
                   strokeWidth={1.2}
                   strokeDasharray="8,5"
                 />
@@ -983,7 +1027,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   fontWeight={700}
                   textAnchor="middle"
                   letterSpacing={1.2}
-                  fill="rgba(20,184,166,0.75)"
+                  fill={text}
                   style={{ textTransform: 'uppercase' }}
                 >
                   {cluster.name}
@@ -997,7 +1041,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
             if (!cluster.junctionPos) return null
-            // Find the cluster member closest to the junction (leftmost)
+            // Find the cluster member closest to the junction (nearest x)
             const posMap = new Map(nodePositions.map(p => [p.id, p]))
             const clusterPositions = cluster.nodeIds.map(id => posMap.get(id)).filter(Boolean) as NodePosition[]
             if (clusterPositions.length === 0) return null
@@ -1008,12 +1052,13 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const y2 = nearest.y + offsetY
             const mx = (x1 + x2) / 2
             const my = (y1 + y2) / 2
+            const { stroke } = cluster.color
 
             if (collapsedClusters.has(cluster.id)) {
               // Collapsed: just a short stub line + pill
               return (
                 <g key={`bridge-${cluster.id}`}>
-                  <line x1={x1} y1={y1} x2={x1 + 60} y2={y1} stroke="#14B8A6" strokeWidth={1.5} strokeDasharray="8,5" opacity={0.6} />
+                  <line x1={x1} y1={y1} x2={x1 + 60} y2={y1} stroke={stroke} strokeWidth={1.5} strokeDasharray="8,5" opacity={0.6} />
                 </g>
               )
             }
@@ -1021,17 +1066,17 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             return (
               <g key={`bridge-${cluster.id}`}>
                 {/* Glow halo */}
-                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#14B8A6" strokeWidth={10} opacity={0.06} />
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={10} opacity={0.06} />
                 {/* Main dashed bridge */}
                 <line x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke="#14B8A6" strokeWidth={1.5} strokeDasharray="10,6" opacity={0.65}
+                  stroke={stroke} strokeWidth={1.5} strokeDasharray="10,6" opacity={0.65}
                 />
                 {/* Diamond marker at midpoint */}
-                <rect x={mx - 5} y={my - 5} width={10} height={10} rx={2} fill="#14B8A6" opacity={0.75}
+                <rect x={mx - 5} y={my - 5} width={10} height={10} rx={2} fill={stroke} opacity={0.75}
                   transform={`rotate(45, ${mx}, ${my})`}
                 />
                 {/* Label */}
-                <text x={mx} y={my - 12} fontSize={8} textAnchor="middle" fill="rgba(20,184,166,0.6)" fontWeight={600}>in-law</text>
+                <text x={mx} y={my - 12} fontSize={8} textAnchor="middle" fill={cluster.color.text} fontWeight={600}>{cluster.name.split(' ').pop()}</text>
               </g>
             )
           })}
@@ -1568,12 +1613,12 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             >
               {/* Pulsing outer ring */}
               <div className="relative">
-                <div className="absolute inset-0 -m-1.5 rounded-2xl animate-pulse" style={{ background: 'rgba(20,184,166,0.12)', border: '1px solid rgba(20,184,166,0.3)' }} />
+                <div className="absolute inset-0 -m-1.5 rounded-2xl animate-pulse" style={{ background: `${cluster.color.badge}`, border: `1px solid ${cluster.color.stroke}4d` }} />
                 <div
                   className="relative flex items-center gap-2 rounded-2xl px-3 py-2 border backdrop-blur-md transition-all hover:scale-105"
                   style={{
                     background: 'rgba(15,23,42,0.85)',
-                    borderColor: 'rgba(20,184,166,0.45)',
+                    borderColor: `${cluster.color.stroke}72`,
                   }}
                 >
                   {/* Preview avatars */}
@@ -1583,9 +1628,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                         key={m.id}
                         className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[9px] font-bold"
                         style={{
-                          borderColor: 'rgba(20,184,166,0.5)',
-                          background: 'rgba(20,184,166,0.2)',
-                          color: 'rgba(20,184,166,0.95)',
+                          borderColor: `${cluster.color.stroke}80`,
+                          background: `${cluster.color.badge}`,
+                          color: cluster.color.text,
                         }}
                       >
                         {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
@@ -1595,9 +1640,10 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       <div
                         className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[8px] font-bold"
                         style={{
-                          borderColor: 'rgba(20,184,166,0.5)',
-                          background: 'rgba(20,184,166,0.15)',
-                          color: 'rgba(20,184,166,0.75)',
+                          borderColor: `${cluster.color.stroke}80`,
+                          background: `${cluster.color.badge}`,
+                          color: cluster.color.text,
+                          opacity: 0.75,
                         }}
                       >
                         +{cluster.memberCount - 3}
@@ -1606,15 +1652,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   </div>
                   {/* Text */}
                   <div className="text-left">
-                    <p className="text-[11px] font-semibold leading-tight" style={{ color: 'rgba(20,184,166,0.95)' }}>
+                    <p className="text-[11px] font-semibold leading-tight" style={{ color: cluster.color.text }}>
                       {cluster.name}
                     </p>
-                    <p className="text-[9px] leading-tight" style={{ color: 'rgba(20,184,166,0.55)' }}>
+                    <p className="text-[9px] leading-tight" style={{ color: `${cluster.color.stroke}88` }}>
                       {cluster.memberCount} relatives · tap to explore
                     </p>
                   </div>
                   {/* Expand chevron */}
-                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(20,184,166,0.7)' }} />
+                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: cluster.color.text }} />
                 </div>
               </div>
             </div>
@@ -1631,9 +1677,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             style={{
               left: btnX,
               top: btnY,
-              background: 'rgba(20,184,166,0.10)',
-              borderColor: 'rgba(20,184,166,0.35)',
-              color: 'rgba(20,184,166,0.75)',
+              background: cluster.color.badge,
+              borderColor: `${cluster.color.stroke}59`,
+              color: cluster.color.text,
             }}
             title={`Collapse ${cluster.name}`}
             onClick={() => setCollapsedClusters(prev => new Set([...prev, cluster.id]))}
