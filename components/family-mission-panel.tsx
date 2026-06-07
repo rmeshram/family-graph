@@ -206,7 +206,7 @@ function buildMissionSteps(
     { id: 'add_child', label: 'Add a child', emoji: '\u{1F476}', done: done('add_child', hasChild), skippable: !hasChild, cta: 'Add', onAction: () => onQuickAddMember('child', selfMember.id) },
     { id: 'add_paternal_gf', label: "Father's father", emoji: '\u{1F474}', done: done('add_paternal_gf', hasPatGrandFather), skippable: !hasPatGrandFather, cta: 'Add', onAction: father ? () => onQuickAddMember('father', father.id) : () => onQuickAddMember('father', selfMember.id) },
     { id: 'add_paternal_gm', label: "Father's mother", emoji: '\u{1F475}', done: done('add_paternal_gm', hasPatGrandMother), skippable: !hasPatGrandMother, cta: 'Add', onAction: father ? () => onQuickAddMember('mother', father.id) : () => onQuickAddMember('mother', selfMember.id) },
-    { id: 'add_story', label: 'Add a memory or story', emoji: '\u{1F4D6}', done: hasStories, cta: 'Add', onAction: onAddStory },
+    // { id: 'add_story', label: 'Add a memory or story', emoji: '\u{1F4D6}', done: hasStories, cta: 'Add', onAction: onAddStory },
     { id: 'family_claimed', label: 'Another member joined', emoji: '\u{1F389}', done: hasOtherClaims },
   ]
 }
