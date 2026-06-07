@@ -150,12 +150,12 @@ export function buildUniverse(
   members: FamilyMember[],
   anchorId: string,
   perspectiveSelfId?: string | null,
-): { people: UPerson[]; edges: UEdge[] } {
-  if (!anchorId || members.length === 0) return { people: [], edges: [] }
+): { people: UPerson[]; edges: UEdge[]; familyLabels: { id: string; name: string; x: number; y: number; radius: number; count: number }[] } {
+  if (!anchorId || members.length === 0) return { people: [], edges: [], familyLabels: [] }
 
   const memberMap = new Map(members.map(m => [m.id, m]))
   const self = memberMap.get(anchorId)
-  if (!self) return { people: [], edges: [] }
+  if (!self) return { people: [], edges: [], familyLabels: [] }
 
   // ── Enrich with relationship-label-derived edges ───────────────────────────
   // Isolated members (no parent_ids/spouse_ids) carry a `relationship` label
@@ -459,8 +459,8 @@ export function buildUniverse(
 
   // ── 5b. Compute family label anchor points (centroid per affiliated family) ─
   // Returned alongside people/edges so the component can render floating labels
-  // in SVG space without needing to re-iterate positions.
-  const familyLabels: { id: string; name: string; x: number; y: number }[] = []
+  // and a soft halo ring per merged family in SVG space.
+  const familyLabels: { id: string; name: string; x: number; y: number; radius: number; count: number }[] = []
   if (affiliated.length > 0) {
     const familyGroups2 = new Map<string, { name: string; xs: number[]; ys: number[] }>()
     for (const m of affiliated) {
@@ -480,10 +480,14 @@ export function buildUniverse(
       if (g.xs.length === 0) continue
       const cx = g.xs.reduce((a, b) => a + b, 0) / g.xs.length
       const cy = g.ys.reduce((a, b) => a + b, 0) / g.ys.length
+      // Max distance from centroid to any member node — used for the halo ring
+      const radius = Math.max(
+        80,
+        ...g.xs.map((x, i) => Math.hypot(x - cx, g.ys[i] - cy) + 55)
+      )
       // Place label slightly further from origin (toward the outer ring edge)
-      const dist = Math.hypot(cx, cy) || 1
       const labelScale = 1.18
-      familyLabels.push({ id, name: g.name, x: cx * labelScale, y: cy * labelScale })
+      familyLabels.push({ id, name: g.name, x: cx * labelScale, y: cy * labelScale, radius, count: g.xs.length })
     }
   }
 
@@ -1477,38 +1481,62 @@ export function RelationshipUniverse({
           })}
         </g>
 
-        {/* Family constellation labels — one floating badge per linked family */}
+        {/* Family constellation labels — one floating badge + halo ring per linked family */}
         {familyLabels.map((fl, fi) => {
           const LABEL_PALETTE = ['#14B8A6', '#8B5CF6', '#F43F5E', '#F59E0B', '#22C55E']
           const color = LABEL_PALETTE[fi % LABEL_PALETTE.length]
           const lx = cx + fl.x * k
           const ly = cy + fl.y * k
-          const lineEndX = cx + (fl.x / 1.18) * k
-          const lineEndY = cy + (fl.y / 1.18) * k
+          // Centroid (not scaled by labelScale) — center of the halo ring
+          const hx = cx + (fl.x / 1.18) * k
+          const hy = cy + (fl.y / 1.18) * k
+          const scaledR = fl.radius * k
           if (Math.abs(lx - cx) < 10 && Math.abs(ly - cy) < 10) return null
+          // Label pill width scales with name length
+          const labelText = fl.name.length > 18 ? fl.name.slice(0, 17) + '…' : fl.name
+          const pillW = Math.max(72, labelText.length * 6.2 + 20)
           return (
-            <g key={fl.id} opacity={0.82}>
-              {/* Subtle tether line from cluster centroid to label */}
-              <line x1={lineEndX} y1={lineEndY} x2={lx} y2={ly}
-                stroke={color} strokeOpacity={0.25} strokeWidth={0.8} strokeDasharray="3 6" />
+            <g key={fl.id}>
+              {/* Soft halo ring enclosing all nodes of this family */}
+              <circle
+                cx={hx} cy={hy} r={scaledR}
+                fill={color} fillOpacity={0.04}
+                stroke={color} strokeOpacity={0.18} strokeWidth={1.2}
+                strokeDasharray="4 8"
+              />
+              {/* Subtle tether line from centroid to label pill */}
+              <line x1={hx} y1={hy} x2={lx} y2={ly}
+                stroke={color} strokeOpacity={0.22} strokeWidth={0.8} strokeDasharray="3 6" />
               {/* Label pill background */}
               <rect
-                x={lx - 44} y={ly - 11}
-                width={88} height={20} rx={10}
-                fill={color} fillOpacity={0.12}
-                stroke={color} strokeOpacity={0.35} strokeWidth={0.8}
+                x={lx - pillW / 2} y={ly - 12}
+                width={pillW} height={22} rx={11}
+                fill={color} fillOpacity={0.14}
+                stroke={color} strokeOpacity={0.40} strokeWidth={0.9}
               />
+              {/* Family name */}
               <text
                 x={lx} y={ly + 4}
-                fontSize={Math.max(7, 8.5 * Math.min(1, k))}
+                fontSize={Math.max(7.5, 9.5 * Math.min(1, k))}
                 textAnchor="middle"
                 fill={color}
                 fontWeight={700}
-                letterSpacing={1.1}
+                letterSpacing={0.9}
                 style={{ textTransform: 'uppercase', fontFamily: 'inherit' }}
               >
-                {fl.name.length > 16 ? fl.name.slice(0, 15) + '…' : fl.name}
+                {labelText}
               </text>
+              {/* Member count badge */}
+              {fl.count > 1 && (
+                <>
+                  <circle cx={lx + pillW / 2 - 2} cy={ly - 12} r={8}
+                    fill={color} fillOpacity={0.85} />
+                  <text x={lx + pillW / 2 - 2} y={ly - 8}
+                    fontSize={6.5} textAnchor="middle" fill="#000" fontWeight={800}
+                    style={{ fontFamily: 'inherit' }}
+                  >{fl.count}</text>
+                </>
+              )}
             </g>
           )
         })}

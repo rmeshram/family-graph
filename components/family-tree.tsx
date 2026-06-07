@@ -393,6 +393,16 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     })
   }, [members, nodePositions])
 
+  // O(1) lookup: memberId → that cluster's color entry.
+  // Built from affiliatedClusters so color assignments are stable across renders.
+  const memberClusterColorMap = useMemo(() => {
+    const map = new Map<string, typeof AFFILIATED_PALETTE[number]>()
+    affiliatedClusters.forEach(cluster => {
+      cluster.nodeIds.forEach(id => map.set(id, cluster.color))
+    })
+    return map
+  }, [affiliatedClusters])
+
   const connections = useMemo(() => {
     const lines: { from: NodePosition; to: NodePosition; type: 'parent' | 'spouse'; fromId: string; toId: string }[] = []
     const posMap = new Map(nodePositions.map((p) => [p.id, p]))
@@ -1076,7 +1086,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   transform={`rotate(45, ${mx}, ${my})`}
                 />
                 {/* Label */}
-                <text x={mx} y={my - 12} fontSize={8} textAnchor="middle" fill={cluster.color.text} fontWeight={600}>{cluster.name.split(' ').pop()}</text>
+                <text x={mx} y={my - 12} fontSize={8} textAnchor="middle" fill={cluster.color.text} fontWeight={600}>{cluster.name.length > 18 ? cluster.name.slice(0, 17) + '…' : cluster.name}</text>
               </g>
             )
           })}
@@ -1195,7 +1205,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
               const member = memberMap.get(pos.id)
               if (!member) return null
               const ng = member.networkGroup ?? 'core'
-              const fill = ng === 'affiliated' ? '#14B8A6' : ng === 'extended' ? '#8B5CF6' : '#F59E0B'
+              const fill = ng === 'affiliated'
+                ? (memberClusterColorMap.get(pos.id)?.stroke ?? '#14B8A6')
+                : ng === 'extended' ? '#8B5CF6' : '#F59E0B'
               const offsetX = dimensions.width / 2
               const offsetY = dimensions.height / 2
               return (
@@ -1223,6 +1235,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const networkGroup = member.networkGroup ?? 'core'
             const isExtended = networkGroup === 'extended'
             const isAffiliated = networkGroup === 'affiliated'
+            // Per-cluster color — each merged family gets a distinct hue
+            const clusterColor = isAffiliated ? (memberClusterColorMap.get(member.id) ?? null) : null
             const nodeWidth = isAffiliated ? 120 : isExtended ? 130 : 150
             const staggerDelay = isExtended || isAffiliated
               ? `${(staggerMap.get(member.id) ?? 0) * 35}ms`
@@ -1282,7 +1296,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       borderStyle: isUnclaimed ? 'dashed' : 'solid',
                       borderColor: isSelected ? 'var(--tree-node-border-selected)'
                         : isUnclaimed ? 'rgba(148,163,184,0.40)'
-                          : isAffiliated ? 'rgba(20,184,166,0.30)'
+                          : clusterColor ? `${clusterColor.stroke}4d`
                             : isExtended ? 'rgba(139,92,246,0.30)'
                               : 'var(--tree-node-border)',
                     }}
@@ -1294,16 +1308,23 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     <div className="relative">
                       <Avatar className={cn('border-2 h-8 w-8',
                         isSelf ? 'border-amber-400/70'
-                          : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
-                      )}>
+                          : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
+                      )}
+                      style={clusterColor && !isSelected && !isSelf ? { borderColor: `${clusterColor.stroke}59` } : undefined}
+                      >
                         {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
-                        <AvatarFallback className={cn('text-[9px] font-semibold',
-                          isAnonymous ? 'bg-muted/60 text-muted-foreground'
-                            : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
-                              : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
+                        <AvatarFallback
+                          className={cn('text-[9px] font-semibold',
+                            isAnonymous ? 'bg-muted/60 text-muted-foreground'
+                              : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
                                 : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
-                                  : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
-                        )}>{displayInitials}</AvatarFallback>
+                                  : !clusterColor ? 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200' : ''
+                          )}
+                          style={clusterColor && !isAnonymous && !isUnclaimed ? {
+                            background: `linear-gradient(135deg, ${clusterColor.stroke}40, ${clusterColor.stroke}26)`,
+                            color: clusterColor.text,
+                          } : undefined}
+                        >{displayInitials}</AvatarFallback>
                       </Avatar>
                       {/* YOU indicator — shown even in compact mode (#2 fix) */}
                       {isSelf && (
@@ -1357,8 +1378,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                         borderColor: isSelected ? 'var(--tree-node-border-selected)'
                           : isUnclaimed ? 'rgba(148,163,184,0.35)'
                             : isHovered
-                              ? (isAffiliated ? 'rgba(20,184,166,0.60)' : isExtended ? 'rgba(139,92,246,0.60)' : 'var(--tree-node-border-hover)')
-                              : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
+                              ? (clusterColor ? `${clusterColor.stroke}99` : isExtended ? 'rgba(139,92,246,0.60)' : 'var(--tree-node-border-hover)')
+                              : (clusterColor ? `${clusterColor.stroke}4d` : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -1403,7 +1424,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       <div style={{
                         height: 1,
                         width: '100%',
-                        background: isAffiliated ? 'rgba(20,184,166,0.12)' : isExtended ? 'rgba(139,92,246,0.12)' : 'rgba(100,116,139,0.14)',
+                        background: clusterColor ? `${clusterColor.stroke}1f` : isExtended ? 'rgba(139,92,246,0.12)' : 'rgba(100,116,139,0.14)',
                       }} />
 
                       {/* ── Card body: avatar + name + metadata ── */}
@@ -1418,13 +1439,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                                 : isUnclaimed
                                   ? 'border-slate-500/35'
                                   : isHovered
-                                    ? (isAffiliated
-                                      ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                      : isExtended
+                                    ? (isExtended
                                         ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                        : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
-                                    : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
+                                        : !clusterColor ? 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]' : '')
+                                    : (isExtended ? 'border-violet-600/35' : !clusterColor ? 'border-slate-600/40' : '')
                             )}
+                          style={clusterColor && !isSelected && !isUnclaimed ? {
+                            borderColor: isHovered ? `${clusterColor.stroke}cc` : `${clusterColor.stroke}59`,
+                            ...(isHovered ? { boxShadow: `0 0 0 2px ${clusterColor.stroke}26` } : {}),
+                          } : undefined}
                           >
                             {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                             <AvatarFallback
@@ -1435,14 +1458,19 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                                   : isSelected
                                     ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
                                     : isHovered
-                                      ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
-                                        : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
-                                          : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
-                                      : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
-                                        : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
-                                          : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
+                                      ? (isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
+                                        : !clusterColor ? 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25' : '')
+                                      : (isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
+                                        : !clusterColor ? 'bg-gradient-to-br from-slate-400/30 to-slate-500/30' : '')
                               )}
-                              style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
+                              style={{
+                                color: isAnonymous ? undefined : (clusterColor && !isSelected ? clusterColor.text : 'var(--tree-node-text)'),
+                                ...(clusterColor && !isAnonymous && !isSelected ? {
+                                  background: isHovered
+                                    ? `linear-gradient(135deg, ${clusterColor.stroke}40, ${clusterColor.stroke}26)`
+                                    : `linear-gradient(135deg, ${clusterColor.stroke}26, ${clusterColor.stroke}18)`,
+                                } : {}),
+                              }}
                             >
                               {displayInitials}
                             </AvatarFallback>
@@ -1690,7 +1718,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
         )
       })}
 
-      {/*  Legend  */}
+      {/*  Legend — core + extended + one entry per merged family  */}
       <div className="absolute bottom-[72px] left-4 z-[3] flex flex-col gap-1.5 rounded-xl px-3 py-2.5 backdrop-blur-md border border-border/30 text-[10px]"
         style={{ background: 'var(--surface-card)' }}
       >
@@ -1702,10 +1730,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
           <span className="h-2.5 w-2.5 rounded-full bg-violet-500/70 ring-1 ring-violet-500/30 flex-shrink-0" />
           <span className="text-muted-foreground">Extended Relatives</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-teal-400/80 ring-1 ring-teal-400/30 flex-shrink-0" />
-          <span className="text-muted-foreground">Affiliated Family</span>
-        </div>
+        {affiliatedClusters.map(cluster => (
+          <div key={cluster.id} className="flex items-center gap-2">
+            <span
+              className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+              style={{ background: cluster.color.stroke, opacity: 0.82 }}
+            />
+            <span className="text-muted-foreground truncate max-w-[120px]">{cluster.name}</span>
+          </div>
+        ))}
       </div>
 
       {/* ─── Minimap ───────────────────────────────────────────────────── */}
@@ -1749,7 +1782,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             <svg width={mapW} height={mapH}>
               {nodePositions.map(pos => {
                 const m = memberMap.get(pos.id)
-                const fill = m?.networkGroup === 'affiliated' ? '#14B8A6' : m?.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
+                const fill = m?.networkGroup === 'affiliated'
+                  ? (memberClusterColorMap.get(pos.id)?.stroke ?? '#14B8A6')
+                  : m?.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
                 const r = m?.networkGroup === 'core' ? 3.5 : 2.5
                 return (
                   <circle key={pos.id} cx={toMx(pos.x)} cy={toMy(pos.y)} r={r}
