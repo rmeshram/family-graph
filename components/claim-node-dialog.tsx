@@ -266,8 +266,8 @@ export function ClaimNodeDialog({
               />
             </div>
 
-            {/* Error states */}
-            {claimError && (
+            {/* Error states — hidden for SUGGEST_FAMILY_LINK which has its own card UI */}
+            {claimError && claimError.code !== 'SUGGEST_FAMILY_LINK' && (
               <div className={cn(
                 'flex items-start gap-2 rounded-lg border p-3 text-xs',
                 claimError.code === 'IDENTITY_MISMATCH'
@@ -332,9 +332,6 @@ export function ClaimNodeDialog({
                       <li key={t} className="text-xs text-muted-foreground">{t}</li>
                     ))}
                   </ul>
-                  {claimError.message && claimError.code === 'SUGGEST_FAMILY_LINK' && connectingFamilies === false && (
-                    <p className="text-xs text-destructive">{claimError.message}</p>
-                  )}
                   <Button
                     size="sm"
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
