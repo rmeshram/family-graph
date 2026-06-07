@@ -114,20 +114,25 @@ interface TreeCompleteness {
 }
 
 /**
- * computeTreeCompleteness — measures how many added members have actually
- * joined the app (i.e. claimed their profile).
+ * computeTreeCompleteness — measures how many living members have claimed
+ * their profile (i.e. joined the app).
  *
- * score = joinedCount / totalCount × 100
- * waitingCount = members who are added but not yet claimed (prime invite targets)
+ * Deceased members are excluded from the denominator: they are part of the
+ * tree as historical records but cannot join the app, so they should not
+ * make the participation score look artificially low.
+ *
+ * score = joinedCount / livingCount × 100
+ * waitingCount = living members who are added but not yet claimed
  */
 function computeTreeCompleteness(
   selfMember: FamilyMember | null,
   members: FamilyMember[],
 ): TreeCompleteness {
-  const totalCount = members.length
+  const livingMembers = members.filter(m => m.isAlive !== false)
+  const totalCount = livingMembers.length
   if (totalCount === 0) return { score: 0, joinedCount: 0, totalCount: 0, waitingCount: 0 }
-  const joinedCount = members.filter(isEffectivelyClaimed).length
-  const waitingCount = members.filter(
+  const joinedCount = livingMembers.filter(isEffectivelyClaimed).length
+  const waitingCount = livingMembers.filter(
     m => !isEffectivelyClaimed(m) && m.id !== selfMember?.id,
   ).length
   const score = Math.round((joinedCount / totalCount) * 100)
@@ -248,7 +253,9 @@ export function FamilyMissionPanel({
   const waitingPeople = useMemo<WaitingPerson[]>(() => {
     if (!selfMember) return []
     return members
-      .filter(m => !isEffectivelyClaimed(m) && m.id !== selfMember.id)
+      // Exclude deceased — they cannot join the app; invite buttons on
+      // deceased members are confusing and technically meaningless.
+      .filter(m => !isEffectivelyClaimed(m) && m.id !== selfMember.id && m.isAlive !== false)
       .slice(0, 8)
       .map(m => ({ member: m, relationship: inferRelLabel(m, selfMember, members) }))
   }, [members, selfMember])
@@ -425,36 +432,36 @@ export function FamilyMissionPanel({
                 {waitingPeople.map(({ member, relationship }) => {
                   const inviteSent = member.claimStatus === 'invite_sent'
                   return (
-                  <li key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/30 transition-colors">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} />}
-                      <AvatarFallback className="text-[11px] font-bold text-white"
-                        style={{ background: genderColor(member.gender) }}>
-                        {getInitials(member.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <p className="text-[10px] text-muted-foreground">{relationship}</p>
-                        {inviteSent && (
-                          <span className="flex items-center gap-0.5 text-[9px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-full px-1.5 py-0.5 leading-none">
-                            <Clock className="h-2 w-2" />
-                            Invite sent
-                          </span>
-                        )}
+                    <li key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/30 transition-colors">
+                      <Avatar className="h-8 w-8 shrink-0">
+                        {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} />}
+                        <AvatarFallback className="text-[11px] font-bold text-white"
+                          style={{ background: genderColor(member.gender) }}>
+                          {getInitials(member.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-[10px] text-muted-foreground">{relationship}</p>
+                          {inviteSent && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-full px-1.5 py-0.5 leading-none">
+                              <Clock className="h-2 w-2" />
+                              Invite sent
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <Button size="sm" onClick={() => onInviteMember(member)}
-                      className={cn(
-                        "h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold border-0",
-                        inviteSent
-                          ? "bg-sky-600/80 hover:bg-sky-500 text-white"
-                          : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                      )}>
-                      {inviteSent ? <><Send className="h-3 w-3" />Resend</> : <><MessageCircle className="h-3 w-3" />Invite</>}
-                    </Button>
-                  </li>
+                      <Button size="sm" onClick={() => onInviteMember(member)}
+                        className={cn(
+                          "h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold border-0",
+                          inviteSent
+                            ? "bg-sky-600/80 hover:bg-sky-500 text-white"
+                            : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                        )}>
+                        {inviteSent ? <><Send className="h-3 w-3" />Resend</> : <><MessageCircle className="h-3 w-3" />Invite</>}
+                      </Button>
+                    </li>
                   )
                 })}
               </ul>

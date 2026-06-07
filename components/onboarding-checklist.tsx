@@ -143,6 +143,7 @@ export function OnboardingChecklist({
     members.find(m =>
       !isEffectivelyClaimed(m) && m.id !== selfMember?.id &&
       m.id !== father?.id && m.id !== mother?.id &&
+      m.isAlive !== false &&   // deceased siblings can't join — skip them
       selfParentIds.length > 0 && m.parentIds?.some(pid => selfParentIds.includes(pid))
     ) ?? null,
     [members, selfMember, father, mother, selfParentIds]
@@ -203,21 +204,35 @@ export function OnboardingChecklist({
     },
     ...(father ? [{
       id: 'invite_father',
-      label: `Invite ${father.name.split(' ')[0]} to join`,
-      detail: 'They can edit their profile & add relatives',
-      emoji: '💌',
-      done: isEffectivelyClaimed(father),
-      cta: 'Invite',
-      onCta: onInviteMember ? () => onInviteMember(father!) : onInvite,
+      // When deceased: step auto-completes — no invite can or should be sent.
+      // The tree still records them as a memorial; this step is simply N/A.
+      label: father.isAlive === false
+        ? `${father.name.split(' ')[0]} — in loving memory`
+        : `Invite ${father.name.split(' ')[0]} to join`,
+      detail: father.isAlive === false
+        ? 'Profile preserved as a memorial'
+        : 'They can edit their profile & add relatives',
+      emoji: father.isAlive === false ? '🕊️' : '💌',
+      done: isEffectivelyClaimed(father) || father.isAlive === false,
+      cta: father.isAlive !== false && !isEffectivelyClaimed(father) ? 'Invite' : undefined,
+      onCta: father.isAlive !== false && !isEffectivelyClaimed(father)
+        ? (onInviteMember ? () => onInviteMember(father!) : onInvite)
+        : undefined,
     }] : []),
     ...(mother ? [{
       id: 'invite_mother',
-      label: `Invite ${mother.name.split(' ')[0]} to join`,
-      detail: 'They can edit their profile & add relatives',
-      emoji: '💌',
-      done: isEffectivelyClaimed(mother),
-      cta: 'Invite',
-      onCta: onInviteMember ? () => onInviteMember(mother!) : onInvite,
+      label: mother.isAlive === false
+        ? `${mother.name.split(' ')[0]} — in loving memory`
+        : `Invite ${mother.name.split(' ')[0]} to join`,
+      detail: mother.isAlive === false
+        ? 'Profile preserved as a memorial'
+        : 'They can edit their profile & add relatives',
+      emoji: mother.isAlive === false ? '🕊️' : '💌',
+      done: isEffectivelyClaimed(mother) || mother.isAlive === false,
+      cta: mother.isAlive !== false && !isEffectivelyClaimed(mother) ? 'Invite' : undefined,
+      onCta: mother.isAlive !== false && !isEffectivelyClaimed(mother)
+        ? (onInviteMember ? () => onInviteMember(mother!) : onInvite)
+        : undefined,
     }] : []),
     ...(firstUnclaimedSibling ? [{
       id: 'invite_sibling',

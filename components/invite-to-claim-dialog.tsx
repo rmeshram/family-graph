@@ -142,18 +142,68 @@ export function InviteToClaimDialog({
     ? new Date(expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
 
+  // ── Deceased guard ──────────────────────────────────────────────────────────
+  // A deceased member cannot be invited. When the dialog is opened for one
+  // (e.g. via a stale invite_sent node), show a memorial screen instead.
+  const isDeceased = member.isAlive === false
+
+  // Life-span label: "1942 – 2003", "b. 1942", or blank
+  const lifeSpan = member.birthYear && member.deathYear
+    ? `${member.birthYear} – ${member.deathYear}`
+    : member.birthYear
+      ? `b. ${member.birthYear}`
+      : null
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-blue-400" />
-            Invite {member.name} to claim their profile
+            {isDeceased
+              ? <span className="text-base">🕊️</span>
+              : <UserPlus className="h-5 w-5 text-blue-400" />}
+            {isDeceased
+              ? `In loving memory — ${member.name}`
+              : `Invite ${member.name} to claim their profile`}
           </DialogTitle>
           <DialogDescription>
-            Send a secure link. They&apos;ll verify their identity with name and birth year before claiming.
+            {isDeceased
+              ? 'This person has passed away. Their profile is preserved in the family tree as a memorial.'
+              : 'Send a secure link. They\'ll verify their identity with name and birth year before claiming.'}
           </DialogDescription>
         </DialogHeader>
+
+        {/* ── Deceased memorial view ── */}
+        {isDeceased ? (
+          <div className="space-y-4 py-2">
+            {/* Member info card */}
+            <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+              <span className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-500 to-slate-700 grid place-items-center text-lg shrink-0">
+                🕊️
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium text-sm truncate">{member.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {lifeSpan ?? (member.relationship ?? 'Family member')}
+                </p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0 text-xs text-muted-foreground border-muted-foreground/30">
+                Passed away
+              </Badge>
+            </div>
+            {/* Explanation */}
+            <div className="rounded-xl border border-border/40 bg-muted/20 p-4 text-center space-y-2">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Invites can only be sent to living family members.
+                {' '}{member.name.split(' ')[0]}'s connections, stories, and memories
+                remain preserved in the tree for future generations.
+              </p>
+            </div>
+            <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </div>
+        ) : (
 
         <div className="space-y-4 py-2">
           {/* Member info */}
@@ -288,6 +338,7 @@ export function InviteToClaimDialog({
             </div>
           )}
         </div>
+        )}
       </DialogContent>
     </Dialog>
   )
