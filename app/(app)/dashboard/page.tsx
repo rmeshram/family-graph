@@ -64,44 +64,68 @@ import {
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Skeleton } from '@/components/ui/skeleton'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
-// Mimics the hierarchical tree: grandparents → parents → self+spouse → children.
-// Uses the same `animate-pulse` pattern as the layout shell skeleton.
-function TreeNodeSkel({ w, highlight = false }: { w: number; highlight?: boolean }) {
+// Shown in the main canvas while the DB loads (after auth resolves).
+// Ghost blurred tree in background + sharp shimmer card rows in foreground.
+function TreeNodeSkel({ w, highlight = false, delay = 0 }: { w: number; highlight?: boolean; delay?: number }) {
   return (
     <div
-      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 ${highlight ? 'border-primary/30 bg-primary/5' : 'border-border/30 bg-muted/15'}`}
+      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${
+        highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
+      }`}
       style={{ width: w + 16 }}
     >
-      <Skeleton className={`h-10 w-10 rounded-full ${highlight ? 'bg-primary/20' : ''}`} />
-      <Skeleton className="h-2.5 rounded-full" style={{ width: w * 0.6 }} />
-      <Skeleton className="h-2 rounded-full" style={{ width: w * 0.4 }} />
+      {/* shimmer sweep */}
+      <div
+        className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none"
+        style={{ animation: `shimmer 2s ease-in-out ${delay}ms infinite` }}
+      />
+      <div className={`h-10 w-10 rounded-full ${highlight ? 'bg-primary/25' : 'bg-muted'}`} />
+      <div className="h-2.5 rounded-full bg-muted" style={{ width: w * 0.65 }} />
+      <div className="h-2 rounded-full bg-muted/70" style={{ width: w * 0.45 }} />
     </div>
   )
 }
 
 function FamilyTreeSkeleton() {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 pointer-events-none select-none overflow-hidden px-4 animate-pulse">
-      {/* grandparents */}
-      <div className="flex items-end gap-14 md:gap-20">
-        {[80, 72].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-9 pointer-events-none select-none overflow-hidden px-4">
+      {/* Ghost blurred tree silhouette — gives "data coming into focus" feel */}
+      <div className="absolute inset-0" aria-hidden>
+        {[
+          { l: '31%', t: '10%', s: 88 }, { l: '58%', t: '10%', s: 80 },
+          { l: '33%', t: '28%', s: 78 }, { l: '56%', t: '28%', s: 74 },
+          { l: '27%', t: '47%', s: 72 }, { l: '44%', t: '45%', s: 80 }, { l: '60%', t: '47%', s: 68 },
+          { l: '35%', t: '65%', s: 62 }, { l: '56%', t: '65%', s: 58 },
+        ].map((n, i) => (
+          <div key={i} className="absolute rounded-2xl bg-muted/40 dark:bg-muted/20"
+            style={{ left: n.l, top: n.t, width: n.s + 16, height: n.s + 44, transform: 'translate(-50%,-50%)', filter: 'blur(16px)' }} />
+        ))}
+        <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg"
+          style={{ filter: 'blur(4px)', opacity: 0.15 }}>
+          <line x1="33%" y1="15%" x2="36%" y2="34%" stroke="currentColor" strokeWidth="2" />
+          <line x1="58%" y1="15%" x2="56%" y2="34%" stroke="currentColor" strokeWidth="2" />
+          <line x1="36%" y1="34%" x2="46%" y2="51%" stroke="currentColor" strokeWidth="2" />
+          <line x1="56%" y1="34%" x2="58%" y2="51%" stroke="currentColor" strokeWidth="2" />
+          <line x1="46%" y1="51%" x2="37%" y2="68%" stroke="currentColor" strokeWidth="2" />
+          <line x1="46%" y1="51%" x2="56%" y2="68%" stroke="currentColor" strokeWidth="2" />
+        </svg>
       </div>
-      {/* parents */}
-      <div className="flex items-end gap-10 md:gap-16">
-        {[72, 68].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      {/* skeleton card rows */}
+      <div className="flex items-end gap-14 md:gap-20 relative z-10">
+        {[80, 72].map((w, i) => <TreeNodeSkel key={i} w={w} delay={i * 150} />)}
       </div>
-      {/* self + spouse */}
-      <div className="flex items-end gap-6 md:gap-10">
-        {([68, 64, 60] as const).map((w, i) => <TreeNodeSkel key={i} w={w} highlight={i === 1} />)}
+      <div className="flex items-end gap-10 md:gap-16 relative z-10">
+        {[72, 68].map((w, i) => <TreeNodeSkel key={i} w={w} delay={300 + i * 150} />)}
       </div>
-      {/* children */}
-      <div className="flex items-end gap-10 md:gap-14">
-        {[56, 52].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      <div className="flex items-end gap-6 md:gap-10 relative z-10">
+        {([68, 64, 60] as const).map((w, i) => <TreeNodeSkel key={i} w={w} highlight={i === 1} delay={600 + i * 150} />)}
+      </div>
+      <div className="flex items-end gap-10 md:gap-14 relative z-10">
+        {[56, 52].map((w, i) => <TreeNodeSkel key={i} w={w} delay={900 + i * 150} />)}
       </div>
     </div>
   )
