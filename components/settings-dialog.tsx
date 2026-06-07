@@ -106,6 +106,20 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [otherAdminCount, setOtherAdminCount] = useState<number | null>(null)
+  const isLastAdmin = isAdmin && otherAdminCount === 0
+
+  // Count other admins in the family so we can warn before the delete API blocks
+  useEffect(() => {
+    if (!open || !isAdmin || !familyId || !user) { setOtherAdminCount(null); return }
+    supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('family_id', familyId)
+      .eq('role', 'admin')
+      .neq('id', user.id)
+      .then(({ count }) => setOtherAdminCount(count ?? 0))
+  }, [open, isAdmin, familyId, user?.id])
 
   const handleDeleteAccount = async () => {
     setDeleting(true)
@@ -117,8 +131,11 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        toast.error(data.error ?? 'Failed to delete account. Please try again.')
+        // Surface the human-readable message; fall back to code if absent
+        const msg = data.message ?? data.error ?? 'Failed to delete account. Please try again.'
+        toast.error(msg)
         setDeleting(false)
+        setShowDeleteConfirm(false)
         return
       }
       // Clear the local session only — the auth user is already deleted on the
@@ -1284,12 +1301,18 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {isLastAdmin && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-400">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>You are the only admin of this family. Promote another member to admin first before deleting your account.</span>
+                </div>
+              )}
               <Button
                 variant="outline"
                 size="sm"
                 className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
                 onClick={() => setShowDeleteConfirm(true)}
-                disabled={deleting}
+                disabled={deleting || isLastAdmin}
               >
                 {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : <><Trash2 className="h-4 w-4 mr-2" />Delete All My Data</>}
               </Button>
@@ -1490,13 +1513,16 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
             <AlertDialogDescription className="space-y-2">
               <span className="block">This will <strong>permanently delete</strong> your account and sign you out. This action cannot be undone.</span>
               <span className="block">Your family member record (name, photos, bio) will remain in the tree so your relatives can still see it — only your login access will be removed.</span>
+              {isLastAdmin && (
+                <span className="block font-medium text-amber-400">⚠️ You are the only admin. Promote another member first.</span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
+              disabled={deleting || isLastAdmin}
               onClick={(e) => {
                 e.preventDefault()
                 handleDeleteAccount()
