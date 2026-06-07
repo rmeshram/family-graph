@@ -561,15 +561,21 @@ export function RelationshipUniverse({
   const maxDepth = useMemo(() => Math.max(0, ...people.map(p => p.depth)), [people])
 
   // ── Structural isolation nudge ──────────────────────────────────────────
-  // True when the logged-in user's own node has no parentIds and no spouseIds
-  // in the database. We show a prompt encouraging them to add connections so
-  // the tree has a real structural backbone (not just label-derived edges).
+  // True when the logged-in user's own node has no edges at all — meaning
+  // neither raw parentIds/spouseIds NOR any relationship-label-derived edges
+  // connect them to other members.  We check `edges` (which are now built from
+  // enrichedMembers) so that members added via the `relationship` field without
+  // explicit parentIds/spouseIds are correctly treated as connected.
   const isSelfIsolated = useMemo(() => {
     if (!effectiveSelfId) return false
     const selfMember = members.find(m => m.id === effectiveSelfId)
     if (!selfMember) return false
-    return selfMember.parentIds.length === 0 && selfMember.spouseIds.length === 0
-  }, [members, effectiveSelfId])
+    // If there is at least one rendered edge touching the self node the user
+    // is not isolated — even if raw parentIds/spouseIds are empty.
+    const hasEdge = edges.some(e => e.from === effectiveSelfId || e.to === effectiveSelfId)
+    if (hasEdge) return false
+    return true
+  }, [members, effectiveSelfId, edges])
 
   // Adjacency map — used for focus-mode opacity
   const adjacencyMap = useMemo(() => {
