@@ -67,8 +67,15 @@ function scoreIdentity(
   const reasons: string[] = []
   const mismatches: string[] = []
 
-  const a = nodeName.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
-  const b = submittedName.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+  // Unicode-aware normalization: ASCII fast-path, NFC fallback for Indian/non-Latin scripts.
+  // Without the fallback, Devanagari names (e.g. "राहुल") stripped to empty string → score=0
+  // → IDENTITY_MISMATCH for every Indian-name user regardless of correctness.
+  const norm = (s: string): string => {
+    const ascii = s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+    return ascii.length > 0 ? ascii : s.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+  const a = norm(nodeName)
+  const b = norm(submittedName)
 
   if (a && b) {
     if (a === b) {
@@ -559,6 +566,7 @@ export async function POST(
       .select('attempts, locked_until')
       .eq('node_id', nodeId)
       .eq('claimant_user_id', user.id)
+      .gt('expires_at', new Date().toISOString()) // RF-13: ignore expired requests (don't carry over stale lockouts)
       .maybeSingle()
 
     if (myRequest?.locked_until && new Date(myRequest.locked_until) > new Date()) {
@@ -647,7 +655,12 @@ export async function POST(
       {
         node_id: nodeId,
         claimant_user_id: user.id,
-        status: 'verified',
+        // RF-03: Use 'pending' (not 'verified') so the partial unique index
+        // idx_claim_requests_one_pending_per_node enforces at-most-one pending
+        // claim per node. Two simultaneous claimers both using 'verified' bypass
+        // the index and both get verified rows. 'pending' here + upgrade after the
+        // optimistic family_members lock means only the winner gets 'verified'.
+        status: 'pending',
         submitted_name: submittedName,
         submitted_birth_year: submittedBirthYear ?? null,
         confidence_score: score,
@@ -690,7 +703,25 @@ export async function POST(
     if (!nodeBY && submittedBirthYear !== undefined && submittedBirthYear !== null) {
       memberUpdate.birth_year = submittedBirthYear
     }
-    if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
+    // RF-10: Guardian claim validation — require proof that the target is a minor.
+    // Without this check any user can send isGuardianClaim=true for any node (including adults).
+    if (isGuardianClaim) {
+      const targetBirthYear = (node as any).birth_year as number | null
+      const currentYear = new Date().getFullYear()
+      if (!targetBirthYear) {
+        return NextResponse.json(
+          { error: 'GUARDIAN_CLAIM_INVALID', message: 'Guardian claims require a birth year on the profile to confirm the person is a minor (under 18).' },
+          { status: 422 }
+        )
+      }
+      if (currentYear - targetBirthYear >= 18) {
+        return NextResponse.json(
+          { error: 'GUARDIAN_CLAIM_INVALID', message: 'Guardian claims can only be made for profiles of minors (under 18 years old).' },
+          { status: 422 }
+        )
+      }
+      memberUpdate.guardian_user_id = user.id
+    }
 
     const { data: claimUpdate, error: claimUpdateErr } = await admin
       .from('family_members')
@@ -717,6 +748,16 @@ export async function POST(
         { status: 409 }
       )
     }
+
+    // RF-03: Upgrade claim_request from 'pending' → 'verified' now that we've won
+    // the optimistic lock. Only the winner of the is_claimed=false lock reaches here;
+    // the loser already received ALREADY_CLAIMED above, leaving no ghost 'pending'
+    // rows from the concurrent request.
+    await admin.from('claim_requests')
+      .update({ status: 'verified', updated_at: new Date().toISOString() } as any)
+      .eq('node_id', nodeId)
+      .eq('claimant_user_id', user.id)
+      .eq('status', 'pending')
 
     // Audit
     await admin.from('claim_audit_log').insert({

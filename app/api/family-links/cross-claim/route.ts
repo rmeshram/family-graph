@@ -207,11 +207,15 @@ export async function POST(req: NextRequest) {
   // notified even on auto-accept so their admins know the connection was made.
   const notifEvent = linkStatus === 'accepted' ? 'link_accepted' : 'link_requested'
   await Promise.all([
-    // Rate-limit sentinel (also serves as an audit trail for the initiator)
+    // RF-12: Rate-limit sentinel — tracks per-user cross-claim attempts.
+    // Previously missing source_family_id + new_member_id (NOT NULL cols) caused
+    // all three inserts to fail silently, so the rate counter was always 0.
     admin.from('family_link_notifications').insert({
       link_id: linkId,
       event_type: 'cross_claim_attempt',
       recipient_family_id: claimFamilyId,
+      source_family_id: existingFamilyId,
+      new_member_id: claimNodeId,
       initiated_by_user_id: user.id,
       created_at: now,
     } as any),
@@ -220,6 +224,8 @@ export async function POST(req: NextRequest) {
       link_id: linkId,
       event_type: notifEvent,
       recipient_family_id: claimFamilyId,
+      source_family_id: existingFamilyId,
+      new_member_id: claimNodeId,
       created_at: now,
     } as any),
     // Existing-node family notification — always, even on auto-accept
@@ -227,6 +233,8 @@ export async function POST(req: NextRequest) {
       link_id: linkId,
       event_type: notifEvent,
       recipient_family_id: existingFamilyId,
+      source_family_id: claimFamilyId,
+      new_member_id: claimNodeId,
       created_at: now,
     } as any),
   ])

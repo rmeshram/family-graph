@@ -168,7 +168,10 @@ export async function POST(
   }
 
   // 5. Audit log
-  const auditAction = isAdmin && !isSelfUnclaim ? 'admin_revoke' : 'claim_unclaimed'
+  // RF-08: 'admin_revoke' is not in the claim_audit_log action check constraint.
+  // Use 'claim_revoked' (which IS in the constraint) for admin-initiated unclaims,
+  // consistent with the revoke-claim route which already uses 'claim_revoked'.
+  const auditAction = isAdmin && !isSelfUnclaim ? 'claim_revoked' : 'claim_unclaimed'
   await admin.from('claim_audit_log').insert({
     node_id: nodeId,
     family_id: (node as any).family_id,

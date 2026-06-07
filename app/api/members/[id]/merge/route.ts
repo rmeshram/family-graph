@@ -267,13 +267,23 @@ export async function POST(
     .eq('member_id', targetId)
     .then(() => { }) // best-effort
 
-  // Transfer any pending claim_requests on the duplicate to point at the primary.
+  // RF-09: Transfer milestones — prevents orphan rows after the duplicate is soft-deleted.
+  // (migration 033 changed member_id FK to ON DELETE SET NULL, so without this transfer
+  //  milestones would have member_id=NULL after archive and disappear from all profiles.)
+  await admin
+    .from('milestones')
+    .update({ member_id: primaryId })
+    .eq('member_id', targetId)
+    .then(() => { }) // best-effort
+
+  // Transfer ALL claim_requests on the duplicate to point at the primary.
+  // Includes rejected/abandoned/expired — preserves each user's full claim history
+  // on the surviving node so the rejection wall cannot be bypassed by merging.
   await admin
     .from('claim_requests')
     .update({ node_id: primaryId, updated_at: new Date().toISOString() } as any)
     .eq('node_id', targetId)
-    .in('status', ['pending', 'verified'])
-    .then(() => { }) // best-effort
+    .then(() => { }) // best-effort; unique conflicts silently skipped
 
   // Soft-deactivate any user_node_links pointing to the duplicate.
   // If primary has no active link and duplicate had one, we already transferred
@@ -298,14 +308,21 @@ export async function POST(
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
 
-  const { error: deleteErr } = await admin.from('family_members').delete().eq('id', targetId)
-  if (deleteErr) return NextResponse.json({ error: `Merge applied but could not delete duplicate: ${deleteErr.message}` }, { status: 500 })
+  // RF-02: Soft-delete the duplicate instead of hard-deleting.
+  // Hard DELETE would cascade-destroy audit logs, claim_requests, and break graph
+  // connectivity for any cached references. Soft-delete keeps the record archived,
+  // invisible via RLS (deleted_at IS NULL filter), and fully reversible by an admin.
+  const { error: deleteErr } = await admin
+    .from('family_members')
+    .update({ deleted_at: new Date().toISOString(), deleted_by: user.id } as any)
+    .eq('id', targetId)
+  if (deleteErr) return NextResponse.json({ error: `Merge applied but could not archive duplicate: ${deleteErr.message}` }, { status: 500 })
 
   // ── 8. Audit log ────────────────────────────────────────────────────────────
   await admin.from('claim_audit_log').insert({
     node_id: primaryId,
     actor_id: user.id,
-    action: 'node_merged',
+    action: 'nodes_merged', // 'nodes_merged' matches the DB constraint (migration 033)
     metadata: { absorbed_id: targetId },
   }).then(() => { })
 

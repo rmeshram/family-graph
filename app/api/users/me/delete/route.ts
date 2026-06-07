@@ -55,13 +55,35 @@ export async function DELETE(req: Request) {
 
   const admin = adminClient()
 
-  // ── Step 1: Unclaim linked node if present ────────────────────────────────
+  // ── Step 0: Load full profile ─────────────────────────────────────────────
   const { data: profile } = await admin
     .from('profiles')
-    .select('member_id')
+    .select('member_id, family_id, role')
     .eq('id', user.id)
     .single()
 
+  // RF-04: Guard — cannot delete if last admin of a family.
+  // Deleting the last admin orphans the family: no one can manage roles, revoke
+  // claims, or respond to link requests. Require handoff first.
+  if ((profile as any)?.family_id && (profile as any)?.role === 'admin') {
+    const { count: remainingAdmins } = await admin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('family_id', (profile as any).family_id)
+      .eq('role', 'admin')
+      .neq('id', user.id)
+    if ((remainingAdmins ?? 0) === 0) {
+      return NextResponse.json(
+        {
+          error: 'LAST_ADMIN',
+          message: 'You are the only admin of your family. Please promote another member to admin before deleting your account.',
+        },
+        { status: 409 }
+      )
+    }
+  }
+
+  // ── Step 1: Unclaim linked node if present ────────────────────────────────
   if (profile?.member_id) {
     // Clear claim fields on the node — return it to unclaimed state so the
     // family admin can re-assign it if needed.
@@ -82,6 +104,13 @@ export async function DELETE(req: Request) {
     .from('profiles')
     .update({ member_id: null, family_id: null })
     .eq('id', user.id)
+
+  // ── Step 2.5: Clean up user_node_links rows ───────────────────────────────
+  // RF-04: Without this, user_node_links rows remain after auth.admin.deleteUser().
+  // If the FK is ON DELETE RESTRICT/NO ACTION this causes the deleteUser call to
+  // fail with a FK violation. If CASCADE, rows are cleaned automatically but
+  // explicit cleanup ensures intent is clear and avoids race with trigger timing.
+  await admin.from('user_node_links').delete().eq('user_id', user.id)
 
   // ── Step 3: Delete the auth account (cascades profile row) ────────────────
   const { error: deleteErr } = await admin.auth.admin.deleteUser(user.id)

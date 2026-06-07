@@ -92,7 +92,27 @@ export async function POST(
   let body: { submittedName?: string; submittedBirthYear?: number }
   try { body = await req.json() } catch { body = {} }
 
-  // Delegate to the node claim route (shares the identity scoring logic)
+  // RF-05: Atomically mark invite consumed BEFORE calling the node claim route.
+  // Using WHERE consumed_at IS NULL prevents two simultaneous requests from both
+  // succeeding — the second request finds 0 rows updated and returns INVITE_CONSUMED.
+  const consumedAt = new Date().toISOString()
+  const { data: consumeResult, error: consumeErr } = await admin
+    .from('invite_links')
+    .update({ consumed_at: consumedAt, consumed_by: user.id } as any)
+    .eq('id', (invite as any).id)
+    .is('consumed_at', null)
+    .select('id')
+
+  if (consumeErr || !(consumeResult as any[])?.length) {
+    return NextResponse.json(
+      { error: 'INVITE_CONSUMED', message: 'This invite has already been used. Ask the family admin for a fresh invite.' },
+      { status: 409 }
+    )
+  }
+
+  // RF-01: Include inviteCode in the body so the node claim route can set
+  // authorizedViaNodeClaimInvite=true — required for cross-family and new-user flows
+  // (where the caller has no family_id yet and gate A alone would return FORBIDDEN).
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin
   const claimRes = await fetch(`${appUrl}/api/nodes/${node.id}/claim`, {
     method: 'POST',
@@ -103,24 +123,30 @@ export async function POST(
     body: JSON.stringify({
       submittedName: body.submittedName,
       submittedBirthYear: body.submittedBirthYear,
+      inviteCode: token,  // RF-01: enables authorizedViaNodeClaimInvite path in node claim route
     }),
   })
   const claimData = await claimRes.json()
 
   if (claimRes.ok) {
+    // Update used_count — consumed_at was already set atomically above.
     await admin.from('invite_links').update({
-      consumed_at: new Date().toISOString(),
-      consumed_by: user.id,
-      used_count: (invite.used_count ?? 0) + 1,
-    } as any).eq('id', invite.id)
+      used_count: ((invite as any).used_count ?? 0) + 1,
+    } as any).eq('id', (invite as any).id)
 
     await admin.from('claim_audit_log').insert({
       node_id: node.id,
       family_id: node.family_id,
       actor_id: user.id,
       action: 'claim_completed',
-      metadata: { via: 'invite', inviteId: invite.id },
+      metadata: { via: 'invite', inviteId: (invite as any).id },
     })
+  } else {
+    // RF-05: Rollback — restore the invite so the user can retry or the admin can re-send.
+    await admin.from('invite_links')
+      .update({ consumed_at: null, consumed_by: null } as any)
+      .eq('id', (invite as any).id)
+      .eq('consumed_at', consumedAt) // guard: only roll back our own lock, not a concurrent update
   }
 
   return NextResponse.json(claimData, { status: claimRes.status })
