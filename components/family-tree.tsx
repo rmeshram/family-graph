@@ -742,6 +742,24 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     animateTo(newX, newY, newZoom)
   }, [nodePositions, dimensions, animateTo])
 
+  // selfCenteredView: initial view centered on the logged-in user's node at a
+  // readable zoom (~0.8x). Falls back to defaultView when self is not in the tree.
+  const selfCenteredView = useCallback(() => {
+    if (selfMemberId) {
+      const selfPos = nodePositions.find(p => p.id === selfMemberId)
+      if (selfPos) {
+        // Use a comfortable zoom: full cards readable, some context visible around self.
+        // On small screens reduce zoom slightly so parents are also visible.
+        const targetZoom = Math.min(0.82, dimensions.width / 900)
+        const cx = dimensions.width / 2
+        const cy = dimensions.height / 2
+        animateTo(cx - selfPos.x * targetZoom, cy - selfPos.y * targetZoom, targetZoom)
+        return
+      }
+    }
+    defaultView()
+  }, [selfMemberId, nodePositions, dimensions, animateTo, defaultView])
+
   // Focus on a specific node — smoothly center it at a readable zoom
   const focusNode = useCallback((nodeId: string) => {
     const pos = nodePositions.find(p => p.id === nodeId)
@@ -768,9 +786,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       hasAutoFit.current = true
       prevMemberCount.current = nodePositions.length
       prevDimensionsRef.current = { width: dimensions.width, height: dimensions.height }
-      if (dimensions.width > 0 && dimensions.height > 0) defaultView()
+      if (dimensions.width > 0 && dimensions.height > 0) selfCenteredView()
     }
-  }, [nodePositions, dimensions, defaultView])
+  }, [nodePositions, dimensions, selfCenteredView])
 
   // Ring: 4-second idle auto-dismiss
   useEffect(() => {

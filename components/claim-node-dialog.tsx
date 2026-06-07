@@ -97,7 +97,7 @@ export function ClaimNodeDialog({
     targetFamilyName?: string
   } | null>(null)
   const [connectingFamilies, setConnectingFamilies] = useState(false)
-  const [familyLinkResult, setFamilyLinkResult] = useState<{ autoAccepted: boolean; existingFamilyName: string } | null>(null)
+  const [familyLinkResult, setFamilyLinkResult] = useState<{ autoAccepted: boolean; existingFamilyName: string; memberCount?: number; message?: string } | null>(null)
   const [justClaimed, setJustClaimed] = useState(false)
   const [confidenceScore, setConfidenceScore] = useState<number | null>(null)
 
@@ -201,10 +201,13 @@ export function ClaimNodeDialog({
         setClaimError(prev => prev ? { ...prev, message: data.message ?? 'Could not connect families. Please try again.' } : prev)
         return
       }
-      setFamilyLinkResult({ autoAccepted: data.autoAccepted, existingFamilyName: claimError.existingFamilyName ?? 'your family' })
+      setFamilyLinkResult({
+        autoAccepted: data.autoAccepted,
+        existingFamilyName: claimError.existingFamilyName ?? 'your family',
+        memberCount: data.memberCount,
+        message: data.message,
+      })
       setClaimError(null)
-      // Notify parent to refresh linked members so the other family's members
-      // appear in the tree immediately without a full page reload.
       onFamilyConnected?.()
     } catch {
       setClaimError(prev => prev ? { ...prev, message: 'Network error. Please try again.' } : prev)
@@ -396,9 +399,9 @@ export function ClaimNodeDialog({
                 {/* Option B — Just claim, no family link */}
                 <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-2.5">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Option B — Switch to this family</p>
+                    <p className="text-sm font-semibold text-foreground">Option B — Just claim this profile</p>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                      Claim this profile and move your account to <strong className="text-foreground">{claimError?.targetFamilyName ?? 'this family'}</strong>. Your <strong className="text-foreground">{claimError?.existingFamilyName ?? 'current'}</strong> profile will become unclaimed. The two trees stay separate.
+                      Claim your profile in this family only. Your other family tree stays separate and independent.
                     </p>
                   </div>
                   <Button
@@ -416,12 +419,19 @@ export function ClaimNodeDialog({
 
             {/* Family link success */}
             {familyLinkResult && (
-              <div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-400">
+              <div className="flex items-start gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-400 space-y-0.5">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <p>{familyLinkResult.autoAccepted
-                  ? 'Both family trees are now connected!'
-                  : `A connection request has been sent to ${familyLinkResult.existingFamilyName} admins. Once accepted, both trees will be linked.`
-                }</p>
+                <div>
+                  <p className="font-semibold">{familyLinkResult.autoAccepted ? '🎉 Families connected!' : '📨 Connection request sent'}</p>
+                  <p className="mt-0.5 text-green-300/80">{familyLinkResult.message
+                    ?? (familyLinkResult.autoAccepted
+                      ? 'Both family trees are now connected!'
+                      : `A connection request has been sent to ${familyLinkResult.existingFamilyName} admins. Once accepted, both trees will be linked.`)
+                  }</p>
+                  {familyLinkResult.memberCount != null && familyLinkResult.memberCount > 0 && (
+                    <p className="mt-1 text-green-400/70">{familyLinkResult.memberCount} member{familyLinkResult.memberCount !== 1 ? 's' : ''} are now visible in the extended tree.</p>
+                  )}
+                </div>
               </div>
             )}
 

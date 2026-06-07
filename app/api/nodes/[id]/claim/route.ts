@@ -889,11 +889,30 @@ export async function POST(
         .eq('node_id', nodeId)
     }
 
+    // ── Integrity check: is the claimed node an orphan? ─────────────────────
+    // An orphan is a node with no parent, spouse, or child connections.
+    // We check this after the claim so we can surface a prompt in the UI
+    // (add a relative) without blocking the claim itself.
+    const claimedNode = node as any
+    const parentIds: string[] = claimedNode.parent_ids ?? []
+    const spouseIds: string[] = claimedNode.spouse_ids ?? []
+
+    let isOrphan = parentIds.length === 0 && spouseIds.length === 0
+    if (isOrphan) {
+      // Check if any other member lists this node as a parent (i.e. has children)
+      const { count: childCount } = await admin
+        .from('family_members')
+        .select('*', { count: 'exact', head: true })
+        .contains('parent_ids', [nodeId])
+      isOrphan = (childCount ?? 0) === 0
+    }
+
     return NextResponse.json({
       status: newStatus,
       confidenceScore: score,
       requiresReview: false,
       claimRequestId: (upsertedReq as any)?.id ?? null,
+      isOrphan,
       message: 'Profile successfully claimed!',
     })
   } catch (err: unknown) {

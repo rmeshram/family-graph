@@ -264,27 +264,37 @@ export async function POST(req: NextRequest) {
     metadata: { via: 'cross_claim', family_link_id: linkId, existingNodeId, existingFamilyId },
   } as any)
 
-  // ── Fetch family names for the response ──────────────────────────────────
-  const [{ data: claimFamily }, { data: existingFamily }] = await Promise.all([
+  // ── Fetch family names + member counts for the response ─────────────────
+  const [{ data: claimFamily }, { data: existingFamily }, { count: existingFamilyMemberCount }] = await Promise.all([
     admin.from('families').select('name').eq('id', claimFamilyId).maybeSingle() as any,
     admin.from('families').select('name').eq('id', existingFamilyId).maybeSingle() as any,
+    admin.from('family_members').select('*', { count: 'exact', head: true })
+      .eq('family_id', existingFamilyId).is('deleted_at', null) as any,
   ])
 
   // ── Notify BOTH families ──────────────────────────────────────────────────
   const notifEvent = linkStatus === 'accepted' ? 'link_accepted' : 'link_requested'
+  const memberCount = existingFamilyMemberCount ?? 0
+  const claimFamilyName = (claimFamily as any)?.name ?? 'the other family'
+  const existingFamilyName = (existingFamily as any)?.name ?? 'your family'
+  const claimantName = (existingNode as any).name as string
+
   await Promise.all([
     // Bug C: Previously this batch wrote a second 'cross_claim_attempt' row here,
     // doubling the rate-limit counter per attempt (~2.5 real attempts before limit).
     // The sentinel written at the top of the handler already counts this attempt.
     // Only write the actionable link notifications now.
     //
-    // Inviting family notification
+    // Inviting family notification — rich message for James's family
     admin.from('family_link_notifications').insert({
       link_id: linkId,
       event_type: notifEvent,
       recipient_family_id: claimFamilyId,
       source_family_id: existingFamilyId,
       new_member_id: claimNodeId,
+      initiated_by_user_id: user.id,
+      message: `${claimantName} has joined the ${claimFamilyName}. The ${existingFamilyName} branch with ${memberCount} member${memberCount !== 1 ? 's' : ''} is now connected to your family tree.`,
+      metadata: { memberCount, claimFamilyName, existingFamilyName, claimantName } as any,
       created_at: now,
     } as any),
     // Existing-node family notification — always, even on auto-accept
@@ -294,6 +304,9 @@ export async function POST(req: NextRequest) {
       recipient_family_id: existingFamilyId,
       source_family_id: claimFamilyId,
       new_member_id: claimNodeId,
+      initiated_by_user_id: user.id,
+      message: `${claimantName} connected your family to the ${claimFamilyName}. ${memberCount} member${memberCount !== 1 ? 's' : ''} from ${existingFamilyName} are now visible in the combined tree.`,
+      metadata: { memberCount, claimFamilyName, existingFamilyName, claimantName } as any,
       created_at: now,
     } as any),
   ])
@@ -302,10 +315,11 @@ export async function POST(req: NextRequest) {
     linkId,
     status: linkStatus,
     autoAccepted: callerIsAdminOfExistingFamily,
-    claimFamilyName: (claimFamily as any)?.name ?? 'the other family',
-    existingFamilyName: (existingFamily as any)?.name ?? 'your family',
+    claimFamilyName,
+    existingFamilyName,
+    memberCount,
     message: callerIsAdminOfExistingFamily
-      ? `Both family trees are now connected! Members from "${(claimFamily as any)?.name}" will appear in your family tree.`
-      : `Connection request sent to "${(existingFamily as any)?.name ?? 'your family'}" admins. Once they accept, both trees will be linked.`,
+      ? `Both family trees are now connected! ${memberCount} member${memberCount !== 1 ? 's' : ''} from "${existingFamilyName}" will appear in the "${claimFamilyName}" tree.`
+      : `Connection request sent to "${existingFamilyName}" admins. Once they accept, both trees will be linked.`,
   })
 }

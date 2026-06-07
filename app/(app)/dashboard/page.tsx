@@ -74,8 +74,9 @@ import { createClient } from '@/lib/supabase/client'
 function TreeNodeSkel({ w, highlight = false, delay = 0 }: { w: number; highlight?: boolean; delay?: number }) {
   return (
     <div
-      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
-        }`}
+      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${
+        highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
+      }`}
       style={{ width: w + 16 }}
     >
       {/* shimmer sweep */}
@@ -299,7 +300,7 @@ function ListView({ members, onSelect, selectedId }: {
   const genLabels: Record<number, string> = { 0: 'Great Grandparents', 1: 'Grandparents', 2: 'Parents & Uncles/Aunts', 3: 'You & Cousins' }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="absolute inset-0 flex flex-col">
       <div className="p-3 border-b border-border/50">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -565,11 +566,10 @@ export default function FamilyGraphApp() {
   } = useLinkedFamilies(isDemoMode ? null : familyId)
 
   const [maxDegree, setMaxDegree] = useState(10)
-  const [showExtended, setShowExtended] = useState(true)
+  // Extended/linked family members are hidden by default to keep the initial
+  // render focused on the user's immediate family. Click "Extended" to reveal.
+  const [showExtended, setShowExtended] = useState(false)
   const [isLinkFamilyOpen, setIsLinkFamilyOpen] = useState(false)
-  useEffect(() => {
-    if (window.innerWidth < 768) setShowExtended(false)
-  }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
 
   // After a phone-based claim, /dashboard?claimed=NODE_ID focuses the claimed node.
@@ -2679,8 +2679,15 @@ export default function FamilyGraphApp() {
         open={isClaimDialogOpen}
         onOpenChange={setIsClaimDialogOpen}
         onClaim={async (memberId, _userId, opts) => {
-          await claimMember(memberId, _userId, opts)
-          toast({ title: 'Profile claimed!', description: 'Your account is now linked to this node.' })
+          const result = await claimMember(memberId, _userId, opts)
+          if (result?.isOrphan) {
+            toast({
+              title: 'Profile claimed! 🎉',
+              description: "You're not connected to anyone yet — add a parent, spouse, or sibling to link your node.",
+            })
+          } else {
+            toast({ title: 'Profile claimed!', description: 'Your account is now linked to this node.' })
+          }
           refetchMembers()
           refreshLinkedFamilies()
         }}

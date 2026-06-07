@@ -25,7 +25,7 @@ function adminClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false } }
+    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
   )
 }
 
@@ -94,13 +94,13 @@ export async function GET() {
       id, family_id, name, birth_year, death_year, birth_place, current_place,
       photo_url, bio, relationship, occupation, gender, generation,
       parent_ids, spouse_ids, is_alive, side, gotra, claim_status,
-      is_deceased, added_at
+      is_deceased, added_at, claimed_by_user_id
     `)
     .in('family_id', linkedFamilyIds)
     .is('deleted_at', null)
     .order('generation', { ascending: true })
 
-  const linkedMembers = (memberRows ?? []).map((row: any) => ({
+  let linkedMembers = (memberRows ?? []).map((row: any) => ({
     id: row.id,
     name: row.name,
     birthYear: row.birth_year ?? undefined,
@@ -119,6 +119,7 @@ export async function GET() {
     side: row.side ?? undefined,
     gotra: row.gotra ?? undefined,
     claimStatus: row.claim_status ?? 'unclaimed',
+    claimedByUserId: row.claimed_by_user_id ?? undefined,
     addedAt: row.added_at ?? undefined,
     // Mark as affiliated so the tree renders them as the "Community" cluster
     networkGroup: 'affiliated' as const,
@@ -126,6 +127,59 @@ export async function GET() {
     affiliatedFamilyName: familyNameMap[row.family_id] ?? 'Linked Family',
     affiliatedJunctionId: junctionByFamily[row.family_id] ?? undefined,
   }))
+
+  // ── Deduplication: bridge nodes claimed via cross-claim have is_primary=false
+  // in user_node_links. The same user has an is_primary=true node in their own
+  // family. Showing both creates a duplicate person in the merged graph.
+  //
+  // Fix: find all bridge nodes (is_primary=false) in the linked families, look
+  // up each user's primary node, then:
+  //   1. Remap all parentIds/spouseIds that reference the bridge node to point
+  //      to the primary node (so cross-family edges like James↔Priya are drawn
+  //      correctly between the canonical nodes).
+  //   2. Remove the bridge node from linkedMembers so only one copy of that
+  //      person appears in the merged graph.
+  const allLinkedNodeIds = (memberRows ?? []).map((r: any) => r.id as string)
+  if (allLinkedNodeIds.length > 0) {
+    const { data: bridgeLinks } = await admin
+      .from('user_node_links')
+      .select('user_id, node_id')
+      .in('node_id', allLinkedNodeIds)
+      .eq('is_primary', false)
+
+    if (bridgeLinks && bridgeLinks.length > 0) {
+      const bridgeUserIds = (bridgeLinks as any[]).map((l) => l.user_id as string)
+      // Find the primary node for each bridge user
+      const { data: primaryLinks } = await admin
+        .from('user_node_links')
+        .select('user_id, node_id')
+        .in('user_id', bridgeUserIds)
+        .eq('is_primary', true)
+
+      // substitution: bridge-node-id → primary-node-id
+      const primaryByUser = new Map<string, string>(
+        (primaryLinks ?? []).map((l: any) => [l.user_id as string, l.node_id as string])
+      )
+      const substitution = new Map<string, string>()
+      for (const bl of bridgeLinks as any[]) {
+        const primaryNodeId = primaryByUser.get(bl.user_id as string)
+        if (primaryNodeId && primaryNodeId !== bl.node_id) {
+          substitution.set(bl.node_id as string, primaryNodeId)
+        }
+      }
+
+      if (substitution.size > 0) {
+        const subst = (ids: string[]) => ids.map(id => substitution.get(id) ?? id)
+        linkedMembers = linkedMembers
+          .filter(m => !substitution.has(m.id))            // remove duplicate bridge nodes
+          .map(m => ({
+            ...m,
+            parentIds: subst(m.parentIds),                  // remap edges to primary node
+            spouseIds: subst(m.spouseIds),
+          }))
+      }
+    }
+  }
 
   const linkedFamilies = linkedFamilyIds.map(fid => ({
     id: fid,
