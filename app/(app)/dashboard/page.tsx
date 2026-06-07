@@ -2596,6 +2596,56 @@ export default function FamilyGraphApp() {
         onOpenChange={(v) => { setIsSettingsOpen(v); if (!v) setSettingsDefaultTab('general') }}
         onExport={handleExport}
         onImport={handleImport}
+        onDownloadTemplate={() => {
+          const template = [
+            {
+              name: 'Ramesh Meshram',
+              gender: 'male',
+              birthYear: 1972,
+              birthPlace: 'Nagpur, Maharashtra',
+              currentPlace: 'Pune, Maharashtra',
+              occupation: 'Engineer',
+              relationship: 'father',
+              generation: 1,
+              isAlive: true,
+              religion: 'Hindu',
+              parentIds: [],
+              spouseIds: [],
+            },
+            {
+              name: 'Sunita Meshram',
+              gender: 'female',
+              birthYear: 1975,
+              birthPlace: 'Amravati, Maharashtra',
+              currentPlace: 'Pune, Maharashtra',
+              occupation: 'Teacher',
+              relationship: 'mother',
+              generation: 1,
+              isAlive: true,
+              religion: 'Hindu',
+              parentIds: [],
+              spouseIds: [],
+            },
+            {
+              name: 'Rahul Meshram',
+              gender: 'male',
+              birthYear: 1998,
+              birthPlace: 'Pune, Maharashtra',
+              currentPlace: 'Mumbai, Maharashtra',
+              occupation: 'Software Engineer',
+              relationship: 'self',
+              generation: 2,
+              isAlive: true,
+              parentIds: [],
+              spouseIds: [],
+            },
+          ]
+          const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a'); a.href = url; a.download = 'family-import-template.json'; a.click()
+          URL.revokeObjectURL(url)
+          toast({ title: 'Template downloaded', description: 'Fill in the names and details, then import the file.' })
+        }}
         defaultTab={settingsDefaultTab}
         selfMember={selfMember}
         onSetVisibility={async (memberId, v) => {

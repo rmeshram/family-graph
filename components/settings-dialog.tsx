@@ -68,6 +68,7 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void
   onExport?: () => void
   onImport?: () => void
+  onDownloadTemplate?: () => void
   defaultTab?: string
   /** The logged-in user's own family member node (for profile privacy controls) */
   selfMember?: FamilyMember | null
@@ -79,7 +80,7 @@ interface SettingsDialogProps {
   onUnclaim?: () => void
 }
 
-export function SettingsDialog({ open, onOpenChange, onExport, onImport, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous, onUnclaim }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownloadTemplate, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous, onUnclaim }: SettingsDialogProps) {
   const isMobile = useIsMobile()
   const { user, profile, familyId, loading: authLoading } = useAuth()
   const supabase = createClient()
@@ -1232,10 +1233,45 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, default
                 <Download className="h-4 w-4 mr-2" />
                 Export Family Data (JSON)
               </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={onImport}>
-                <Upload className="h-4 w-4 mr-2" />
-                Import from JSON
-              </Button>
+
+              {/* Import section with format guide */}
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-foreground">Import from JSON</p>
+                  <button
+                    type="button"
+                    onClick={onDownloadTemplate}
+                    className="flex items-center gap-1 text-[10px] text-primary hover:underline font-medium"
+                  >
+                    <Download className="h-3 w-3" />
+                    Download template
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Upload a <strong>.json</strong> file containing an array of family members.
+                  Download the template above to see the exact format — fill it in and import.
+                </p>
+                <div className="rounded-md bg-muted/40 border border-border/40 px-2.5 py-2 font-mono text-[10px] text-muted-foreground leading-relaxed whitespace-pre overflow-x-auto">{`[
+  {
+    "name": "Ramesh Meshram",
+    "gender": "male",
+    "birthYear": 1972,
+    "generation": 1,
+    "relationship": "father",
+    "occupation": "Engineer",
+    "birthPlace": "Nagpur",
+    "parentIds": [],
+    "spouseIds": []
+  }
+]`}</div>
+                <p className="text-[10px] text-muted-foreground">
+                  Tip: leave <code className="text-[10px] bg-muted px-1 rounded">parentIds</code> and <code className="text-[10px] bg-muted px-1 rounded">spouseIds</code> empty — link relatives in the tree after import.
+                </p>
+                <Button variant="outline" size="sm" className="w-full justify-start" onClick={onImport}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Choose JSON file to import
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
