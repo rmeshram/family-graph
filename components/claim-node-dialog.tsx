@@ -24,7 +24,7 @@ interface ClaimNodeDialogProps {
   selfMemberId?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onClaim: (memberId: string, userId: string, opts?: { submittedName?: string; submittedBirthYear?: number }) => Promise<void>
+  onClaim: (memberId: string, userId: string, opts?: { submittedName?: string; submittedBirthYear?: number; skipFamilyLink?: boolean }) => Promise<void>
   onSetVisibility?: (memberId: string, visibility: 'public' | 'family' | 'private') => Promise<void>
 }
 
@@ -76,6 +76,7 @@ export function ClaimNodeDialog({
   const [submittedName, setSubmittedName] = useState('')
   const [submittedBirthYear, setSubmittedBirthYear] = useState('')
   const [claiming, setClaiming] = useState(false)
+  const [claimingDirect, setClaimingDirect] = useState(false)
   const [visibilityLoading, setVisibilityLoading] = useState<string | null>(null)
   const [claimError, setClaimError] = useState<{
     code: string
@@ -143,6 +144,39 @@ export function ClaimNodeDialog({
       if (err.confidenceScore != null) setConfidenceScore(err.confidenceScore)
     } finally {
       setClaiming(false)
+    }
+  }
+
+  // Option B: claim directly without creating a family link.
+  // Passes skipFamilyLink:true so the API bypasses the SUGGEST_FAMILY_LINK gate.
+  const handleClaimDirect = async () => {
+    if (!userId || !submittedName.trim()) return
+    setClaimError(null)
+    setClaimingDirect(true)
+    try {
+      await onClaim(member.id, userId, {
+        submittedName: submittedName.trim(),
+        submittedBirthYear: submittedBirthYear ? parseInt(submittedBirthYear, 10) : undefined,
+        skipFamilyLink: true,
+      })
+      setJustClaimed(true)
+    } catch (err: any) {
+      setClaimError({
+        code: err.error ?? 'UNKNOWN',
+        message: err.message,
+        mismatchFields: err.mismatchFields,
+        attemptsLeft: err.attemptsLeft,
+        lockedUntil: err.lockedUntil,
+        claimedNodeId: err.claimedNodeId,
+        existingNodeId: err.existingNodeId,
+        existingNodeName: err.existingNodeName,
+        existingFamilyName: err.existingFamilyName,
+        targetNodeId: err.targetNodeId,
+        targetFamilyName: err.targetFamilyName,
+      })
+      if (err.confidenceScore != null) setConfidenceScore(err.confidenceScore)
+    } finally {
+      setClaimingDirect(false)
     }
   }
 
@@ -361,13 +395,13 @@ export function ClaimNodeDialog({
                     </p>
                   </div>
                   <Button
-                    onClick={handleClaim}
-                    disabled={claiming || !submittedName.trim()}
+                    onClick={handleClaimDirect}
+                    disabled={claimingDirect || !submittedName.trim()}
                     variant="outline"
                     className="w-full"
                   >
                     <ShieldCheck className="h-4 w-4 mr-2" />
-                    {claiming ? 'Verifying…' : `Claim as ${member.name.split(' ')[0]} (no family link)`}
+                    {claimingDirect ? 'Claiming…' : `Claim as ${member.name.split(' ')[0]} (no family link)`}
                   </Button>
                 </div>
               </div>

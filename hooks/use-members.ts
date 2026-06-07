@@ -467,7 +467,7 @@ export function useMembers(familyId: string | null) {
   const claimMember = useCallback(async (
     memberId: string,
     _userId: string,
-    opts?: { submittedName?: string; submittedBirthYear?: number }
+    opts?: { submittedName?: string; submittedBirthYear?: number; skipFamilyLink?: boolean }
   ) => {
     const res = await fetch(`/api/nodes/${memberId}/claim`, {
       method: 'POST',
@@ -475,6 +475,7 @@ export function useMembers(familyId: string | null) {
       body: JSON.stringify({
         submittedName: opts?.submittedName,
         submittedBirthYear: opts?.submittedBirthYear,
+        ...(opts?.skipFamilyLink ? { skipFamilyLink: true } : {}),
       }),
     })
     const data = await res.json()

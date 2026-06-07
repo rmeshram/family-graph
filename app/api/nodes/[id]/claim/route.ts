@@ -128,12 +128,15 @@ export async function POST(
       isGuardianClaim?: boolean
       inviteCode?: string
       confirmCrossFamily?: boolean
+      /** When true, skip the SUGGEST_FAMILY_LINK 409 and proceed with the
+       *  claim directly (Option B — "just claim, no family link"). */
+      skipFamilyLink?: boolean
     }
     try { body = await req.json() } catch {
       return NextResponse.json({ error: 'INVALID_REQUEST', message: 'The request body could not be parsed. Please try again.' }, { status: 400 })
     }
 
-    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode, confirmCrossFamily } = body
+    const { submittedName, submittedBirthYear, intentToken, isGuardianClaim, inviteCode, confirmCrossFamily, skipFamilyLink } = body
     if (!submittedName?.trim()) {
       return NextResponse.json({ error: 'MISSING_NAME', message: 'A name is required to claim this profile.' }, { status: 400 })
     }
@@ -500,7 +503,7 @@ export async function POST(
           const alreadyLinked = existingFamilyLink &&
             ((existingFamilyLink as any).status === 'accepted' || (existingFamilyLink as any).status === 'pending')
 
-          if (!alreadyLinked) {
+          if (!alreadyLinked && !skipFamilyLink) {
             // Fetch family names for a helpful UI message
             const [{ data: existingFamily }, { data: targetFamily }] = await Promise.all([
               admin.from('families').select('name').eq('id', existingNodeFamilyId).maybeSingle() as any,
