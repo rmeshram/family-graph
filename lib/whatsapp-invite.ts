@@ -7,6 +7,39 @@
  */
 
 /**
+ * Build a personalized WhatsApp invite message for a node-claim invite.
+ * Uses the relationship between the sender and the recipient to make the
+ * message feel like it came from a real family member, not a form email.
+ *
+ * @param memberName    Full name of the person being invited
+ * @param relationship  Human-readable relationship label (e.g. "Father", "Uncle")
+ * @param familyName    Family/group name (e.g. "Sharma family")
+ * @param inviteLink    The /claim/[code] deep-link
+ */
+export function buildPersonalizedClaimMessage(
+  memberName: string,
+  relationship: string | undefined,
+  familyName: string | undefined,
+  inviteLink: string,
+): string {
+  const firstName = memberName.split(' ')[0] ?? memberName
+  const salutation = relationship
+    ? `Hi ${firstName} ${relationship.toLowerCase()}`
+    : `Hi ${firstName}`
+  const familyRef = familyName ? `the ${familyName}` : 'our family'
+  return (
+    `${salutation} 🙏\n\n` +
+    `I'm building ${familyRef} tree on Family Graph and I've already added your profile.\n\n` +
+    `Claim your profile to:\n` +
+    `• Edit your bio, photo & details\n` +
+    `• Add your spouse, children & relatives\n` +
+    `• Control who sees your profile\n` +
+    `• Get birthday & family update notifications\n\n` +
+    `Claim here (link valid 72 hrs):\n${inviteLink}`
+  )
+}
+
+/**
  * Build the pre-filled WhatsApp invite message for a newly added family member.
  *
  * @param memberName  First name (or full name) of the person being invited

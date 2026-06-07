@@ -2744,6 +2744,17 @@ export default function FamilyGraphApp() {
         onOpenChange={(open) => { if (!open) setInviteToClaimTarget(null) }}
         familyId={familyId ?? null}
         userId={user?.id ?? null}
+        relationship={inviteToClaimTarget && selfMember ? (() => {
+          const m = inviteToClaimTarget
+          const s = selfMember
+          if (s.parentIds.includes(m.id)) return m.gender === 'male' ? 'Father' : m.gender === 'female' ? 'Mother' : 'Parent'
+          if (m.parentIds.includes(s.id)) return m.gender === 'male' ? 'Son' : m.gender === 'female' ? 'Daughter' : 'Child'
+          if ((s.spouseIds ?? []).includes(m.id)) return m.gender === 'male' ? 'Husband' : m.gender === 'female' ? 'Wife' : 'Spouse'
+          if (s.parentIds.length > 0 && m.parentIds.some(pid => s.parentIds.includes(pid)))
+            return m.gender === 'male' ? 'Brother' : m.gender === 'female' ? 'Sister' : 'Sibling'
+          return undefined
+        })() : undefined}
+        familyName={(profile as any)?.family_name ?? undefined}
       />
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>

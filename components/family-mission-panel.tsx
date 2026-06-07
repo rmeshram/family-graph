@@ -12,7 +12,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
+import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
@@ -101,6 +101,37 @@ function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: Fam
       return member.gender === 'male' ? 'Grandfather' : member.gender === 'female' ? 'Grandmother' : 'Grandparent'
   }
   return 'Family member'
+}
+
+// ─── Tree Completeness ────────────────────────────────────────────────────────
+
+interface TreeCompleteness {
+  /** 0-100 percentage of members who have claimed their profile */
+  score: number
+  joinedCount: number
+  totalCount: number
+  waitingCount: number
+}
+
+/**
+ * computeTreeCompleteness — measures how many added members have actually
+ * joined the app (i.e. claimed their profile).
+ *
+ * score = joinedCount / totalCount × 100
+ * waitingCount = members who are added but not yet claimed (prime invite targets)
+ */
+function computeTreeCompleteness(
+  selfMember: FamilyMember | null,
+  members: FamilyMember[],
+): TreeCompleteness {
+  const totalCount = members.length
+  if (totalCount === 0) return { score: 0, joinedCount: 0, totalCount: 0, waitingCount: 0 }
+  const joinedCount = members.filter(isEffectivelyClaimed).length
+  const waitingCount = members.filter(
+    m => !isEffectivelyClaimed(m) && m.id !== selfMember?.id,
+  ).length
+  const score = Math.round((joinedCount / totalCount) * 100)
+  return { score, joinedCount, totalCount, waitingCount }
 }
 
 // ─── Mission steps builder ────────────────────────────────────────────────────
@@ -208,6 +239,11 @@ export function FamilyMissionPanel({
   const completedCount = steps.filter(s => s.done).length
   const totalCount = steps.length
   const progressPct = Math.round((completedCount / totalCount) * 100)
+
+  const completeness = useMemo(
+    () => computeTreeCompleteness(selfMember, members),
+    [selfMember, members],
+  )
 
   const waitingPeople = useMemo<WaitingPerson[]>(() => {
     if (!selfMember) return []
@@ -330,6 +366,31 @@ export function FamilyMissionPanel({
           </>
         )}
       </div>
+
+      {/* ── Tree Completeness Score ─────────────────────────────────────── */}
+      {completeness.totalCount > 1 && (
+        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-primary" />
+              <span className="text-[11px] font-semibold text-foreground">Tree Participation</span>
+            </div>
+            <span className="text-[13px] font-bold text-primary tabular-nums">{completeness.score}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-muted/60 overflow-hidden mb-1.5">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-700"
+              style={{ width: `${completeness.score}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-tight">
+            {completeness.joinedCount} of {completeness.totalCount} members have joined
+            {completeness.waitingCount > 0 && (
+              <> · <span className="text-amber-400 font-medium">{completeness.waitingCount} waiting for invite</span></>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* ── People Waiting to Join ──────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0">

@@ -8,8 +8,9 @@ import { sampleFamilyMembers } from "@/lib/sample-data"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
 import { DemoBanner } from "@/components/demo-banner"
+import { whatsAppShareUrl } from "@/lib/whatsapp-invite"
 import type { FamilyMember } from "@/lib/types"
-import { ArrowLeft, Cake, Heart, Clock, ExternalLink } from "lucide-react"
+import { ArrowLeft, Cake, Heart, Clock, ExternalLink, Share2 } from "lucide-react"
 
 /** Days until the next occurrence of month/day from today (0 = today, 1 = tomorrow …) */
 function daysUntilDate(month: number, day: number, today: Date): number {
@@ -68,6 +69,32 @@ function DaysChip({ days }: { days: number }) {
   return <Badge variant="outline" className="text-muted-foreground">In {days} days</Badge>
 }
 
+function buildGroupShareMessage(
+  birthdays: ReturnType<typeof getBirthdays>,
+  anniversaries: ReturnType<typeof getAnniversaries>,
+  historicalEvents: ReturnType<typeof getHistoricalEvents>,
+  today: Date,
+): string {
+  const lines: string[] = ['🌅 Good morning from Family Graph!\n']
+  birthdays.slice(0, 3).forEach(({ member, age, daysUntil }) => {
+    const ageLine = age != null ? ` (turning ${age + (daysUntil > 0 ? 1 : 0)})` : ''
+    if (daysUntil === 0) lines.push(`🎂 Today is ${member.name}'s birthday!${ageLine}`)
+    else if (daysUntil === 1) lines.push(`🎂 Tomorrow is ${member.name}'s birthday${ageLine}`)
+    else lines.push(`🎂 ${member.name}'s birthday in ${daysUntil} days${ageLine}`)
+  })
+  anniversaries.slice(0, 2).forEach(({ member, milestoneTitle, years, daysUntil }) => {
+    if (daysUntil === 0) lines.push(`💍 Today: ${milestoneTitle} — ${years} years!`)
+    else if (daysUntil === 1) lines.push(`💍 Tomorrow: ${milestoneTitle} — ${years} years`)
+    else lines.push(`💍 ${milestoneTitle} in ${daysUntil} days (${years} yrs)`)
+  })
+  historicalEvents.slice(0, 2).forEach(ev => {
+    lines.push(`📅 ${today.getFullYear() - ev.year} years ago: ${ev.text} — ${ev.memberName}`)
+  })
+  if (lines.length === 1) lines.push('No upcoming events this week.')
+  lines.push(`\nSee the full family calendar 👉 ${typeof window !== 'undefined' ? window.location.origin : ''}/today`)
+  return lines.join('\n')
+}
+
 export default function TodayPage() {
   const { familyId, user, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
@@ -79,6 +106,8 @@ export default function TodayPage() {
   const birthdays = getBirthdays(members, today)
   const anniversaries = getAnniversaries(members, today)
   const historicalEvents = getHistoricalEvents(members, today)
+
+  const hasAnything = birthdays.length > 0 || anniversaries.length > 0 || historicalEvents.length > 0
 
   const dateStr = today.toLocaleDateString("en-IN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -97,6 +126,20 @@ export default function TodayPage() {
           <h1 className="font-bold text-lg">On This Day</h1>
           <p className="text-xs text-muted-foreground">{dateStr}</p>
         </div>
+        {hasAnything && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs font-medium bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366] hover:bg-[#25D366]/20 hover:border-[#25D366]/50"
+            onClick={() => {
+              const msg = buildGroupShareMessage(birthdays, anniversaries, historicalEvents, today)
+              window.open(whatsAppShareUrl(msg), '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <Share2 className="h-3.5 w-3.5" />
+            Share
+          </Button>
+        )}
       </header>
 
       <div className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 space-y-8">

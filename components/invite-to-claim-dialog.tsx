@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { FamilyMember } from '@/lib/types'
 import { cn, copyToClipboard } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { buildPersonalizedClaimMessage } from '@/lib/whatsapp-invite'
 import { toast } from 'sonner'
 
 interface InviteToClaimDialogProps {
@@ -24,6 +25,10 @@ interface InviteToClaimDialogProps {
   onOpenChange: (open: boolean) => void
   familyId: string | null
   userId: string | null
+  /** Relationship of the member to the current user (e.g. "Father", "Uncle") */
+  relationship?: string
+  /** Family name used in the invite message (e.g. "Sharma family") */
+  familyName?: string
 }
 
 export function InviteToClaimDialog({
@@ -32,6 +37,8 @@ export function InviteToClaimDialog({
   onOpenChange,
   familyId,
   userId,
+  relationship,
+  familyName,
 }: InviteToClaimDialogProps) {
   const [generating, setGenerating] = useState(false)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
@@ -250,10 +257,8 @@ export function InviteToClaimDialog({
                 size="sm"
                 className="w-full bg-[#25D366] hover:bg-[#1fba59] text-white font-medium"
                 onClick={() => {
-                  const waText = encodeURIComponent(
-                    `Hi ${member.name},\n\nI've added you to our family tree on Family Graph. Claim your profile to:\n• Edit your own bio, photo & details\n• Control who sees your profile\n• Add your spouse, children & relatives\n• Get birthday & family update notifications\n\nClaim here (valid 72 hrs): ${inviteLink}`
-                  )
-                  window.open(`https://wa.me/?text=${waText}`, '_blank', 'noopener,noreferrer')
+                  const msg = buildPersonalizedClaimMessage(member.name, relationship, familyName, inviteLink!)
+                  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer')
                 }}
               >
                 <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
