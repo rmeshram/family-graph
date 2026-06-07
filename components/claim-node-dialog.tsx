@@ -26,6 +26,9 @@ interface ClaimNodeDialogProps {
   onOpenChange: (open: boolean) => void
   onClaim: (memberId: string, userId: string, opts?: { submittedName?: string; submittedBirthYear?: number; skipFamilyLink?: boolean }) => Promise<void>
   onSetVisibility?: (memberId: string, visibility: 'public' | 'family' | 'private') => Promise<void>
+  /** Called after a successful "Connect Families" (Option A) so the parent can
+   *  refresh linked members without a full page reload. */
+  onFamilyConnected?: () => void
 }
 
 const VISIBILITY_OPTIONS: {
@@ -72,6 +75,7 @@ export function ClaimNodeDialog({
   onOpenChange,
   onClaim,
   onSetVisibility,
+  onFamilyConnected,
 }: ClaimNodeDialogProps) {
   const [submittedName, setSubmittedName] = useState('')
   const [submittedBirthYear, setSubmittedBirthYear] = useState('')
@@ -199,6 +203,9 @@ export function ClaimNodeDialog({
       }
       setFamilyLinkResult({ autoAccepted: data.autoAccepted, existingFamilyName: claimError.existingFamilyName ?? 'your family' })
       setClaimError(null)
+      // Notify parent to refresh linked members so the other family's members
+      // appear in the tree immediately without a full page reload.
+      onFamilyConnected?.()
     } catch {
       setClaimError(prev => prev ? { ...prev, message: 'Network error. Please try again.' } : prev)
     } finally {
@@ -389,9 +396,9 @@ export function ClaimNodeDialog({
                 {/* Option B — Just claim, no family link */}
                 <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-2.5">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Option B — Just claim this profile</p>
+                    <p className="text-sm font-semibold text-foreground">Option B — Switch to this family</p>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                      Claim your profile in this family only. Your other family tree stays separate and independent.
+                      Claim this profile and move your account to <strong className="text-foreground">{claimError?.targetFamilyName ?? 'this family'}</strong>. Your <strong className="text-foreground">{claimError?.existingFamilyName ?? 'current'}</strong> profile will become unclaimed. The two trees stay separate.
                     </p>
                   </div>
                   <Button

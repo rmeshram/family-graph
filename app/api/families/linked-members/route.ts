@@ -18,6 +18,17 @@ async function authedClient() {
   )
 }
 
+// Service-role client — bypasses RLS for cross-family member reads.
+// The application-level check (verified family_links.status='accepted') already
+// enforces the authorization boundary, so RLS bypass is safe here.
+function adminClient() {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false } }
+  )
+}
+
 // GET /api/families/linked-members
 // Returns all family members from families that are accepted-linked to the caller's family,
 // shaped as FamilyMember (affiliated networkGroup).
@@ -59,8 +70,14 @@ export async function GET() {
     junctionByFamily[otherFamilyId] = junctionMemberId
   }
 
+  // Fetch family names and linked members using the service-role client so that
+  // RLS on family_members (which restricts reads to profiles.family_id) doesn't
+  // block cross-family reads. Authorization is already enforced above via the
+  // family_links.status='accepted' check on the authed client.
+  const admin = adminClient()
+
   // Fetch family names
-  const { data: familyRows } = await supabase
+  const { data: familyRows } = await admin
     .from('families')
     .select('id, name')
     .in('id', linkedFamilyIds)
@@ -70,8 +87,8 @@ export async function GET() {
     familyNameMap[(f as any).id] = (f as any).name
   }
 
-  // Fetch all members from linked families
-  const { data: memberRows } = await supabase
+  // Fetch all members from linked families (admin client bypasses RLS)
+  const { data: memberRows } = await admin
     .from('family_members')
     .select(`
       id, family_id, name, birth_year, death_year, birth_place, current_place,
@@ -80,7 +97,7 @@ export async function GET() {
       is_deceased, added_at
     `)
     .in('family_id', linkedFamilyIds)
-    .eq('is_deceased', false)
+    .is('deleted_at', null)
     .order('generation', { ascending: true })
 
   const linkedMembers = (memberRows ?? []).map((row: any) => ({

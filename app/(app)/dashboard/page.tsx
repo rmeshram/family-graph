@@ -74,9 +74,8 @@ import { createClient } from '@/lib/supabase/client'
 function TreeNodeSkel({ w, highlight = false, delay = 0 }: { w: number; highlight?: boolean; delay?: number }) {
   return (
     <div
-      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${
-        highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
-      }`}
+      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
+        }`}
       style={{ width: w + 16 }}
     >
       {/* shimmer sweep */}
@@ -562,6 +561,7 @@ export default function FamilyGraphApp() {
     newMemberAlert,
     clearNewMemberAlert,
     sendLinkRequest,
+    refresh: refreshLinkedFamilies,
   } = useLinkedFamilies(isDemoMode ? null : familyId)
 
   const [maxDegree, setMaxDegree] = useState(10)
@@ -2682,10 +2682,12 @@ export default function FamilyGraphApp() {
           await claimMember(memberId, _userId, opts)
           toast({ title: 'Profile claimed!', description: 'Your account is now linked to this node.' })
           refetchMembers()
+          refreshLinkedFamilies()
         }}
         onSetVisibility={async (memberId, visibility) => {
           await setVisibility(memberId, visibility)
         }}
+        onFamilyConnected={refreshLinkedFamilies}
       />
 
       {/* Relationship-first onboarding — for unclaimed general-invite users */}
