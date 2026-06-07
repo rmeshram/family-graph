@@ -303,45 +303,76 @@ export function ClaimNodeDialog({
 
             {/* Connect Families card — shown when user already has a node in another family */}
             {claimError?.code === 'SUGGEST_FAMILY_LINK' && (
-              <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/30 p-4 space-y-3">
-                <div className="flex items-start gap-2.5">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20">
-                    <GitBranch className="h-4 w-4 text-indigo-400" />
+              <div className="space-y-3">
+                {/* Option A — Connect families */}
+                <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/30 p-4 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20">
+                      <GitBranch className="h-4 w-4 text-indigo-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-indigo-300">Option A — Connect both family trees</p>
+                        <span className="rounded-full bg-indigo-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-300 uppercase tracking-wide">Recommended</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                        Your account is already linked to{' '}
+                        <strong className="text-foreground">{claimError.existingNodeName}</strong>{' '}
+                        in <strong className="text-foreground">{claimError.existingFamilyName}</strong>.
+                        Link both families — your profile becomes the bridge between the two trees.
+                      </p>
+                    </div>
                   </div>
+                  <ul className="space-y-1 pl-1">
+                    {[
+                      '🌳  Both family trees stay intact — no data is lost',
+                      '🔗  Members from both families will appear linked',
+                      `🪢  "${claimError.targetFamilyName}" will see your family as connected relatives`,
+                    ].map(t => (
+                      <li key={t} className="text-xs text-muted-foreground">{t}</li>
+                    ))}
+                  </ul>
+                  {claimError.message && claimError.code === 'SUGGEST_FAMILY_LINK' && connectingFamilies === false && (
+                    <p className="text-xs text-destructive">{claimError.message}</p>
+                  )}
+                  <Button
+                    size="sm"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                    onClick={handleConnectFamilies}
+                    disabled={connectingFamilies}
+                  >
+                    {connectingFamilies
+                      ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Connecting…</>
+                      : <><GitBranch className="h-3.5 w-3.5" />Connect Families</>
+                    }
+                  </Button>
+                </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-2">
+                  <div className="h-px flex-1 bg-border/50" />
+                  <span className="text-[11px] font-medium text-muted-foreground px-1">or</span>
+                  <div className="h-px flex-1 bg-border/50" />
+                </div>
+
+                {/* Option B — Just claim, no family link */}
+                <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-2.5">
                   <div>
-                    <p className="text-sm font-semibold text-indigo-300">Connect both family trees</p>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                      Your account is already linked to{' '}
-                      <strong className="text-foreground">{claimError.existingNodeName}</strong>{' '}
-                      in <strong className="text-foreground">{claimError.existingFamilyName}</strong>.
-                      Instead of claiming a separate profile, you can link both families —
-                      your profile will serve as the bridge between the two trees.
+                    <p className="text-sm font-semibold text-foreground">Option B — Just claim this profile</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                      Claim your profile in this family only. Your other family tree stays separate and independent.
                     </p>
                   </div>
+                  <Button
+                    onClick={handleClaim}
+                    disabled={claiming || !submittedName.trim()}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <ShieldCheck className="h-4 w-4 mr-2" />
+                    {claiming ? 'Verifying…' : `Claim as ${member.name.split(' ')[0]} (no family link)`}
+                  </Button>
                 </div>
-                <ul className="space-y-1 pl-1">
-                  {[
-                    '🌳  Both family trees stay intact — no data is lost',
-                    '🔗  Members from both families will appear linked',
-                    `🪢  "${claimError.targetFamilyName}" will see your family as connected relatives`,
-                  ].map(t => (
-                    <li key={t} className="text-xs text-muted-foreground">{t}</li>
-                  ))}
-                </ul>
-                {claimError.message && claimError.code === 'SUGGEST_FAMILY_LINK' && connectingFamilies === false && (
-                  <p className="text-xs text-destructive">{claimError.message}</p>
-                )}
-                <Button
-                  size="sm"
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
-                  onClick={handleConnectFamilies}
-                  disabled={connectingFamilies}
-                >
-                  {connectingFamilies
-                    ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />Connecting…</>
-                    : <><GitBranch className="h-3.5 w-3.5" />Connect Families</>
-                  }
-                </Button>
               </div>
             )}
 
@@ -359,7 +390,7 @@ export function ClaimNodeDialog({
             <Button
               onClick={handleClaim}
               disabled={claiming || !submittedName.trim()}
-              className="w-full"
+              className={cn("w-full", claimError?.code === 'SUGGEST_FAMILY_LINK' && "hidden")}
             >
               <ShieldCheck className="h-4 w-4 mr-2" />
               {claiming ? 'Verifying…' : `Claim as ${member.name.split(' ')[0]}`}
