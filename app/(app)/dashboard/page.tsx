@@ -66,6 +66,7 @@ import {
 import { cn } from '@/lib/utils'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
 // Shown in the main canvas while the DB loads (after auth resolves).
@@ -921,8 +922,12 @@ export default function FamilyGraphApp() {
 
   // ── Mission progress (mobile strip) ─────────────────────────────────────────
   // Mirrors buildMissionSteps logic but only computes done/total — no callbacks.
+  // Respects wizard_skipped: a step counts as done if data is present OR user
+  // explicitly said "Don't have" (stored as 'mission_<stepId>' in wizard_skipped).
   const missionProgress = useMemo(() => {
     if (!selfMember) return { done: 0, total: 10 }
+    const skipped = new Set(profile?.wizard_skipped ?? [])
+    const doneOrSkipped = (id: string, dataPresent: boolean) => dataPresent || skipped.has(`mission_${id}`)
     const byId = new Map(members.map(m => [m.id, m]))
     const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
     const father = parents.find(p => p.gender === 'male')
@@ -936,14 +941,17 @@ export default function FamilyGraphApp() {
     const fatherParents = father ? father.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[] : []
     const checks = [
       true, // add self — always done
-      !!father, !!mother, hasSibling, hasSpouse, hasChild,
-      fatherParents.some(p => p.gender === 'male'),
-      fatherParents.some(p => p.gender === 'female'),
+      !!father, !!mother,
+      doneOrSkipped('add_sibling', hasSibling),
+      doneOrSkipped('add_spouse', hasSpouse),
+      doneOrSkipped('add_child', hasChild),
+      doneOrSkipped('add_paternal_gf', fatherParents.some(p => p.gender === 'male')),
+      doneOrSkipped('add_paternal_gm', fatherParents.some(p => p.gender === 'female')),
       checklistHasStories,
       checklistHasOtherClaims,
     ]
     return { done: checks.filter(Boolean).length, total: checks.length }
-  }, [selfMember, members, checklistHasStories, checklistHasOtherClaims])
+  }, [selfMember, members, profile?.wizard_skipped, checklistHasStories, checklistHasOtherClaims])
 
   // ── Mission drawer: auto-open once for new users ────────────────────────────
   // Fires when user is on tree view, has < 4 members, and hasn't seen it yet.
@@ -1181,6 +1189,20 @@ export default function FamilyGraphApp() {
   const handleAddRelative = useCallback((anchorId: string, relType: QuickRelType) => {
     setQuickAdd({ anchorId, relType })
   }, [])
+
+  // Persist a "Don't have" skip for a mission step. Stored in profiles.wizard_skipped
+  // as 'mission_<stepId>' so it doesn't collide with the relationship wizard keys.
+  const handleMissionSkip = useCallback(async (stepId: string) => {
+    if (!user) return
+    const key = `mission_${stepId}`
+    const existing: string[] = profile?.wizard_skipped ?? []
+    if (existing.includes(key)) return
+    const updated = [...existing, key]
+    const db = createClient()
+    await db.from('profiles').update({ wizard_skipped: updated }).eq('id', user.id)
+    // Refresh auth profile so wizard_skipped reflects the new value in UI
+    refreshProfile()
+  }, [user, profile?.wizard_skipped, refreshProfile])
 
   // Called by QuickAddMemberDialog on submit — creates the new member and handles bidirectional wiring
   const handleQuickAddSubmit = useCallback(async (
@@ -2241,6 +2263,8 @@ export default function FamilyGraphApp() {
                 onInviteMember={(m) => setInviteToClaimTarget(m)}
                 onEditSelf={() => setEditingMember(selfMember)}
                 hasStories={checklistHasStories}
+                wizardSkipped={profile?.wizard_skipped ?? []}
+                onSkipStep={handleMissionSkip}
               />
             )}
 
@@ -2328,6 +2352,8 @@ export default function FamilyGraphApp() {
                       onInviteMember={(m) => { setShowMissionDrawer(false); setInviteToClaimTarget(m) }}
                       onEditSelf={() => { setShowMissionDrawer(false); setEditingMember(selfMember) }}
                       hasStories={checklistHasStories}
+                      wizardSkipped={profile?.wizard_skipped ?? []}
+                      onSkipStep={handleMissionSkip}
                     />
                   )}
                 </div>

@@ -27,6 +27,8 @@ interface MissionStep {
   label: string
   emoji: string
   done: boolean
+  /** If true and not done, show a 'Don't have' skip button */
+  skippable?: boolean
   cta?: string
   onAction?: () => void
 }
@@ -47,6 +49,10 @@ export interface FamilyMissionPanelProps {
   onInviteMember: (member: FamilyMember) => void
   onEditSelf: () => void
   hasStories: boolean
+  /** Step IDs the user has explicitly dismissed (from profiles.wizard_skipped, prefixed 'mission_') */
+  wizardSkipped: string[]
+  /** Called when user clicks "Don't have" on a skippable step. Should persist to DB. */
+  onSkipStep: (stepId: string) => void
   /** Override outer container className (e.g. full-width in mobile drawer) */
   className?: string
 }
@@ -82,16 +88,24 @@ function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: Fam
 
 // ─── Mission steps builder ────────────────────────────────────────────────────
 
+// Step IDs that can be dismissed with "Don't have" when the user explicitly
+// confirms they don't have that relationship. Stored in profiles.wizard_skipped.
+const SKIPPABLE_STEP_IDS = new Set([
+  'add_sibling', 'add_spouse', 'add_child', 'add_paternal_gf', 'add_paternal_gm',
+])
+
 function buildMissionSteps(
   selfMember: FamilyMember | null,
   members: FamilyMember[],
   hasStories: boolean,
   hasOtherClaims: boolean,
+  wizardSkipped: string[],
   onQuickAddMember: (relType: QuickRelType, anchorId: string) => void,
   onAddStory: () => void,
 ): MissionStep[] {
   if (!selfMember) return []
 
+  const skipped = new Set(wizardSkipped)
   const byId = new Map(members.map(m => [m.id, m]))
   const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
   const father = parents.find(p => p.gender === 'male')
@@ -105,15 +119,18 @@ function buildMissionSteps(
   const hasPatGrandFather = fatherParents.some(p => p.gender === 'male')
   const hasPatGrandMother = fatherParents.some(p => p.gender === 'female')
 
+  // A step is "done" if the data is present OR the user explicitly said they don't have it.
+  const done = (id: string, dataPresent: boolean) => dataPresent || skipped.has(`mission_${id}`)
+
   return [
     { id: 'add_self', label: 'Add yourself', emoji: '\u{1F464}', done: true },
     { id: 'add_father', label: 'Add father', emoji: '\u{1F468}', done: !!father, cta: 'Add', onAction: () => onQuickAddMember('father', selfMember.id) },
     { id: 'add_mother', label: 'Add mother', emoji: '\u{1F469}', done: !!mother, cta: 'Add', onAction: () => onQuickAddMember('mother', selfMember.id) },
-    { id: 'add_sibling', label: 'Add a sibling', emoji: '\u{1F46B}', done: hasSibling, cta: 'Add', onAction: () => onQuickAddMember('sibling', selfMember.id) },
-    { id: 'add_spouse', label: 'Add spouse / partner', emoji: '\u{1F48D}', done: hasSpouse, cta: 'Add', onAction: () => onQuickAddMember('spouse', selfMember.id) },
-    { id: 'add_child', label: 'Add a child', emoji: '\u{1F476}', done: hasChild, cta: 'Add', onAction: () => onQuickAddMember('child', selfMember.id) },
-    { id: 'add_paternal_gf', label: "Father's father", emoji: '\u{1F474}', done: hasPatGrandFather, cta: 'Add', onAction: father ? () => onQuickAddMember('father', father.id) : () => onQuickAddMember('father', selfMember.id) },
-    { id: 'add_paternal_gm', label: "Father's mother", emoji: '\u{1F475}', done: hasPatGrandMother, cta: 'Add', onAction: father ? () => onQuickAddMember('mother', father.id) : () => onQuickAddMember('mother', selfMember.id) },
+    { id: 'add_sibling', label: 'Add a sibling', emoji: '\u{1F46B}', done: done('add_sibling', hasSibling), skippable: !hasSibling, cta: 'Add', onAction: () => onQuickAddMember('sibling', selfMember.id) },
+    { id: 'add_spouse', label: 'Add spouse / partner', emoji: '\u{1F48D}', done: done('add_spouse', hasSpouse), skippable: !hasSpouse, cta: 'Add', onAction: () => onQuickAddMember('spouse', selfMember.id) },
+    { id: 'add_child', label: 'Add a child', emoji: '\u{1F476}', done: done('add_child', hasChild), skippable: !hasChild, cta: 'Add', onAction: () => onQuickAddMember('child', selfMember.id) },
+    { id: 'add_paternal_gf', label: "Father's father", emoji: '\u{1F474}', done: done('add_paternal_gf', hasPatGrandFather), skippable: !hasPatGrandFather, cta: 'Add', onAction: father ? () => onQuickAddMember('father', father.id) : () => onQuickAddMember('father', selfMember.id) },
+    { id: 'add_paternal_gm', label: "Father's mother", emoji: '\u{1F475}', done: done('add_paternal_gm', hasPatGrandMother), skippable: !hasPatGrandMother, cta: 'Add', onAction: father ? () => onQuickAddMember('mother', father.id) : () => onQuickAddMember('mother', selfMember.id) },
     { id: 'add_story', label: 'Add a memory or story', emoji: '\u{1F4D6}', done: hasStories, cta: 'Add', onAction: onAddStory },
     { id: 'family_claimed', label: 'Another member joined', emoji: '\u{1F389}', done: hasOtherClaims },
   ]
@@ -132,6 +149,8 @@ export function FamilyMissionPanel({
   onInviteMember,
   onEditSelf,
   hasStories,
+  wizardSkipped,
+  onSkipStep,
   className,
 }: FamilyMissionPanelProps) {
   const router = useRouter()
@@ -143,8 +162,8 @@ export function FamilyMissionPanel({
   )
 
   const steps = useMemo(
-    () => buildMissionSteps(selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory),
-    [selfMember, members, hasStories, hasOtherClaims, onQuickAddMember, onAddStory]
+    () => buildMissionSteps(selfMember, members, hasStories, hasOtherClaims, wizardSkipped, onQuickAddMember, onAddStory),
+    [selfMember, members, hasStories, hasOtherClaims, wizardSkipped, onQuickAddMember, onAddStory]
   )
 
   const completedCount = steps.filter(s => s.done).length
@@ -251,6 +270,17 @@ export function FamilyMissionPanel({
                         <button type="button" onClick={step.onAction}
                           className="shrink-0 rounded-md border border-border/40 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors">
                           {step.cta}
+                        </button>
+                      )}
+                      {/* "Don't have" — only shown on skippable steps not yet skipped */}
+                      {!step.done && step.skippable && SKIPPABLE_STEP_IDS.has(step.id) && (
+                        <button
+                          type="button"
+                          title="Mark as not applicable"
+                          onClick={() => onSkipStep(step.id)}
+                          className="shrink-0 rounded-md border border-border/20 px-1.5 py-0.5 text-[9px] text-muted-foreground/50 hover:text-muted-foreground hover:border-border/50 transition-colors"
+                        >
+                          ✗
                         </button>
                       )}
                     </div>
