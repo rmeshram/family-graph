@@ -97,20 +97,38 @@ export function OnboardingChecklist({
     [members, selfMember, selfParentIds]
   )
 
-  // Resolve specific family members so step labels can use real names
-  const father = useMemo(() =>
-    selfParentIds.length > 0
+  // Resolve specific family members so step labels can use real names.
+  // Detection uses three layers (mirrors FamilyMissionPanel logic):
+  //   1. Structural: selfMember.parentIds → look up member by id
+  //   2. Relationship field: any member with relationship === 'father'/'dad' etc.
+  // Both layers are needed because parentIds may be empty when a parent was
+  // added with only the relationship field set (pre-bidirectional-link writes).
+  const father = useMemo(() => {
+    // Layer 1 — structural parentIds
+    const byParentId = selfParentIds.length > 0
       ? (members.find(m => selfParentIds.includes(m.id) && m.gender === 'male')
         ?? members.find(m => selfParentIds.includes(m.id)))
-      : undefined,
-    [members, selfParentIds]
-  )
-  const mother = useMemo(() =>
-    selfParentIds.length > 0
+      : undefined
+    if (byParentId) return byParentId
+    // Layer 2 — relationship field fallback
+    return members.find(
+      m => m.id !== selfMember?.id && m.gender === 'male' &&
+        (m.relationship === 'father' || m.relationship === 'dad'),
+    ) ?? undefined
+  }, [members, selfMember, selfParentIds])
+
+  const mother = useMemo(() => {
+    // Layer 1 — structural parentIds
+    const byParentId = selfParentIds.length > 0
       ? members.find(m => selfParentIds.includes(m.id) && m.gender === 'female')
-      : undefined,
-    [members, selfParentIds]
-  )
+      : undefined
+    if (byParentId) return byParentId
+    // Layer 2 — relationship field fallback
+    return members.find(
+      m => m.id !== selfMember?.id && m.gender === 'female' &&
+        (m.relationship === 'mother' || m.relationship === 'mom'),
+    ) ?? undefined
+  }, [members, selfMember, selfParentIds])
   const paternalGf = useMemo(() => {
     if (!father) return null
     const fps = father.parentIds ?? []
