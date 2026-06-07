@@ -150,12 +150,12 @@ export function buildUniverse(
   members: FamilyMember[],
   anchorId: string,
   perspectiveSelfId?: string | null,
-): { people: UPerson[]; edges: UEdge[] } {
-  if (!anchorId || members.length === 0) return { people: [], edges: [] }
+): { people: UPerson[]; edges: UEdge[]; familyLabels: { id: string; name: string; x: number; y: number; radius: number; count: number }[] } {
+  if (!anchorId || members.length === 0) return { people: [], edges: [], familyLabels: [] }
 
   const memberMap = new Map(members.map(m => [m.id, m]))
   const self = memberMap.get(anchorId)
-  if (!self) return { people: [], edges: [] }
+  if (!self) return { people: [], edges: [], familyLabels: [] }
 
   // ── Enrich with relationship-label-derived edges ───────────────────────────
   // Isolated members (no parent_ids/spouse_ids) carry a `relationship` label
@@ -347,8 +347,12 @@ export function buildUniverse(
   }
 
   // ── 5. Community / affiliated cluster placement ───────────────────────────
-  // Group affiliated members by shared attribute (gotra → city → fallback)
-  // Place each group as a mini-cluster in the community sector's outer ring.
+  // Affiliated (linked-family) members are grouped by affiliatedFamilyId first,
+  // giving each merged family its own dedicated arc slice in the community sector.
+  // Within each family arc, members are further sub-grouped by gotra/city so
+  // related people cluster together visually.
+  // Non-affiliated community members (gotra/city matches but no family link) are
+  // placed in the remaining portion of the community arc.
 
   const affiliated = members.filter(m => {
     if (m.id === anchorId) return false
@@ -357,43 +361,134 @@ export function buildUniverse(
   })
 
   if (affiliated.length > 0) {
-    // Group by gotra/caste, then by city, then ungrouped
-    const groups = new Map<string, FamilyMember[]>()
+    // Split affiliated members into: per-family groups + ungrouped (no affiliatedFamilyId)
+    const familyGroups = new Map<string, { name: string; members: FamilyMember[] }>()
+    const ungrouped: FamilyMember[] = []
+
     for (const m of affiliated) {
+      if (m.affiliatedFamilyId) {
+        if (!familyGroups.has(m.affiliatedFamilyId)) {
+          familyGroups.set(m.affiliatedFamilyId, {
+            name: (m as any).affiliatedFamilyName ?? m.affiliatedFamilyId,
+            members: [],
+          })
+        }
+        familyGroups.get(m.affiliatedFamilyId)!.members.push(m)
+      } else {
+        ungrouped.push(m)
+      }
+    }
+
+    // Group ungrouped by gotra/city as before
+    const ungroupedSubgroups = new Map<string, FamilyMember[]>()
+    for (const m of ungrouped) {
       const key = m.gotra || m.caste || m.hometown || m.currentPlace || 'other'
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key)!.push(m)
+      if (!ungroupedSubgroups.has(key)) ungroupedSubgroups.set(key, [])
+      ungroupedSubgroups.get(key)!.push(m)
     }
 
     const [arcStart, arcEnd] = SECTOR_ARC.community
     const arcSpan = arcEnd - arcStart
-    const groupList = [...groups.values()]
-    const numGroups = groupList.length
 
-    groupList.forEach((group, gi) => {
-      // Center angle for this group within community sector
-      const groupFraction = numGroups === 1 ? 0.5 : gi / (numGroups - 1)
-      const groupAngle = arcStart + groupFraction * arcSpan
+    // Total "slots": one per affiliated family + one for the ungrouped blob (if any)
+    const familyList = [...familyGroups.values()]
+    const numSlots = familyList.length + (ungroupedSubgroups.size > 0 ? 1 : 0) || 1
+    const slotSpan = arcSpan / numSlots
 
-      // Radius: outer ring beyond core family (depth 4+)
-      const groupRadius = BASE_RING_RADIUS + 4 * RING_STEP + 60
+    // Place each affiliated family in its own arc slice
+    familyList.forEach((familyGroup, fi) => {
+      const slotStart = arcStart + fi * slotSpan
+      const slotEnd = slotStart + slotSpan
 
-      // Within the group, spread in a small fan around groupAngle
-      const fanSpread = Math.min(0.5, (group.length - 1) * 0.18)
-      group.forEach((m, mi) => {
-        const fraction = group.length === 1 ? 0.5 : mi / (group.length - 1)
-        const angle = groupAngle - fanSpread / 2 + fraction * fanSpread
-        const r = groupRadius + (mi % 2) * 80
-        const jitter = deterministicJitter(m.id)
-        positions.set(m.id, {
-          x: Math.cos(angle) * (r + jitter),
-          y: Math.sin(angle) * (r + jitter),
+      // Sub-group by gotra/city within this family for even tighter clustering
+      const subGroups = new Map<string, FamilyMember[]>()
+      for (const m of familyGroup.members) {
+        const key = m.gotra || m.caste || m.hometown || m.currentPlace || 'other'
+        if (!subGroups.has(key)) subGroups.set(key, [])
+        subGroups.get(key)!.push(m)
+      }
+      const subGroupList = [...subGroups.values()]
+      const numSubs = subGroupList.length
+
+      subGroupList.forEach((group, gi) => {
+        const groupFraction = numSubs === 1 ? 0.5 : gi / (numSubs - 1)
+        const groupAngle = slotStart + groupFraction * (slotEnd - slotStart)
+        const groupRadius = BASE_RING_RADIUS + 4 * RING_STEP + 60
+        const fanSpread = Math.min(0.45, (group.length - 1) * 0.16)
+        group.forEach((m, mi) => {
+          const fraction = group.length === 1 ? 0.5 : mi / (group.length - 1)
+          const angle = groupAngle - fanSpread / 2 + fraction * fanSpread
+          const r = groupRadius + (mi % 2) * 80
+          const jitter = deterministicJitter(m.id)
+          positions.set(m.id, {
+            x: Math.cos(angle) * (r + jitter),
+            y: Math.sin(angle) * (r + jitter),
+          })
+          if (!depth.has(m.id)) depth.set(m.id, 4)
+          if (!category.has(m.id)) category.set(m.id, 'community')
         })
-        // Assign depth for progressive reveal (community always at depth 4)
-        if (!depth.has(m.id)) depth.set(m.id, 4)
-        if (!category.has(m.id)) category.set(m.id, 'community')
       })
     })
+
+    // Place ungrouped (no affiliatedFamilyId) members in the last arc slot
+    if (ungroupedSubgroups.size > 0) {
+      const slotStart = arcStart + familyList.length * slotSpan
+      const slotEnd = slotStart + slotSpan
+      const subGroupList = [...ungroupedSubgroups.values()]
+      const numSubs = subGroupList.length
+      subGroupList.forEach((group, gi) => {
+        const groupFraction = numSubs === 1 ? 0.5 : gi / (numSubs - 1)
+        const groupAngle = slotStart + groupFraction * (slotEnd - slotStart)
+        const groupRadius = BASE_RING_RADIUS + 4 * RING_STEP + 60
+        const fanSpread = Math.min(0.5, (group.length - 1) * 0.18)
+        group.forEach((m, mi) => {
+          const fraction = group.length === 1 ? 0.5 : mi / (group.length - 1)
+          const angle = groupAngle - fanSpread / 2 + fraction * fanSpread
+          const r = groupRadius + (mi % 2) * 80
+          const jitter = deterministicJitter(m.id)
+          positions.set(m.id, {
+            x: Math.cos(angle) * (r + jitter),
+            y: Math.sin(angle) * (r + jitter),
+          })
+          if (!depth.has(m.id)) depth.set(m.id, 4)
+          if (!category.has(m.id)) category.set(m.id, 'community')
+        })
+      })
+    }
+  }
+
+  // ── 5b. Compute family label anchor points (centroid per affiliated family) ─
+  // Returned alongside people/edges so the component can render floating labels
+  // and a soft halo ring per merged family in SVG space.
+  const familyLabels: { id: string; name: string; x: number; y: number; radius: number; count: number }[] = []
+  if (affiliated.length > 0) {
+    const familyGroups2 = new Map<string, { name: string; xs: number[]; ys: number[] }>()
+    for (const m of affiliated) {
+      if (!m.affiliatedFamilyId) continue
+      const pos = positions.get(m.id)
+      if (!pos) continue
+      if (!familyGroups2.has(m.affiliatedFamilyId)) {
+        familyGroups2.set(m.affiliatedFamilyId, {
+          name: (m as any).affiliatedFamilyName ?? m.affiliatedFamilyId,
+          xs: [], ys: [],
+        })
+      }
+      familyGroups2.get(m.affiliatedFamilyId)!.xs.push(pos.x)
+      familyGroups2.get(m.affiliatedFamilyId)!.ys.push(pos.y)
+    }
+    for (const [id, g] of familyGroups2) {
+      if (g.xs.length === 0) continue
+      const cx = g.xs.reduce((a, b) => a + b, 0) / g.xs.length
+      const cy = g.ys.reduce((a, b) => a + b, 0) / g.ys.length
+      // Max distance from centroid to any member node — used for the halo ring
+      const radius = Math.max(
+        80,
+        ...g.xs.map((x, i) => Math.hypot(x - cx, g.ys[i] - cy) + 55)
+      )
+      // Place label slightly further from origin (toward the outer ring edge)
+      const labelScale = 1.18
+      familyLabels.push({ id, name: g.name, x: cx * labelScale, y: cy * labelScale, radius, count: g.xs.length })
+    }
   }
 
   // ── 6. Build UPerson list ─────────────────────────────────────────────────
@@ -447,11 +542,17 @@ export function buildUniverse(
   }
 
   // ── 7. Build UEdge list (deduplicated) ────────────────────────────────────
+  // Use enrichedMembers (which includes relationship-label-derived virtual edges)
+  // so that members added with only a `relationship` field (no parent_ids/spouse_ids)
+  // still get connecting lines. Virtual nodes (id starts with __virt_) are skipped
+  // since they have no position in the rendered canvas.
   const edgeSet = new Set<string>()
   const edges: UEdge[] = []
 
   const addEdge = (from: string, to: string, kind: UEdgeKind) => {
     if (!positions.has(from) || !positions.has(to)) return
+    // Skip edges to/from virtual structural nodes — they are BFS-only
+    if (from.startsWith('__virt_') || to.startsWith('__virt_')) return
     const key = [from, to].sort().join('|')
     if (!edgeSet.has(key)) {
       edgeSet.add(key)
@@ -459,16 +560,21 @@ export function buildUniverse(
     }
   }
 
-  for (const m of members) {
+  for (const m of enrichedMembers) {
+    if (m.id.startsWith('__virt_')) continue
     for (const pid of m.parentIds) addEdge(m.id, pid, 'blood')
     for (const sid of m.spouseIds) addEdge(m.id, sid, 'marriage')
   }
 
   // Community suggested edges: connect each affiliated member to the closest
-  // core family member sharing the same gotra/city (if any exists)
+  // core family member sharing the same gotra/city (if any exists).
+  // Skip affiliated members that are already connected via blood/marriage edges
+  // (they have real structural connections and don't need suggested edges).
   const coreMemberIds = people.filter(p => p.category !== 'community').map(p => p.id)
+  const connectedViaStructural = new Set(edges.flatMap(e => [e.from, e.to]))
   for (const m of affiliated) {
     if (!positions.has(m.id)) continue
+    if (connectedViaStructural.has(m.id)) continue // already has structural edge
     const match = coreMemberIds.find(cid => {
       const cm = memberMap.get(cid)!
       return (m.gotra && cm.gotra === m.gotra) ||
@@ -479,7 +585,7 @@ export function buildUniverse(
     else if (coreMemberIds.length > 0) addEdge(m.id, anchorId, 'suggested')
   }
 
-  return { people, edges }
+  return { people, edges, familyLabels }
 }
 
 // ─── Viewport culling ──────────────────────────────────────────────────────
@@ -544,7 +650,7 @@ export function RelationshipUniverse({
   const router = useRouter()
 
   // ── Graph data ───────────────────────────────────────────────────────────
-  const { people, edges } = useMemo(
+  const { people, edges, familyLabels } = useMemo(
     () => buildUniverse(members, layoutAnchorId, effectiveSelfId || null),
     [members, layoutAnchorId, effectiveSelfId]
   )
@@ -554,15 +660,21 @@ export function RelationshipUniverse({
   const maxDepth = useMemo(() => Math.max(0, ...people.map(p => p.depth)), [people])
 
   // ── Structural isolation nudge ──────────────────────────────────────────
-  // True when the logged-in user's own node has no parentIds and no spouseIds
-  // in the database. We show a prompt encouraging them to add connections so
-  // the tree has a real structural backbone (not just label-derived edges).
+  // True when the logged-in user's own node has no edges at all — meaning
+  // neither raw parentIds/spouseIds NOR any relationship-label-derived edges
+  // connect them to other members.  We check `edges` (which are now built from
+  // enrichedMembers) so that members added via the `relationship` field without
+  // explicit parentIds/spouseIds are correctly treated as connected.
   const isSelfIsolated = useMemo(() => {
     if (!effectiveSelfId) return false
     const selfMember = members.find(m => m.id === effectiveSelfId)
     if (!selfMember) return false
-    return selfMember.parentIds.length === 0 && selfMember.spouseIds.length === 0
-  }, [members, effectiveSelfId])
+    // If there is at least one rendered edge touching the self node the user
+    // is not isolated — even if raw parentIds/spouseIds are empty.
+    const hasEdge = edges.some(e => e.from === effectiveSelfId || e.to === effectiveSelfId)
+    if (hasEdge) return false
+    return true
+  }, [members, effectiveSelfId, edges])
 
   // Adjacency map — used for focus-mode opacity
   const adjacencyMap = useMemo(() => {
@@ -1368,6 +1480,66 @@ export function RelationshipUniverse({
             )
           })}
         </g>
+
+        {/* Family constellation labels — one floating badge + halo ring per linked family */}
+        {familyLabels.map((fl, fi) => {
+          const LABEL_PALETTE = ['#14B8A6', '#8B5CF6', '#F43F5E', '#F59E0B', '#22C55E']
+          const color = LABEL_PALETTE[fi % LABEL_PALETTE.length]
+          const lx = cx + fl.x * k
+          const ly = cy + fl.y * k
+          // Centroid (not scaled by labelScale) — center of the halo ring
+          const hx = cx + (fl.x / 1.18) * k
+          const hy = cy + (fl.y / 1.18) * k
+          const scaledR = fl.radius * k
+          if (Math.abs(lx - cx) < 10 && Math.abs(ly - cy) < 10) return null
+          // Label pill width scales with name length
+          const labelText = fl.name.length > 18 ? fl.name.slice(0, 17) + '…' : fl.name
+          const pillW = Math.max(72, labelText.length * 6.2 + 20)
+          return (
+            <g key={fl.id}>
+              {/* Soft halo ring enclosing all nodes of this family */}
+              <circle
+                cx={hx} cy={hy} r={scaledR}
+                fill={color} fillOpacity={0.04}
+                stroke={color} strokeOpacity={0.18} strokeWidth={1.2}
+                strokeDasharray="4 8"
+              />
+              {/* Subtle tether line from centroid to label pill */}
+              <line x1={hx} y1={hy} x2={lx} y2={ly}
+                stroke={color} strokeOpacity={0.22} strokeWidth={0.8} strokeDasharray="3 6" />
+              {/* Label pill background */}
+              <rect
+                x={lx - pillW / 2} y={ly - 12}
+                width={pillW} height={22} rx={11}
+                fill={color} fillOpacity={0.14}
+                stroke={color} strokeOpacity={0.40} strokeWidth={0.9}
+              />
+              {/* Family name */}
+              <text
+                x={lx} y={ly + 4}
+                fontSize={Math.max(7.5, 9.5 * Math.min(1, k))}
+                textAnchor="middle"
+                fill={color}
+                fontWeight={700}
+                letterSpacing={0.9}
+                style={{ textTransform: 'uppercase', fontFamily: 'inherit' }}
+              >
+                {labelText}
+              </text>
+              {/* Member count badge */}
+              {fl.count > 1 && (
+                <>
+                  <circle cx={lx + pillW / 2 - 2} cy={ly - 12} r={8}
+                    fill={color} fillOpacity={0.85} />
+                  <text x={lx + pillW / 2 - 2} y={ly - 8}
+                    fontSize={6.5} textAnchor="middle" fill="#000" fontWeight={800}
+                    style={{ fontFamily: 'inherit' }}
+                  >{fl.count}</text>
+                </>
+              )}
+            </g>
+          )
+        })}
       </svg>
 
       {/* Ambient drifting particles for cinematic depth (subtle in light mode). */}

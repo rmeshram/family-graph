@@ -267,6 +267,15 @@ export function useMembers(familyId: string | null) {
     // 4. Structural parent cap: each anchor in parentIds can have at most 2 children
     //    with the exact same name — almost certainly a data entry error.
     if ((memberData.parentIds?.length ?? 0) > 0) {
+      // GAP-3: reject parentIds pointing to unknown/soft-deleted nodes
+      const unknownParents = (memberData.parentIds ?? []).filter(
+        pid => !members.some(m => m.id === pid)
+      )
+      if (unknownParents.length > 0) {
+        throw new Error(
+          'Cannot add member: one or more selected parents no longer exist in the family tree. Please refresh and try again.'
+        )
+      }
       for (const pid of memberData.parentIds!) {
         const siblings = members.filter(m => m.parentIds.includes(pid))
         const dupSibling = siblings.find(s =>
@@ -359,6 +368,19 @@ export function useMembers(familyId: string | null) {
     if ('parentIds' in updates) {
       if ((updates.parentIds?.length ?? 0) > 2) {
         throw new Error('A person cannot have more than 2 biological parents.')
+      }
+      // GAP-3: reject parentIds that reference soft-deleted or unknown nodes.
+      // A dangling parent reference would create an invisible graph hole —
+      // the child appears parentless in the tree even though parent_ids is set.
+      if (updates.parentIds && updates.parentIds.length > 0) {
+        const unknownParents = updates.parentIds.filter(
+          pid => !members.some(m => m.id === pid)
+        )
+        if (unknownParents.length > 0) {
+          throw new Error(
+            `Cannot set parent: one or more selected parents no longer exist in the family tree. Please refresh and try again.`
+          )
+        }
       }
       patch.parent_ids = updates.parentIds
       // MED-05: auto-recalculate generation when parentIds changes.

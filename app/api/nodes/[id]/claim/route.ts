@@ -140,6 +140,9 @@ export async function POST(
     if (!submittedName?.trim()) {
       return NextResponse.json({ error: 'MISSING_NAME', message: 'A name is required to claim this profile.' }, { status: 400 })
     }
+    // skipFamilyLink (Option B) means the user explicitly chose to switch families
+    // without creating a family link — treat it as a confirmed cross-family claim.
+    const effectiveConfirmCrossFamily = !!(confirmCrossFamily || skipFamilyLink)
     // Bounds-check to prevent O(m*n) Levenshtein DoS
     if (submittedName.length > 200) {
       return NextResponse.json({ error: 'INVALID_NAME', message: 'The name provided is too long.' }, { status: 400 })
@@ -341,7 +344,7 @@ export async function POST(
     // claimed node in their current family (e.g. they accidentally created a tree
     // but never claimed a profile in it).
     const isCrossFamily = !!(callerFamilyId && callerFamilyId !== (node as any).family_id)
-    if (isCrossFamily && !confirmCrossFamily) {
+    if (isCrossFamily && !effectiveConfirmCrossFamily) {
       const targetFamilyId = (node as any).family_id as string
 
       // Peek: does this user already have an active PRIMARY claimed node in their current family?
@@ -445,6 +448,19 @@ export async function POST(
       if (isStale) {
         // Auto-heal: clear the stale member_id so the claim can proceed.
         await admin.from('profiles').update({ member_id: null } as any).eq('id', user.id)
+      } else if (skipFamilyLink) {
+        // Option B: user explicitly chose to switch families.
+        // Unclaim the old node so the family admin can see it became available.
+        await admin.from('family_members').update({
+          is_claimed: false, claim_status: 'unclaimed',
+          claimed_by_user_id: null, claimed_at: null,
+        } as any).eq('id', profileMemberId).eq('claimed_by_user_id', user.id)
+        await admin.from('profiles').update({ member_id: null } as any).eq('id', user.id)
+        await admin.from('claim_audit_log').insert({
+          node_id: profileMemberId, family_id: callerFamilyId,
+          actor_id: user.id, action: 'claim_revoked',
+          metadata: { reason: 'user_switched_family', newNodeId: nodeId },
+        } as any)
       } else {
         return NextResponse.json(
           {
@@ -475,6 +491,9 @@ export async function POST(
         (staleLinkedNode as any).claimed_by_user_id !== user.id
       if (isStale) {
         // Auto-heal: remove the stale link so the claim can proceed.
+        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
+      } else if (skipFamilyLink) {
+        // Option B: user is consciously switching families — remove the old link.
         await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
       } else {
         // ── Two-tree connection: SUGGEST_FAMILY_LINK ─────────────────────────
@@ -870,11 +889,30 @@ export async function POST(
         .eq('node_id', nodeId)
     }
 
+    // ── Integrity check: is the claimed node an orphan? ─────────────────────
+    // An orphan is a node with no parent, spouse, or child connections.
+    // We check this after the claim so we can surface a prompt in the UI
+    // (add a relative) without blocking the claim itself.
+    const claimedNode = node as any
+    const parentIds: string[] = claimedNode.parent_ids ?? []
+    const spouseIds: string[] = claimedNode.spouse_ids ?? []
+
+    let isOrphan = parentIds.length === 0 && spouseIds.length === 0
+    if (isOrphan) {
+      // Check if any other member lists this node as a parent (i.e. has children)
+      const { count: childCount } = await admin
+        .from('family_members')
+        .select('*', { count: 'exact', head: true })
+        .contains('parent_ids', [nodeId])
+      isOrphan = (childCount ?? 0) === 0
+    }
+
     return NextResponse.json({
       status: newStatus,
       confidenceScore: score,
       requiresReview: false,
       claimRequestId: (upsertedReq as any)?.id ?? null,
+      isOrphan,
       message: 'Profile successfully claimed!',
     })
   } catch (err: unknown) {

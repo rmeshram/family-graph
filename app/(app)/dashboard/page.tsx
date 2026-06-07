@@ -74,9 +74,8 @@ import { createClient } from '@/lib/supabase/client'
 function TreeNodeSkel({ w, highlight = false, delay = 0 }: { w: number; highlight?: boolean; delay?: number }) {
   return (
     <div
-      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${
-        highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
-      }`}
+      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
+        }`}
       style={{ width: w + 16 }}
     >
       {/* shimmer sweep */}
@@ -300,7 +299,7 @@ function ListView({ members, onSelect, selectedId }: {
   const genLabels: Record<number, string> = { 0: 'Great Grandparents', 1: 'Grandparents', 2: 'Parents & Uncles/Aunts', 3: 'You & Cousins' }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="absolute inset-0 flex flex-col">
       <div className="p-3 border-b border-border/50">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -562,14 +561,14 @@ export default function FamilyGraphApp() {
     newMemberAlert,
     clearNewMemberAlert,
     sendLinkRequest,
+    refresh: refreshLinkedFamilies,
   } = useLinkedFamilies(isDemoMode ? null : familyId)
 
   const [maxDegree, setMaxDegree] = useState(10)
+  // Show linked/extended family members by default so users can immediately see
+  // the merged tree after connecting families. The 'Extended' button toggles this.
   const [showExtended, setShowExtended] = useState(true)
   const [isLinkFamilyOpen, setIsLinkFamilyOpen] = useState(false)
-  useEffect(() => {
-    if (window.innerWidth < 768) setShowExtended(false)
-  }, [])
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
 
   // After a phone-based claim, /dashboard?claimed=NODE_ID focuses the claimed node.
@@ -929,15 +928,29 @@ export default function FamilyGraphApp() {
     const skipped = new Set(profile?.wizard_skipped ?? [])
     const doneOrSkipped = (id: string, dataPresent: boolean) => dataPresent || skipped.has(`mission_${id}`)
     const byId = new Map(members.map(m => [m.id, m]))
+
+    // parentIds may be empty when members were added via relationship field only.
+    // Fall back to relationship-label lookup so progress matches what's in the tree.
     const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
     const father = parents.find(p => p.gender === 'male')
+      ?? members.find(m => m.id !== selfMember.id && m.gender === 'male' && (m.relationship === 'father' || m.relationship === 'dad'))
     const mother = parents.find(p => p.gender === 'female')
+      ?? members.find(m => m.id !== selfMember.id && m.gender === 'female' && (m.relationship === 'mother' || m.relationship === 'mom'))
+
+    const effectiveParentIds = [
+      ...selfMember.parentIds,
+      ...(father && !selfMember.parentIds.includes(father.id) ? [father.id] : []),
+      ...(mother && !selfMember.parentIds.includes(mother.id) ? [mother.id] : []),
+    ]
+
     const hasSpouse = (selfMember.spouseIds ?? []).some(sid => byId.has(sid))
+      || members.some(m => m.id !== selfMember.id && (m.relationship === 'spouse' || m.relationship === 'wife' || m.relationship === 'husband' || m.relationship === 'partner'))
     const hasChild = members.some(m => m.parentIds.includes(selfMember.id))
+      || members.some(m => m.relationship === 'son' || m.relationship === 'daughter' || m.relationship === 'child')
     const hasSibling = members.some(
       m => m.id !== selfMember.id && m.parentIds.length > 0 &&
-        m.parentIds.some(pid => selfMember.parentIds.includes(pid))
-    )
+        m.parentIds.some(pid => effectiveParentIds.includes(pid))
+    ) || members.some(m => m.id !== selfMember.id && (m.relationship === 'brother' || m.relationship === 'sister' || m.relationship === 'sibling'))
     const fatherParents = father ? father.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[] : []
     const checks = [
       true, // add self — always done
@@ -945,8 +958,10 @@ export default function FamilyGraphApp() {
       doneOrSkipped('add_sibling', hasSibling),
       doneOrSkipped('add_spouse', hasSpouse),
       doneOrSkipped('add_child', hasChild),
-      doneOrSkipped('add_paternal_gf', fatherParents.some(p => p.gender === 'male')),
-      doneOrSkipped('add_paternal_gm', fatherParents.some(p => p.gender === 'female')),
+      doneOrSkipped('add_paternal_gf', fatherParents.some(p => p.gender === 'male')
+        || members.some(m => m.gender === 'male' && (m.relationship === 'paternal-grandfather' || m.relationship === 'grandfather'))),
+      doneOrSkipped('add_paternal_gm', fatherParents.some(p => p.gender === 'female')
+        || members.some(m => m.gender === 'female' && (m.relationship === 'paternal-grandmother' || m.relationship === 'grandmother'))),
       checklistHasStories,
       checklistHasOtherClaims,
     ]
@@ -2679,13 +2694,22 @@ export default function FamilyGraphApp() {
         open={isClaimDialogOpen}
         onOpenChange={setIsClaimDialogOpen}
         onClaim={async (memberId, _userId, opts) => {
-          await claimMember(memberId, _userId, opts)
-          toast({ title: 'Profile claimed!', description: 'Your account is now linked to this node.' })
+          const result = await claimMember(memberId, _userId, opts)
+          if (result?.isOrphan) {
+            toast({
+              title: 'Profile claimed! 🎉',
+              description: "You're not connected to anyone yet — add a parent, spouse, or sibling to link your node.",
+            })
+          } else {
+            toast({ title: 'Profile claimed!', description: 'Your account is now linked to this node.' })
+          }
           refetchMembers()
+          refreshLinkedFamilies()
         }}
         onSetVisibility={async (memberId, visibility) => {
           await setVisibility(memberId, visibility)
         }}
+        onFamilyConnected={refreshLinkedFamilies}
       />
 
       {/* Relationship-first onboarding — for unclaimed general-invite users */}
@@ -2720,6 +2744,17 @@ export default function FamilyGraphApp() {
         onOpenChange={(open) => { if (!open) setInviteToClaimTarget(null) }}
         familyId={familyId ?? null}
         userId={user?.id ?? null}
+        relationship={inviteToClaimTarget && selfMember ? (() => {
+          const m = inviteToClaimTarget
+          const s = selfMember
+          if (s.parentIds.includes(m.id)) return m.gender === 'male' ? 'Father' : m.gender === 'female' ? 'Mother' : 'Parent'
+          if (m.parentIds.includes(s.id)) return m.gender === 'male' ? 'Son' : m.gender === 'female' ? 'Daughter' : 'Child'
+          if ((s.spouseIds ?? []).includes(m.id)) return m.gender === 'male' ? 'Husband' : m.gender === 'female' ? 'Wife' : 'Spouse'
+          if (s.parentIds.length > 0 && m.parentIds.some(pid => s.parentIds.includes(pid)))
+            return m.gender === 'male' ? 'Brother' : m.gender === 'female' ? 'Sister' : 'Sibling'
+          return undefined
+        })() : undefined}
+        familyName={(profile as any)?.family_name ?? undefined}
       />
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>

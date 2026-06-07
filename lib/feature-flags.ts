@@ -11,7 +11,7 @@ export const FEATURE_FLAGS = {
   /** Migration map page — read-only, no real data wiring. Disabled until migration data is properly wired. */
   enableMigrationMap: false,
   /** Family Poster generator — not yet production-ready */
-  enableFamilyPoster: false,
+  enableFamilyPoster: true,
   /** Kulgatha PDF export — not yet production-ready */
   enableKulgathaPDF: false,
   /** Live Activity widget on the graph canvas. Off by default for MVP — noise > signal until graph has scale. */

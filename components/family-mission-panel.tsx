@@ -12,7 +12,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users } from 'lucide-react'
+import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users, TrendingUp, Clock, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
@@ -69,6 +69,23 @@ function genderColor(gender?: string) {
   return 'hsl(160 45% 52%)'
 }
 
+/**
+ * isEffectivelyClaimed — true if a member has joined the family app,
+ * regardless of which column was written by which code path.
+ *
+ * Defends against the legacy join-create inconsistency (ISSUE-03) where
+ * claimed_by_user_id was set but is_claimed was left false, causing a real
+ * member (e.g. "James Jackson") to appear as "People Waiting to Join".
+ *
+ * Checks all three signals:
+ *   • is_claimed === true          (canonical state-machine flag)
+ *   • claimed_by_user_id is set    (legacy join-create path)
+ *   • claim_status === 'claimed'   (new claim flow)
+ */
+function isEffectivelyClaimed(m: FamilyMember): boolean {
+  return m.isClaimed === true || !!m.claimedByUserId || m.claimStatus === 'claimed'
+}
+
 function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: FamilyMember[]): string {
   if (self.parentIds.includes(member.id))
     return member.gender === 'male' ? 'Father' : member.gender === 'female' ? 'Mother' : 'Parent'
@@ -84,6 +101,42 @@ function inferRelLabel(member: FamilyMember, self: FamilyMember, allMembers: Fam
       return member.gender === 'male' ? 'Grandfather' : member.gender === 'female' ? 'Grandmother' : 'Grandparent'
   }
   return 'Family member'
+}
+
+// ─── Tree Completeness ────────────────────────────────────────────────────────
+
+interface TreeCompleteness {
+  /** 0-100 percentage of members who have claimed their profile */
+  score: number
+  joinedCount: number
+  totalCount: number
+  waitingCount: number
+}
+
+/**
+ * computeTreeCompleteness — measures how many living members have claimed
+ * their profile (i.e. joined the app).
+ *
+ * Deceased members are excluded from the denominator: they are part of the
+ * tree as historical records but cannot join the app, so they should not
+ * make the participation score look artificially low.
+ *
+ * score = joinedCount / livingCount × 100
+ * waitingCount = living members who are added but not yet claimed
+ */
+function computeTreeCompleteness(
+  selfMember: FamilyMember | null,
+  members: FamilyMember[],
+): TreeCompleteness {
+  const livingMembers = members.filter(m => m.isAlive !== false)
+  const totalCount = livingMembers.length
+  if (totalCount === 0) return { score: 0, joinedCount: 0, totalCount: 0, waitingCount: 0 }
+  const joinedCount = livingMembers.filter(isEffectivelyClaimed).length
+  const waitingCount = livingMembers.filter(
+    m => !isEffectivelyClaimed(m) && m.id !== selfMember?.id,
+  ).length
+  const score = Math.round((joinedCount / totalCount) * 100)
+  return { score, joinedCount, totalCount, waitingCount }
 }
 
 // ─── Mission steps builder ────────────────────────────────────────────────────
@@ -107,17 +160,39 @@ function buildMissionSteps(
 
   const skipped = new Set(wizardSkipped)
   const byId = new Map(members.map(m => [m.id, m]))
+
+  // parentIds may be empty if members were added with `relationship` field only
+  // (no bidirectional parent_ids link written). Fall back to relationship-field lookup
+  // so the mission reflects the real tree state.
   const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
-  const father = parents.find(p => p.gender === 'male')
-  const mother = parents.find(p => p.gender === 'female')
+  let father = parents.find(p => p.gender === 'male')
+    ?? members.find(m => m.id !== selfMember.id && m.gender === 'male' && (m.relationship === 'father' || m.relationship === 'dad'))
+  let mother = parents.find(p => p.gender === 'female')
+    ?? members.find(m => m.id !== selfMember.id && m.gender === 'female' && (m.relationship === 'mother' || m.relationship === 'mom'))
+  // If still not found by relationship label, check if any member lists selfMember as a child
+  if (!father) father = members.find(m => m.gender === 'male' && (m.parentIds ?? []).length === 0 && members.some(c => c.id === selfMember.id && c.parentIds.includes(m.id)))
+  if (!mother) mother = members.find(m => m.gender === 'female' && (m.parentIds ?? []).length === 0 && members.some(c => c.id === selfMember.id && c.parentIds.includes(m.id)))
+
+  // Merge parentIds from DB + inferred parent IDs for grandparent lookups
+  const effectiveParentIds = [
+    ...selfMember.parentIds,
+    ...(father && !selfMember.parentIds.includes(father.id) ? [father.id] : []),
+    ...(mother && !selfMember.parentIds.includes(mother.id) ? [mother.id] : []),
+  ]
+
   const hasSpouse = (selfMember.spouseIds ?? []).some(sid => byId.has(sid))
+    || members.some(m => m.id !== selfMember.id && (m.relationship === 'spouse' || m.relationship === 'wife' || m.relationship === 'husband' || m.relationship === 'partner'))
   const hasChild = members.some(m => m.parentIds.includes(selfMember.id))
+    || members.some(m => m.relationship === 'son' || m.relationship === 'daughter' || m.relationship === 'child')
   const hasSibling = members.some(
-    m => m.id !== selfMember.id && m.parentIds.length > 0 && m.parentIds.some(pid => selfMember.parentIds.includes(pid))
-  )
+    m => m.id !== selfMember.id && m.parentIds.length > 0 && m.parentIds.some(pid => effectiveParentIds.includes(pid))
+  ) || members.some(m => m.id !== selfMember.id && (m.relationship === 'brother' || m.relationship === 'sister' || m.relationship === 'sibling'))
+
   const fatherParents = father ? father.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[] : []
   const hasPatGrandFather = fatherParents.some(p => p.gender === 'male')
+    || members.some(m => m.gender === 'male' && (m.relationship === 'paternal-grandfather' || m.relationship === 'grandfather'))
   const hasPatGrandMother = fatherParents.some(p => p.gender === 'female')
+    || members.some(m => m.gender === 'female' && (m.relationship === 'paternal-grandmother' || m.relationship === 'grandmother'))
 
   // A step is "done" if the data is present OR the user explicitly said they don't have it.
   const done = (id: string, dataPresent: boolean) => dataPresent || skipped.has(`mission_${id}`)
@@ -131,7 +206,7 @@ function buildMissionSteps(
     { id: 'add_child', label: 'Add a child', emoji: '\u{1F476}', done: done('add_child', hasChild), skippable: !hasChild, cta: 'Add', onAction: () => onQuickAddMember('child', selfMember.id) },
     { id: 'add_paternal_gf', label: "Father's father", emoji: '\u{1F474}', done: done('add_paternal_gf', hasPatGrandFather), skippable: !hasPatGrandFather, cta: 'Add', onAction: father ? () => onQuickAddMember('father', father.id) : () => onQuickAddMember('father', selfMember.id) },
     { id: 'add_paternal_gm', label: "Father's mother", emoji: '\u{1F475}', done: done('add_paternal_gm', hasPatGrandMother), skippable: !hasPatGrandMother, cta: 'Add', onAction: father ? () => onQuickAddMember('mother', father.id) : () => onQuickAddMember('mother', selfMember.id) },
-    { id: 'add_story', label: 'Add a memory or story', emoji: '\u{1F4D6}', done: hasStories, cta: 'Add', onAction: onAddStory },
+    // { id: 'add_story', label: 'Add a memory or story', emoji: '\u{1F4D6}', done: hasStories, cta: 'Add', onAction: onAddStory },
     { id: 'family_claimed', label: 'Another member joined', emoji: '\u{1F389}', done: hasOtherClaims },
   ]
 }
@@ -158,7 +233,7 @@ export function FamilyMissionPanel({
   const [waitingOpen, setWaitingOpen] = useState(true)
 
   const hasOtherClaims = members.some(
-    m => m.isClaimed && m.claimedByUserId && m.claimedByUserId !== selfMember?.id
+    m => isEffectivelyClaimed(m) && !!m.claimedByUserId && m.claimedByUserId !== selfMember?.id
   )
 
   const steps = useMemo(
@@ -170,10 +245,17 @@ export function FamilyMissionPanel({
   const totalCount = steps.length
   const progressPct = Math.round((completedCount / totalCount) * 100)
 
+  const completeness = useMemo(
+    () => computeTreeCompleteness(selfMember, members),
+    [selfMember, members],
+  )
+
   const waitingPeople = useMemo<WaitingPerson[]>(() => {
     if (!selfMember) return []
     return members
-      .filter(m => !m.isClaimed && m.id !== selfMember.id)
+      // Exclude deceased — they cannot join the app; invite buttons on
+      // deceased members are confusing and technically meaningless.
+      .filter(m => !isEffectivelyClaimed(m) && m.id !== selfMember.id && m.isAlive !== false)
       .slice(0, 8)
       .map(m => ({ member: m, relationship: inferRelLabel(m, selfMember, members) }))
   }, [members, selfMember])
@@ -292,6 +374,31 @@ export function FamilyMissionPanel({
         )}
       </div>
 
+      {/* ── Tree Completeness Score ─────────────────────────────────────── */}
+      {completeness.totalCount > 1 && (
+        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-primary" />
+              <span className="text-[11px] font-semibold text-foreground">Tree Participation</span>
+            </div>
+            <span className="text-[13px] font-bold text-primary tabular-nums">{completeness.score}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-muted/60 overflow-hidden mb-1.5">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-700"
+              style={{ width: `${completeness.score}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-tight">
+            {completeness.joinedCount} of {completeness.totalCount} members have joined
+            {completeness.waitingCount > 0 && (
+              <> · <span className="text-amber-400 font-medium">{completeness.waitingCount} waiting for invite</span></>
+            )}
+          </p>
+        </div>
+      )}
+
       {/* ── People Waiting to Join ──────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0">
         <button type="button" onClick={() => setWaitingOpen(v => !v)}
@@ -322,26 +429,41 @@ export function FamilyMissionPanel({
               </div>
             ) : (
               <ul className="px-3 py-2 space-y-1">
-                {waitingPeople.map(({ member, relationship }) => (
-                  <li key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/30 transition-colors">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} />}
-                      <AvatarFallback className="text-[11px] font-bold text-white"
-                        style={{ background: genderColor(member.gender) }}>
-                        {getInitials(member.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{relationship}</p>
-                    </div>
-                    <Button size="sm" onClick={() => onInviteMember(member)}
-                      className="h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold bg-emerald-600 hover:bg-emerald-500 text-white border-0">
-                      <MessageCircle className="h-3 w-3" />
-                      Invite
-                    </Button>
-                  </li>
-                ))}
+                {waitingPeople.map(({ member, relationship }) => {
+                  const inviteSent = member.claimStatus === 'invite_sent'
+                  return (
+                    <li key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/30 transition-colors">
+                      <Avatar className="h-8 w-8 shrink-0">
+                        {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} />}
+                        <AvatarFallback className="text-[11px] font-bold text-white"
+                          style={{ background: genderColor(member.gender) }}>
+                          {getInitials(member.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-[10px] text-muted-foreground">{relationship}</p>
+                          {inviteSent && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-full px-1.5 py-0.5 leading-none">
+                              <Clock className="h-2 w-2" />
+                              Invite sent
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={() => onInviteMember(member)}
+                        className={cn(
+                          "h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold border-0",
+                          inviteSent
+                            ? "bg-sky-600/80 hover:bg-sky-500 text-white"
+                            : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                        )}>
+                        {inviteSent ? <><Send className="h-3 w-3" />Resend</> : <><MessageCircle className="h-3 w-3" />Invite</>}
+                      </Button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
 

@@ -252,7 +252,11 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       })
     }
 
-    //  Affiliated clusters: anchor to junction node, place to the right 
+    //  Affiliated clusters: stack all to the RIGHT of the core tree so
+    //  multiple merged families never overlap each other.
+    //  Each cluster's ideal y is its junction node's y; we then enforce a
+    //  minimum vertical gap so clusters with the same (or adjacent) junction
+    //  nodes don't collide.
     const affiliatedMembers = visibleMembers.filter(m => m.networkGroup === 'affiliated')
     const clusterMap = new Map<string, typeof affiliatedMembers>()
     affiliatedMembers.forEach(m => {
@@ -261,38 +265,62 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       clusterMap.get(m.affiliatedFamilyId)!.push(m)
     })
 
-    const clusterGap = 340 // horizontal offset from junction node
+    const affNodeWidth = 120
+    const affHGap = 32
+    const coreMaxX = positions.length > 0 ? Math.max(...positions.map(p => p.x)) : dimensions.width / 2
+    // Place all affiliated clusters to the right of the core tree with a fixed margin
+    const clusterAnchorX = coreMaxX + 180
 
+    // Pre-compute each cluster's height so we can assign non-overlapping y positions.
+    type ClusterSpec = {
+      clusterId: string
+      clusterMembers: typeof affiliatedMembers
+      junctionPos: { x: number; y: number } | null
+      idealY: number   // preferred y = junction node y
+      height: number   // pixel height of this cluster's rendered subtree
+    }
+    const specs: ClusterSpec[] = []
     clusterMap.forEach((clusterMembers, clusterId) => {
-      if (collapsedClusters.has(clusterId)) return // collapsed: don't add positions
-
-      // Find junction position
+      if (collapsedClusters.has(clusterId)) return
       const junctionId = clusterMembers[0]?.affiliatedJunctionId
-      const junctionPos = junctionId ? positions.find(p => p.id === junctionId) : null
-      const anchorX = junctionPos ? junctionPos.x + clusterGap : dimensions.width - 200
-      const anchorY = junctionPos ? junctionPos.y : 200
+      const junctionPos = junctionId ? positions.find(p => p.id === junctionId) ?? null : null
+      // Compute generation span → pixel height
+      const gens = clusterMembers.map(m => m.generation ?? 3)
+      const minGen = Math.min(...gens)
+      const maxGen = Math.max(...gens)
+      const genSpan = maxGen - minGen   // 0 if all same generation
+      const height = genSpan * (nodeHeight + verticalGap) + nodeHeight + 80
+      specs.push({ clusterId, clusterMembers, junctionPos, idealY: junctionPos?.y ?? 200, height })
+    })
 
-      // Group cluster members by generation
-      const clusterGens = new Map<number, typeof clusterMembers>()
-      clusterMembers.forEach(m => {
+    // Sort by ideal y so clusters are stacked in the same top-to-bottom order
+    // as their junction nodes appear in the core tree.
+    specs.sort((a, b) => a.idealY - b.idealY)
+
+    // Assign non-overlapping anchor y positions.
+    // Each cluster's top starts at max(idealY, prevBottom + gap).
+    let nextAvailableY = 60
+    const CLUSTER_VGAP = 100
+
+    specs.forEach(spec => {
+      const anchorY = Math.max(spec.idealY, nextAvailableY)
+      nextAvailableY = anchorY + spec.height + CLUSTER_VGAP
+
+      // Group by generation and lay out within this cluster
+      const clusterGens = new Map<number, typeof affiliatedMembers>()
+      spec.clusterMembers.forEach(m => {
         const gen = m.generation
         if (!clusterGens.has(gen)) clusterGens.set(gen, [])
         clusterGens.get(gen)!.push(m)
       })
-
-      const affNodeWidth = 120
-      const affHGap = 32
-      let yOffset = 0
-
-      // Sort gens ascending
       const sortedGens = [...clusterGens.keys()].sort((a, b) => a - b)
       const firstGen = sortedGens[0] ?? 0
 
       sortedGens.forEach(gen => {
         const genMembers = clusterGens.get(gen)!
         const totalWidth = genMembers.length * affNodeWidth + (genMembers.length - 1) * affHGap
-        const startX = anchorX - totalWidth / 2
-        yOffset = (gen - firstGen) * (nodeHeight + verticalGap)
+        const startX = clusterAnchorX - totalWidth / 2
+        const yOffset = (gen - firstGen) * (nodeHeight + verticalGap)
         genMembers.forEach((member, index) => {
           positions.push({
             id: member.id,
@@ -306,7 +334,16 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     return positions
   }, [members, dimensions.width, collapsedIds, collapsedClusters])
 
-  //  Affiliated cluster metadata (bounds, junction pos) 
+  //  Color palette rotated across affiliated family clusters (teal, violet, rose, amber, green)
+  const AFFILIATED_PALETTE = [
+    { stroke: '#14B8A6', fill: 'rgba(20,184,166,0.07)', text: 'rgba(20,184,166,0.80)', badge: 'rgba(20,184,166,0.18)' },
+    { stroke: '#8B5CF6', fill: 'rgba(139,92,246,0.07)', text: 'rgba(167,139,250,0.80)', badge: 'rgba(139,92,246,0.18)' },
+    { stroke: '#F43F5E', fill: 'rgba(244,63,94,0.07)',  text: 'rgba(251,113,133,0.80)', badge: 'rgba(244,63,94,0.18)'  },
+    { stroke: '#F59E0B', fill: 'rgba(245,158,11,0.07)', text: 'rgba(252,211,77,0.80)',  badge: 'rgba(245,158,11,0.18)' },
+    { stroke: '#22C55E', fill: 'rgba(34,197,94,0.07)',  text: 'rgba(134,239,172,0.80)', badge: 'rgba(34,197,94,0.18)'  },
+  ]
+
+  //  Affiliated cluster metadata (bounds, junction pos, per-family color)
   interface ClusterMeta {
     id: string
     name: string
@@ -314,6 +351,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     memberCount: number  // total (including collapsed)
     bounds: { x: number; y: number; w: number; h: number }
     nodeIds: string[]
+    color: typeof AFFILIATED_PALETTE[number]
   }
 
   const affiliatedClusters = useMemo<ClusterMeta[]>(() => {
@@ -325,12 +363,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     })
 
     const posMap = new Map(nodePositions.map(p => [p.id, p]))
+    // Sort cluster IDs consistently by name so color assignment is stable across renders
+    const sortedEntries = [...clusterMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))
 
-    return [...clusterMap.entries()].map(([id, meta]) => {
+    return sortedEntries.map(([id, meta], idx) => {
+      const color = AFFILIATED_PALETTE[idx % AFFILIATED_PALETTE.length]
       const junctionPos = meta.junctionId ? posMap.get(meta.junctionId) ?? null : null
       const clusterPositions = meta.ids.map(nid => posMap.get(nid)).filter(Boolean) as NodePosition[]
       if (clusterPositions.length === 0) {
-        return { id, name: meta.name, junctionPos, memberCount: meta.ids.length, bounds: { x: 0, y: 0, w: 0, h: 0 }, nodeIds: meta.ids }
+        return { id, name: meta.name, junctionPos, memberCount: meta.ids.length, bounds: { x: 0, y: 0, w: 0, h: 0 }, nodeIds: meta.ids, color }
       }
       const xs = clusterPositions.map(p => p.x)
       const ys = clusterPositions.map(p => p.y)
@@ -340,6 +381,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
         name: meta.name,
         junctionPos,
         memberCount: meta.ids.length,
+        color,
         nodeIds: meta.ids,
         bounds: {
           x: Math.min(...xs) - pad,
@@ -350,6 +392,16 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       }
     })
   }, [members, nodePositions])
+
+  // O(1) lookup: memberId → that cluster's color entry.
+  // Built from affiliatedClusters so color assignments are stable across renders.
+  const memberClusterColorMap = useMemo(() => {
+    const map = new Map<string, typeof AFFILIATED_PALETTE[number]>()
+    affiliatedClusters.forEach(cluster => {
+      cluster.nodeIds.forEach(id => map.set(id, cluster.color))
+    })
+    return map
+  }, [affiliatedClusters])
 
   const connections = useMemo(() => {
     const lines: { from: NodePosition; to: NodePosition; type: 'parent' | 'spouse'; fromId: string; toId: string }[] = []
@@ -742,6 +794,24 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
     animateTo(newX, newY, newZoom)
   }, [nodePositions, dimensions, animateTo])
 
+  // selfCenteredView: initial view centered on the logged-in user's node at a
+  // readable zoom (~0.8x). Falls back to defaultView when self is not in the tree.
+  const selfCenteredView = useCallback(() => {
+    if (selfMemberId) {
+      const selfPos = nodePositions.find(p => p.id === selfMemberId)
+      if (selfPos) {
+        // Use a comfortable zoom: full cards readable, some context visible around self.
+        // On small screens reduce zoom slightly so parents are also visible.
+        const targetZoom = Math.min(0.82, dimensions.width / 900)
+        const cx = dimensions.width / 2
+        const cy = dimensions.height / 2
+        animateTo(cx - selfPos.x * targetZoom, cy - selfPos.y * targetZoom, targetZoom)
+        return
+      }
+    }
+    defaultView()
+  }, [selfMemberId, nodePositions, dimensions, animateTo, defaultView])
+
   // Focus on a specific node — smoothly center it at a readable zoom
   const focusNode = useCallback((nodeId: string) => {
     const pos = nodePositions.find(p => p.id === nodeId)
@@ -768,9 +838,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
       hasAutoFit.current = true
       prevMemberCount.current = nodePositions.length
       prevDimensionsRef.current = { width: dimensions.width, height: dimensions.height }
-      if (dimensions.width > 0 && dimensions.height > 0) defaultView()
+      if (dimensions.width > 0 && dimensions.height > 0) selfCenteredView()
     }
-  }, [nodePositions, dimensions, defaultView])
+  }, [nodePositions, dimensions, selfCenteredView])
 
   // Ring: 4-second idle auto-dismiss
   useEffect(() => {
@@ -945,6 +1015,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
             if (collapsedClusters.has(cluster.id) || cluster.bounds.w < 10) return null
+            const { stroke, fill, text } = cluster.color
             return (
               <g key={`cluster-bg-${cluster.id}`}>
                 <rect
@@ -953,8 +1024,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   width={cluster.bounds.w}
                   height={cluster.bounds.h}
                   rx={24}
-                  fill="rgba(20,184,166,0.06)"
-                  stroke="rgba(20,184,166,0.28)"
+                  fill={fill}
+                  stroke={stroke}
+                  strokeOpacity={0.35}
                   strokeWidth={1.2}
                   strokeDasharray="8,5"
                 />
@@ -965,7 +1037,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   fontWeight={700}
                   textAnchor="middle"
                   letterSpacing={1.2}
-                  fill="rgba(20,184,166,0.75)"
+                  fill={text}
                   style={{ textTransform: 'uppercase' }}
                 >
                   {cluster.name}
@@ -979,7 +1051,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const offsetX = dimensions.width / 2
             const offsetY = dimensions.height / 2
             if (!cluster.junctionPos) return null
-            // Find the cluster member closest to the junction (leftmost)
+            // Find the cluster member closest to the junction (nearest x)
             const posMap = new Map(nodePositions.map(p => [p.id, p]))
             const clusterPositions = cluster.nodeIds.map(id => posMap.get(id)).filter(Boolean) as NodePosition[]
             if (clusterPositions.length === 0) return null
@@ -990,12 +1062,13 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const y2 = nearest.y + offsetY
             const mx = (x1 + x2) / 2
             const my = (y1 + y2) / 2
+            const { stroke } = cluster.color
 
             if (collapsedClusters.has(cluster.id)) {
               // Collapsed: just a short stub line + pill
               return (
                 <g key={`bridge-${cluster.id}`}>
-                  <line x1={x1} y1={y1} x2={x1 + 60} y2={y1} stroke="#14B8A6" strokeWidth={1.5} strokeDasharray="8,5" opacity={0.6} />
+                  <line x1={x1} y1={y1} x2={x1 + 60} y2={y1} stroke={stroke} strokeWidth={1.5} strokeDasharray="8,5" opacity={0.6} />
                 </g>
               )
             }
@@ -1003,17 +1076,17 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             return (
               <g key={`bridge-${cluster.id}`}>
                 {/* Glow halo */}
-                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#14B8A6" strokeWidth={10} opacity={0.06} />
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={10} opacity={0.06} />
                 {/* Main dashed bridge */}
                 <line x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke="#14B8A6" strokeWidth={1.5} strokeDasharray="10,6" opacity={0.65}
+                  stroke={stroke} strokeWidth={1.5} strokeDasharray="10,6" opacity={0.65}
                 />
                 {/* Diamond marker at midpoint */}
-                <rect x={mx - 5} y={my - 5} width={10} height={10} rx={2} fill="#14B8A6" opacity={0.75}
+                <rect x={mx - 5} y={my - 5} width={10} height={10} rx={2} fill={stroke} opacity={0.75}
                   transform={`rotate(45, ${mx}, ${my})`}
                 />
                 {/* Label */}
-                <text x={mx} y={my - 12} fontSize={8} textAnchor="middle" fill="rgba(20,184,166,0.6)" fontWeight={600}>in-law</text>
+                <text x={mx} y={my - 12} fontSize={8} textAnchor="middle" fill={cluster.color.text} fontWeight={600}>{cluster.name.length > 18 ? cluster.name.slice(0, 17) + '…' : cluster.name}</text>
               </g>
             )
           })}
@@ -1132,7 +1205,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
               const member = memberMap.get(pos.id)
               if (!member) return null
               const ng = member.networkGroup ?? 'core'
-              const fill = ng === 'affiliated' ? '#14B8A6' : ng === 'extended' ? '#8B5CF6' : '#F59E0B'
+              const fill = ng === 'affiliated'
+                ? (memberClusterColorMap.get(pos.id)?.stroke ?? '#14B8A6')
+                : ng === 'extended' ? '#8B5CF6' : '#F59E0B'
               const offsetX = dimensions.width / 2
               const offsetY = dimensions.height / 2
               return (
@@ -1160,6 +1235,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             const networkGroup = member.networkGroup ?? 'core'
             const isExtended = networkGroup === 'extended'
             const isAffiliated = networkGroup === 'affiliated'
+            // Per-cluster color — each merged family gets a distinct hue
+            const clusterColor = isAffiliated ? (memberClusterColorMap.get(member.id) ?? null) : null
             const nodeWidth = isAffiliated ? 120 : isExtended ? 130 : 150
             const staggerDelay = isExtended || isAffiliated
               ? `${(staggerMap.get(member.id) ?? 0) * 35}ms`
@@ -1219,7 +1296,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       borderStyle: isUnclaimed ? 'dashed' : 'solid',
                       borderColor: isSelected ? 'var(--tree-node-border-selected)'
                         : isUnclaimed ? 'rgba(148,163,184,0.40)'
-                          : isAffiliated ? 'rgba(20,184,166,0.30)'
+                          : clusterColor ? `${clusterColor.stroke}4d`
                             : isExtended ? 'rgba(139,92,246,0.30)'
                               : 'var(--tree-node-border)',
                     }}
@@ -1231,16 +1308,23 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     <div className="relative">
                       <Avatar className={cn('border-2 h-8 w-8',
                         isSelf ? 'border-amber-400/70'
-                          : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
-                      )}>
+                          : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
+                      )}
+                      style={clusterColor && !isSelected && !isSelf ? { borderColor: `${clusterColor.stroke}59` } : undefined}
+                      >
                         {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
-                        <AvatarFallback className={cn('text-[9px] font-semibold',
-                          isAnonymous ? 'bg-muted/60 text-muted-foreground'
-                            : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
-                              : isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25 text-teal-300'
+                        <AvatarFallback
+                          className={cn('text-[9px] font-semibold',
+                            isAnonymous ? 'bg-muted/60 text-muted-foreground'
+                              : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
                                 : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
-                                  : 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200'
-                        )}>{displayInitials}</AvatarFallback>
+                                  : !clusterColor ? 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200' : ''
+                          )}
+                          style={clusterColor && !isAnonymous && !isUnclaimed ? {
+                            background: `linear-gradient(135deg, ${clusterColor.stroke}40, ${clusterColor.stroke}26)`,
+                            color: clusterColor.text,
+                          } : undefined}
+                        >{displayInitials}</AvatarFallback>
                       </Avatar>
                       {/* YOU indicator — shown even in compact mode (#2 fix) */}
                       {isSelf && (
@@ -1294,8 +1378,8 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                         borderColor: isSelected ? 'var(--tree-node-border-selected)'
                           : isUnclaimed ? 'rgba(148,163,184,0.35)'
                             : isHovered
-                              ? (isAffiliated ? 'rgba(20,184,166,0.60)' : isExtended ? 'rgba(139,92,246,0.60)' : 'var(--tree-node-border-hover)')
-                              : (isAffiliated ? 'rgba(20,184,166,0.30)' : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
+                              ? (clusterColor ? `${clusterColor.stroke}99` : isExtended ? 'rgba(139,92,246,0.60)' : 'var(--tree-node-border-hover)')
+                              : (clusterColor ? `${clusterColor.stroke}4d` : isExtended ? 'rgba(139,92,246,0.30)' : 'var(--tree-node-border)'),
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -1340,7 +1424,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       <div style={{
                         height: 1,
                         width: '100%',
-                        background: isAffiliated ? 'rgba(20,184,166,0.12)' : isExtended ? 'rgba(139,92,246,0.12)' : 'rgba(100,116,139,0.14)',
+                        background: clusterColor ? `${clusterColor.stroke}1f` : isExtended ? 'rgba(139,92,246,0.12)' : 'rgba(100,116,139,0.14)',
                       }} />
 
                       {/* ── Card body: avatar + name + metadata ── */}
@@ -1355,13 +1439,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                                 : isUnclaimed
                                   ? 'border-slate-500/35'
                                   : isHovered
-                                    ? (isAffiliated
-                                      ? 'border-teal-400/50 ring-2 ring-teal-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                      : isExtended
+                                    ? (isExtended
                                         ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                        : 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]')
-                                    : (isAffiliated ? 'border-teal-600/35' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40')
+                                        : !clusterColor ? 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]' : '')
+                                    : (isExtended ? 'border-violet-600/35' : !clusterColor ? 'border-slate-600/40' : '')
                             )}
+                          style={clusterColor && !isSelected && !isUnclaimed ? {
+                            borderColor: isHovered ? `${clusterColor.stroke}cc` : `${clusterColor.stroke}59`,
+                            ...(isHovered ? { boxShadow: `0 0 0 2px ${clusterColor.stroke}26` } : {}),
+                          } : undefined}
                           >
                             {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
                             <AvatarFallback
@@ -1372,14 +1458,19 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                                   : isSelected
                                     ? 'bg-gradient-to-br from-amber-600/30 to-indigo-600/30'
                                     : isHovered
-                                      ? (isAffiliated ? 'bg-gradient-to-br from-teal-600/25 to-emerald-600/25'
-                                        : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
-                                          : 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25')
-                                      : (isAffiliated ? 'bg-gradient-to-br from-teal-600/15 to-emerald-600/15'
-                                        : isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
-                                          : 'bg-gradient-to-br from-slate-400/30 to-slate-500/30')
+                                      ? (isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25'
+                                        : !clusterColor ? 'bg-gradient-to-br from-indigo-600/25 to-violet-600/25' : '')
+                                      : (isExtended ? 'bg-gradient-to-br from-violet-600/15 to-slate-500/20'
+                                        : !clusterColor ? 'bg-gradient-to-br from-slate-400/30 to-slate-500/30' : '')
                               )}
-                              style={{ color: isAnonymous ? undefined : 'var(--tree-node-text)' }}
+                              style={{
+                                color: isAnonymous ? undefined : (clusterColor && !isSelected ? clusterColor.text : 'var(--tree-node-text)'),
+                                ...(clusterColor && !isAnonymous && !isSelected ? {
+                                  background: isHovered
+                                    ? `linear-gradient(135deg, ${clusterColor.stroke}40, ${clusterColor.stroke}26)`
+                                    : `linear-gradient(135deg, ${clusterColor.stroke}26, ${clusterColor.stroke}18)`,
+                                } : {}),
+                              }}
                             >
                               {displayInitials}
                             </AvatarFallback>
@@ -1550,12 +1641,12 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             >
               {/* Pulsing outer ring */}
               <div className="relative">
-                <div className="absolute inset-0 -m-1.5 rounded-2xl animate-pulse" style={{ background: 'rgba(20,184,166,0.12)', border: '1px solid rgba(20,184,166,0.3)' }} />
+                <div className="absolute inset-0 -m-1.5 rounded-2xl animate-pulse" style={{ background: `${cluster.color.badge}`, border: `1px solid ${cluster.color.stroke}4d` }} />
                 <div
                   className="relative flex items-center gap-2 rounded-2xl px-3 py-2 border backdrop-blur-md transition-all hover:scale-105"
                   style={{
                     background: 'rgba(15,23,42,0.85)',
-                    borderColor: 'rgba(20,184,166,0.45)',
+                    borderColor: `${cluster.color.stroke}72`,
                   }}
                 >
                   {/* Preview avatars */}
@@ -1565,9 +1656,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                         key={m.id}
                         className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[9px] font-bold"
                         style={{
-                          borderColor: 'rgba(20,184,166,0.5)',
-                          background: 'rgba(20,184,166,0.2)',
-                          color: 'rgba(20,184,166,0.95)',
+                          borderColor: `${cluster.color.stroke}80`,
+                          background: `${cluster.color.badge}`,
+                          color: cluster.color.text,
                         }}
                       >
                         {m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
@@ -1577,9 +1668,10 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                       <div
                         className="h-7 w-7 rounded-full border-2 flex items-center justify-center text-[8px] font-bold"
                         style={{
-                          borderColor: 'rgba(20,184,166,0.5)',
-                          background: 'rgba(20,184,166,0.15)',
-                          color: 'rgba(20,184,166,0.75)',
+                          borderColor: `${cluster.color.stroke}80`,
+                          background: `${cluster.color.badge}`,
+                          color: cluster.color.text,
+                          opacity: 0.75,
                         }}
                       >
                         +{cluster.memberCount - 3}
@@ -1588,15 +1680,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                   </div>
                   {/* Text */}
                   <div className="text-left">
-                    <p className="text-[11px] font-semibold leading-tight" style={{ color: 'rgba(20,184,166,0.95)' }}>
+                    <p className="text-[11px] font-semibold leading-tight" style={{ color: cluster.color.text }}>
                       {cluster.name}
                     </p>
-                    <p className="text-[9px] leading-tight" style={{ color: 'rgba(20,184,166,0.55)' }}>
+                    <p className="text-[9px] leading-tight" style={{ color: `${cluster.color.stroke}88` }}>
                       {cluster.memberCount} relatives · tap to explore
                     </p>
                   </div>
                   {/* Expand chevron */}
-                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(20,184,166,0.7)' }} />
+                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: cluster.color.text }} />
                 </div>
               </div>
             </div>
@@ -1613,9 +1705,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             style={{
               left: btnX,
               top: btnY,
-              background: 'rgba(20,184,166,0.10)',
-              borderColor: 'rgba(20,184,166,0.35)',
-              color: 'rgba(20,184,166,0.75)',
+              background: cluster.color.badge,
+              borderColor: `${cluster.color.stroke}59`,
+              color: cluster.color.text,
             }}
             title={`Collapse ${cluster.name}`}
             onClick={() => setCollapsedClusters(prev => new Set([...prev, cluster.id]))}
@@ -1626,7 +1718,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
         )
       })}
 
-      {/*  Legend  */}
+      {/*  Legend — core + extended + one entry per merged family  */}
       <div className="absolute bottom-[72px] left-4 z-[3] flex flex-col gap-1.5 rounded-xl px-3 py-2.5 backdrop-blur-md border border-border/30 text-[10px]"
         style={{ background: 'var(--surface-card)' }}
       >
@@ -1638,10 +1730,15 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
           <span className="h-2.5 w-2.5 rounded-full bg-violet-500/70 ring-1 ring-violet-500/30 flex-shrink-0" />
           <span className="text-muted-foreground">Extended Relatives</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-teal-400/80 ring-1 ring-teal-400/30 flex-shrink-0" />
-          <span className="text-muted-foreground">Affiliated Family</span>
-        </div>
+        {affiliatedClusters.map(cluster => (
+          <div key={cluster.id} className="flex items-center gap-2">
+            <span
+              className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+              style={{ background: cluster.color.stroke, opacity: 0.82 }}
+            />
+            <span className="text-muted-foreground truncate max-w-[120px]">{cluster.name}</span>
+          </div>
+        ))}
       </div>
 
       {/* ─── Minimap ───────────────────────────────────────────────────── */}
@@ -1685,7 +1782,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
             <svg width={mapW} height={mapH}>
               {nodePositions.map(pos => {
                 const m = memberMap.get(pos.id)
-                const fill = m?.networkGroup === 'affiliated' ? '#14B8A6' : m?.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
+                const fill = m?.networkGroup === 'affiliated'
+                  ? (memberClusterColorMap.get(pos.id)?.stroke ?? '#14B8A6')
+                  : m?.networkGroup === 'extended' ? '#8B5CF6' : '#F59E0B'
                 const r = m?.networkGroup === 'core' ? 3.5 : 2.5
                 return (
                   <circle key={pos.id} cx={toMx(pos.x)} cy={toMy(pos.y)} r={r}

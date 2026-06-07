@@ -6,6 +6,17 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Check, X, TreePine, ChevronDown, ChevronUp } from 'lucide-react'
 
+/**
+ * isEffectivelyClaimed — true when a member has joined the app, regardless of
+ * which column was set. Guards against the legacy join-create inconsistency
+ * (ISSUE-03) that set claimed_by_user_id without setting is_claimed=true,
+ * causing real members to appear as "invite pending" in the wizard.
+ */
+function isEffectivelyClaimed(m: FamilyMember | null | undefined): boolean {
+  if (!m) return false
+  return m.isClaimed === true || !!m.claimedByUserId || m.claimStatus === 'claimed'
+}
+
 export interface OnboardingChecklistProps {
   selfMember: FamilyMember | null
   members: FamilyMember[]
@@ -86,20 +97,38 @@ export function OnboardingChecklist({
     [members, selfMember, selfParentIds]
   )
 
-  // Resolve specific family members so step labels can use real names
-  const father = useMemo(() =>
-    selfParentIds.length > 0
+  // Resolve specific family members so step labels can use real names.
+  // Detection uses three layers (mirrors FamilyMissionPanel logic):
+  //   1. Structural: selfMember.parentIds → look up member by id
+  //   2. Relationship field: any member with relationship === 'father'/'dad' etc.
+  // Both layers are needed because parentIds may be empty when a parent was
+  // added with only the relationship field set (pre-bidirectional-link writes).
+  const father = useMemo(() => {
+    // Layer 1 — structural parentIds
+    const byParentId = selfParentIds.length > 0
       ? (members.find(m => selfParentIds.includes(m.id) && m.gender === 'male')
         ?? members.find(m => selfParentIds.includes(m.id)))
-      : undefined,
-    [members, selfParentIds]
-  )
-  const mother = useMemo(() =>
-    selfParentIds.length > 0
+      : undefined
+    if (byParentId) return byParentId
+    // Layer 2 — relationship field fallback
+    return members.find(
+      m => m.id !== selfMember?.id && m.gender === 'male' &&
+        (m.relationship === 'father' || m.relationship === 'dad'),
+    ) ?? undefined
+  }, [members, selfMember, selfParentIds])
+
+  const mother = useMemo(() => {
+    // Layer 1 — structural parentIds
+    const byParentId = selfParentIds.length > 0
       ? members.find(m => selfParentIds.includes(m.id) && m.gender === 'female')
-      : undefined,
-    [members, selfParentIds]
-  )
+      : undefined
+    if (byParentId) return byParentId
+    // Layer 2 — relationship field fallback
+    return members.find(
+      m => m.id !== selfMember?.id && m.gender === 'female' &&
+        (m.relationship === 'mother' || m.relationship === 'mom'),
+    ) ?? undefined
+  }, [members, selfMember, selfParentIds])
   const paternalGf = useMemo(() => {
     if (!father) return null
     const fps = father.parentIds ?? []
@@ -112,8 +141,9 @@ export function OnboardingChecklist({
   }, [father, members])
   const firstUnclaimedSibling = useMemo(() =>
     members.find(m =>
-      !m.isClaimed && m.id !== selfMember?.id &&
+      !isEffectivelyClaimed(m) && m.id !== selfMember?.id &&
       m.id !== father?.id && m.id !== mother?.id &&
+      m.isAlive !== false &&   // deceased siblings can't join — skip them
       selfParentIds.length > 0 && m.parentIds?.some(pid => selfParentIds.includes(pid))
     ) ?? null,
     [members, selfMember, father, mother, selfParentIds]
@@ -174,21 +204,35 @@ export function OnboardingChecklist({
     },
     ...(father ? [{
       id: 'invite_father',
-      label: `Invite ${father.name.split(' ')[0]} to join`,
-      detail: 'They can edit their profile & add relatives',
-      emoji: '💌',
-      done: !!father.isClaimed,
-      cta: 'Invite',
-      onCta: onInviteMember ? () => onInviteMember(father!) : onInvite,
+      // When deceased: step auto-completes — no invite can or should be sent.
+      // The tree still records them as a memorial; this step is simply N/A.
+      label: father.isAlive === false
+        ? `${father.name.split(' ')[0]} — in loving memory`
+        : `Invite ${father.name.split(' ')[0]} to join`,
+      detail: father.isAlive === false
+        ? 'Profile preserved as a memorial'
+        : 'They can edit their profile & add relatives',
+      emoji: father.isAlive === false ? '🕊️' : '💌',
+      done: isEffectivelyClaimed(father) || father.isAlive === false,
+      cta: father.isAlive !== false && !isEffectivelyClaimed(father) ? 'Invite' : undefined,
+      onCta: father.isAlive !== false && !isEffectivelyClaimed(father)
+        ? (onInviteMember ? () => onInviteMember(father!) : onInvite)
+        : undefined,
     }] : []),
     ...(mother ? [{
       id: 'invite_mother',
-      label: `Invite ${mother.name.split(' ')[0]} to join`,
-      detail: 'They can edit their profile & add relatives',
-      emoji: '💌',
-      done: !!mother.isClaimed,
-      cta: 'Invite',
-      onCta: onInviteMember ? () => onInviteMember(mother!) : onInvite,
+      label: mother.isAlive === false
+        ? `${mother.name.split(' ')[0]} — in loving memory`
+        : `Invite ${mother.name.split(' ')[0]} to join`,
+      detail: mother.isAlive === false
+        ? 'Profile preserved as a memorial'
+        : 'They can edit their profile & add relatives',
+      emoji: mother.isAlive === false ? '🕊️' : '💌',
+      done: isEffectivelyClaimed(mother) || mother.isAlive === false,
+      cta: mother.isAlive !== false && !isEffectivelyClaimed(mother) ? 'Invite' : undefined,
+      onCta: mother.isAlive !== false && !isEffectivelyClaimed(mother)
+        ? (onInviteMember ? () => onInviteMember(mother!) : onInvite)
+        : undefined,
     }] : []),
     ...(firstUnclaimedSibling ? [{
       id: 'invite_sibling',

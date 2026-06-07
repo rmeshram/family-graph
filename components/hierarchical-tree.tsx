@@ -692,7 +692,11 @@ const WIZARD_STEPS_DEF = [
     skipLabel: "I'll add him later",
     checkMissing: (members: FamilyMember[], selfId: string) => {
       const self = members.find(m => m.id === selfId); if (!self) return false
-      return !members.filter(m => self.parentIds.includes(m.id)).some(p => p.gender === 'male')
+      // Layer 1: structural parentIds
+      if (members.filter(m => self.parentIds.includes(m.id)).some(p => p.gender === 'male')) return false
+      // Layer 2: relationship field fallback (parent added without bidirectional link)
+      if (members.some(m => m.id !== selfId && (m.relationship === 'father' || m.relationship === 'dad'))) return false
+      return true
     },
   },
   {
@@ -704,7 +708,11 @@ const WIZARD_STEPS_DEF = [
     skipLabel: "I'll add her later",
     checkMissing: (members: FamilyMember[], selfId: string) => {
       const self = members.find(m => m.id === selfId); if (!self) return false
-      return !members.filter(m => self.parentIds.includes(m.id)).some(p => p.gender === 'female')
+      // Layer 1: structural parentIds
+      if (members.filter(m => self.parentIds.includes(m.id)).some(p => p.gender === 'female')) return false
+      // Layer 2: relationship field fallback
+      if (members.some(m => m.id !== selfId && (m.relationship === 'mother' || m.relationship === 'mom'))) return false
+      return true
     },
   },
   {

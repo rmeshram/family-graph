@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { FamilyMember } from '@/lib/types'
 import { cn, copyToClipboard } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { buildPersonalizedClaimMessage } from '@/lib/whatsapp-invite'
 import { toast } from 'sonner'
 
 interface InviteToClaimDialogProps {
@@ -24,6 +25,10 @@ interface InviteToClaimDialogProps {
   onOpenChange: (open: boolean) => void
   familyId: string | null
   userId: string | null
+  /** Relationship of the member to the current user (e.g. "Father", "Uncle") */
+  relationship?: string
+  /** Family name used in the invite message (e.g. "Sharma family") */
+  familyName?: string
 }
 
 export function InviteToClaimDialog({
@@ -32,6 +37,8 @@ export function InviteToClaimDialog({
   onOpenChange,
   familyId,
   userId,
+  relationship,
+  familyName,
 }: InviteToClaimDialogProps) {
   const [generating, setGenerating] = useState(false)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
@@ -135,18 +142,68 @@ export function InviteToClaimDialog({
     ? new Date(expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
 
+  // ── Deceased guard ──────────────────────────────────────────────────────────
+  // A deceased member cannot be invited. When the dialog is opened for one
+  // (e.g. via a stale invite_sent node), show a memorial screen instead.
+  const isDeceased = member.isAlive === false
+
+  // Life-span label: "1942 – 2003", "b. 1942", or blank
+  const lifeSpan = member.birthYear && member.deathYear
+    ? `${member.birthYear} – ${member.deathYear}`
+    : member.birthYear
+      ? `b. ${member.birthYear}`
+      : null
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-blue-400" />
-            Invite {member.name} to claim their profile
+            {isDeceased
+              ? <span className="text-base">🕊️</span>
+              : <UserPlus className="h-5 w-5 text-blue-400" />}
+            {isDeceased
+              ? `In loving memory — ${member.name}`
+              : `Invite ${member.name} to claim their profile`}
           </DialogTitle>
           <DialogDescription>
-            Send a secure link. They&apos;ll verify their identity with name and birth year before claiming.
+            {isDeceased
+              ? 'This person has passed away. Their profile is preserved in the family tree as a memorial.'
+              : 'Send a secure link. They\'ll verify their identity with name and birth year before claiming.'}
           </DialogDescription>
         </DialogHeader>
+
+        {/* ── Deceased memorial view ── */}
+        {isDeceased ? (
+          <div className="space-y-4 py-2">
+            {/* Member info card */}
+            <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-3">
+              <span className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-500 to-slate-700 grid place-items-center text-lg shrink-0">
+                🕊️
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium text-sm truncate">{member.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {lifeSpan ?? (member.relationship ?? 'Family member')}
+                </p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0 text-xs text-muted-foreground border-muted-foreground/30">
+                Passed away
+              </Badge>
+            </div>
+            {/* Explanation */}
+            <div className="rounded-xl border border-border/40 bg-muted/20 p-4 text-center space-y-2">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Invites can only be sent to living family members.
+                {' '}{member.name.split(' ')[0]}'s connections, stories, and memories
+                remain preserved in the tree for future generations.
+              </p>
+            </div>
+            <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </div>
+        ) : (
 
         <div className="space-y-4 py-2">
           {/* Member info */}
@@ -168,16 +225,16 @@ export function InviteToClaimDialog({
 
           {/* Why claim? — benefits for the invitee */}
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
-            <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">Why should they claim?</p>
+            <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">What they'll experience</p>
             <ul className="space-y-1.5">
               {([
-                { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'Edit their own profile, add a photo & bio' },
-                { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'Control who sees their profile' },
-                { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Add their spouse, children & relatives' },
-                { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'Get birthday & family update notifications' },
+                { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'They tap the link → see the family tree with their node highlighted' },
+                { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'Enter their name + birth year to verify it\'s really them' },
+                { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Profile unlocked — they can edit, add photos & see all relationships' },
+                { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'You\'ll get notified the moment they join 🎉' },
               ] as { icon: React.ReactNode; text: string }[]).map(({ icon, text }) => (
-                <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {icon}
+                <li key={text} className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <span className="shrink-0 mt-0.5">{icon}</span>
                   <span>{text}</span>
                 </li>
               ))}
@@ -250,10 +307,8 @@ export function InviteToClaimDialog({
                 size="sm"
                 className="w-full bg-[#25D366] hover:bg-[#1fba59] text-white font-medium"
                 onClick={() => {
-                  const waText = encodeURIComponent(
-                    `Hi ${member.name},\n\nI've added you to our family tree on Family Graph. Claim your profile to:\n• Edit your own bio, photo & details\n• Control who sees your profile\n• Add your spouse, children & relatives\n• Get birthday & family update notifications\n\nClaim here (valid 72 hrs): ${inviteLink}`
-                  )
-                  window.open(`https://wa.me/?text=${waText}`, '_blank', 'noopener,noreferrer')
+                  const msg = buildPersonalizedClaimMessage(member.name, relationship, familyName, inviteLink!)
+                  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer')
                 }}
               >
                 <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
@@ -283,6 +338,7 @@ export function InviteToClaimDialog({
             </div>
           )}
         </div>
+        )}
       </DialogContent>
     </Dialog>
   )

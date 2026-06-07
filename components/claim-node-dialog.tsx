@@ -26,6 +26,9 @@ interface ClaimNodeDialogProps {
   onOpenChange: (open: boolean) => void
   onClaim: (memberId: string, userId: string, opts?: { submittedName?: string; submittedBirthYear?: number; skipFamilyLink?: boolean }) => Promise<void>
   onSetVisibility?: (memberId: string, visibility: 'public' | 'family' | 'private') => Promise<void>
+  /** Called after a successful "Connect Families" (Option A) so the parent can
+   *  refresh linked members without a full page reload. */
+  onFamilyConnected?: () => void
 }
 
 const VISIBILITY_OPTIONS: {
@@ -72,6 +75,7 @@ export function ClaimNodeDialog({
   onOpenChange,
   onClaim,
   onSetVisibility,
+  onFamilyConnected,
 }: ClaimNodeDialogProps) {
   const [submittedName, setSubmittedName] = useState('')
   const [submittedBirthYear, setSubmittedBirthYear] = useState('')
@@ -93,7 +97,7 @@ export function ClaimNodeDialog({
     targetFamilyName?: string
   } | null>(null)
   const [connectingFamilies, setConnectingFamilies] = useState(false)
-  const [familyLinkResult, setFamilyLinkResult] = useState<{ autoAccepted: boolean; existingFamilyName: string } | null>(null)
+  const [familyLinkResult, setFamilyLinkResult] = useState<{ autoAccepted: boolean; existingFamilyName: string; memberCount?: number; message?: string } | null>(null)
   const [justClaimed, setJustClaimed] = useState(false)
   const [confidenceScore, setConfidenceScore] = useState<number | null>(null)
 
@@ -197,8 +201,14 @@ export function ClaimNodeDialog({
         setClaimError(prev => prev ? { ...prev, message: data.message ?? 'Could not connect families. Please try again.' } : prev)
         return
       }
-      setFamilyLinkResult({ autoAccepted: data.autoAccepted, existingFamilyName: claimError.existingFamilyName ?? 'your family' })
+      setFamilyLinkResult({
+        autoAccepted: data.autoAccepted,
+        existingFamilyName: claimError.existingFamilyName ?? 'your family',
+        memberCount: data.memberCount,
+        message: data.message,
+      })
       setClaimError(null)
+      onFamilyConnected?.()
     } catch {
       setClaimError(prev => prev ? { ...prev, message: 'Network error. Please try again.' } : prev)
     } finally {
@@ -409,12 +419,19 @@ export function ClaimNodeDialog({
 
             {/* Family link success */}
             {familyLinkResult && (
-              <div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-400">
+              <div className="flex items-start gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-400 space-y-0.5">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <p>{familyLinkResult.autoAccepted
-                  ? 'Both family trees are now connected!'
-                  : `A connection request has been sent to ${familyLinkResult.existingFamilyName} admins. Once accepted, both trees will be linked.`
-                }</p>
+                <div>
+                  <p className="font-semibold">{familyLinkResult.autoAccepted ? '🎉 Families connected!' : '📨 Connection request sent'}</p>
+                  <p className="mt-0.5 text-green-300/80">{familyLinkResult.message
+                    ?? (familyLinkResult.autoAccepted
+                      ? 'Both family trees are now connected!'
+                      : `A connection request has been sent to ${familyLinkResult.existingFamilyName} admins. Once accepted, both trees will be linked.`)
+                  }</p>
+                  {familyLinkResult.memberCount != null && familyLinkResult.memberCount > 0 && (
+                    <p className="mt-1 text-green-400/70">{familyLinkResult.memberCount} member{familyLinkResult.memberCount !== 1 ? 's' : ''} are now visible in the extended tree.</p>
+                  )}
+                </div>
               </div>
             )}
 

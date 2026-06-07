@@ -122,9 +122,13 @@ export function enrichMembersWithDerivedEdges(
   const VC = `__virt_ch_${sid}`
   const VU = `__virt_unc_${sid}`
   const VSPP = `__virt_spp_${sid}`
+  // Viewer-specific virtual parent — used when viewer ≠ creator and viewer has no parents.
+  // Ensures siblings added by the viewer (e.g. husband joining wife's family) are labelled
+  // "Brother"/"Sister" from the viewer's perspective, not "Brother-in-law"/"Sister-in-law".
+  const VP_VIEWER = viewer.id !== sid ? `__virt_vp_${viewer.id}` : VP
 
   let vpReady = false, vgpReady = false, vsReady = false
-  let vspReady = false, vcReady = false, vuReady = false, vsppReady = false
+  let vspReady = false, vcReady = false, vuReady = false, vsppReady = false, vpViewerReady = false
 
   const getSelfParentId = (): string => {
     if (creator.parentIds.length > 0) return creator.parentIds[0]
@@ -132,6 +136,17 @@ export function enrichMembersWithDerivedEdges(
     if (overrideP?.length) return overrideP[0]
     if (!vpReady) { vpReady = true; ensureVirt(VP, [], []); addP(sid, VP) }
     return VP
+  }
+
+  // Returns the viewer's structural parent (or a viewer-scoped virtual parent).
+  // Only meaningful when viewer ≠ creator.
+  const getViewerParentId = (): string => {
+    if (viewer.id === sid) return getSelfParentId()
+    if (viewer.parentIds.length > 0) return viewer.parentIds[0]
+    const ovViewer = extras.get(viewer.id)?.parentIds
+    if (ovViewer?.length) return ovViewer[0]
+    if (!vpViewerReady) { vpViewerReady = true; ensureVirt(VP_VIEWER, [], []); addP(viewer.id, VP_VIEWER) }
+    return VP_VIEWER
   }
 
   const getSelfGrandparentId = (): string => {
@@ -222,7 +237,15 @@ export function enrichMembersWithDerivedEdges(
         members.some(other => other.id !== m.id && other.id !== sid && (other.spouseIds ?? []).includes(m.id))
       if (!hasStructuralSpouseInFamily) addSp(sid, m.id)
     } else if (['brother', 'sister', 'sibling'].includes(rel)) {
-      addP(m.id, getSelfParentId())
+      // When the viewer (logged-in user) is different from the tree creator AND has no
+      // structural parents in this family (e.g., a husband who joined his wife's family),
+      // isolated siblings were most likely added by the viewer from their own perspective.
+      // Use the viewer's (virtual) parent so BFS returns "Brother"/"Sister" from the
+      // viewer's perspective instead of "Brother-in-law"/"Sister-in-law".
+      const viewerHasNoParents = viewer.id !== sid &&
+        viewer.parentIds.length === 0 &&
+        !(extras.get(viewer.id)?.parentIds?.length)
+      addP(m.id, viewerHasNoParents ? getViewerParentId() : getSelfParentId())
     } else if (rel.includes('grandfather') || rel.includes('grandmother') || rel === 'grandparent') {
       addP(getSelfParentId(), m.id)
     } else if (['great-grandfather', 'great-grandmother', 'great-grandparent'].some(r => rel.includes(r.split('-')[1]!) && rel.includes('great'))) {
