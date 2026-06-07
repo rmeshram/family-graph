@@ -83,6 +83,16 @@ export async function POST(
   if (pe || !primary) return NextResponse.json({ error: 'Primary node not found' }, { status: 404 })
   if (de || !duplicate) return NextResponse.json({ error: 'Duplicate node not found' }, { status: 404 })
 
+  // HIGH-10: Reject soft-deleted nodes. Admin client bypasses RLS, so we must
+  // enforce deleted_at IS NULL explicitly. Merging an archived node could cause
+  // the surviving primary to inherit archived state or lose visibility.
+  if ((primary as any).deleted_at) {
+    return NextResponse.json({ error: 'PRIMARY_ARCHIVED', message: 'The primary node is archived. Restore it before merging.' }, { status: 409 })
+  }
+  if ((duplicate as any).deleted_at) {
+    return NextResponse.json({ error: 'DUPLICATE_ARCHIVED', message: 'The duplicate node is already archived — no merge needed.' }, { status: 409 })
+  }
+
   // Verify same family — prevent cross-family merges
   if ((primary as any).family_id !== (duplicate as any).family_id) {
     return NextResponse.json({ error: 'Cannot merge nodes from different families' }, { status: 403 })
@@ -98,12 +108,32 @@ export async function POST(
     return NextResponse.json({ error: 'ADMIN_REQUIRED' }, { status: 403 })
   }
 
+  // DCR-06: Prevent concurrent merges on the same primary node overwriting each other.
+  // Two admins simultaneously merging different duplicates into the same primary would
+  // both read the same primary row, compute different `merged` objects, and whichever
+  // completes last wins — silently dropping the other's changes.
+  // Optimistic lock: update only if updated_at still matches what we read.
+  // The actual merge update (step 8) already uses .eq('id', primaryId) — we add
+  // a timestamp check there. Store the read timestamp now for use at step 8.
+  const primaryReadAt: string = (primary as any).updated_at as string
+
   // ── 2. Merge scalar fields ──────────────────────────────────────────────────
   const merged: Record<string, unknown> = {}
+  // ISSUE-20: track cases where both sides have different non-null values.
+  // Primary wins (its value is kept), but the discarded duplicate value is logged
+  // in the audit entry so an admin can review and manually correct if needed.
+  const conflicts: Record<string, { primary: unknown; duplicate: unknown }> = {}
   for (const field of MERGEABLE_SCALAR_FIELDS) {
     const pVal = (primary as any)[field]
     const dVal = (duplicate as any)[field]
     merged[field] = pVal !== null && pVal !== undefined ? pVal : dVal
+    if (
+      pVal !== null && pVal !== undefined &&
+      dVal !== null && dVal !== undefined &&
+      String(pVal) !== String(dVal)
+    ) {
+      conflicts[field] = { primary: pVal, duplicate: dVal }
+    }
   }
 
   // ── 3. Merge array fields ──────────────────────────────────────────────────
@@ -267,13 +297,23 @@ export async function POST(
     .eq('member_id', targetId)
     .then(() => { }) // best-effort
 
-  // Transfer any pending claim_requests on the duplicate to point at the primary.
+  // RF-09: Transfer milestones — prevents orphan rows after the duplicate is soft-deleted.
+  // (migration 033 changed member_id FK to ON DELETE SET NULL, so without this transfer
+  //  milestones would have member_id=NULL after archive and disappear from all profiles.)
+  await admin
+    .from('milestones')
+    .update({ member_id: primaryId })
+    .eq('member_id', targetId)
+    .then(() => { }) // best-effort
+
+  // Transfer ALL claim_requests on the duplicate to point at the primary.
+  // Includes rejected/abandoned/expired — preserves each user's full claim history
+  // on the surviving node so the rejection wall cannot be bypassed by merging.
   await admin
     .from('claim_requests')
     .update({ node_id: primaryId, updated_at: new Date().toISOString() } as any)
     .eq('node_id', targetId)
-    .in('status', ['pending', 'verified'])
-    .then(() => { }) // best-effort
+    .then(() => { }) // best-effort; unique conflicts silently skipped
 
   // Soft-deactivate any user_node_links pointing to the duplicate.
   // If primary has no active link and duplicate had one, we already transferred
@@ -285,7 +325,7 @@ export async function POST(
     .then(() => { }) // best-effort
 
   // ── 7. Apply merged update to primary, then delete duplicate ───────────────
-  const { error: updateErr } = await admin
+  const { data: updatedPrimary, error: updateErr } = await admin
     .from('family_members')
     .update({
       ...merged,
@@ -295,18 +335,59 @@ export async function POST(
       updated_at: new Date().toISOString(),
     })
     .eq('id', primaryId)
+    .eq('updated_at', primaryReadAt) // DCR-06: optimistic lock — reject if another merge already ran
+    .select('id')
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+  // DCR-06: 0 rows updated means another merge beat us to it — reject to prevent silent data loss.
+  if (!(updatedPrimary as any[])?.length) {
+    return NextResponse.json(
+      { error: 'MERGE_CONFLICT', message: 'This node was modified by another concurrent merge. Please refresh and retry.' },
+      { status: 409 }
+    )
+  }
 
-  const { error: deleteErr } = await admin.from('family_members').delete().eq('id', targetId)
-  if (deleteErr) return NextResponse.json({ error: `Merge applied but could not delete duplicate: ${deleteErr.message}` }, { status: 500 })
+  // RF-02: Soft-delete the duplicate instead of hard-deleting.
+  // Hard DELETE would cascade-destroy audit logs, claim_requests, and break graph
+  // connectivity for any cached references. Soft-delete keeps the record archived,
+  // invisible via RLS (deleted_at IS NULL filter), and fully reversible by an admin.
+  const { error: deleteErr } = await admin
+    .from('family_members')
+    .update({ deleted_at: new Date().toISOString(), deleted_by: user.id } as any)
+    .eq('id', targetId)
+  if (deleteErr) return NextResponse.json({ error: `Merge applied but could not archive duplicate: ${deleteErr.message}` }, { status: 500 })
 
-  // ── 8. Audit log ────────────────────────────────────────────────────────────
+  // Bug G: Invalidate any open node_claim invites that still point to the archived
+  // duplicate. Users following a stale link get a graceful NODE_ARCHIVED error
+  // (already handled), but leaving them unconsumed is confusing for admins reviewing
+  // the invite dashboard and can be misleading in rate-limit counts.
+  await admin
+    .from('invite_links')
+    .update({ consumed_at: new Date().toISOString() } as any)
+    .eq('node_id', targetId)
+    .is('consumed_at', null)
+
+  // ISSUE-14: retarget cross_family_node_matches to the surviving primary.
+  // After merge, suggestions that referenced the archived duplicate would show
+  // a broken/invisible node to admins reviewing the cross-family dashboard.
+  await (admin.from('cross_family_node_matches') as any)
+    .update({ node_a_id: primaryId }).eq('node_a_id', targetId).then(() => { })
+  await (admin.from('cross_family_node_matches') as any)
+    .update({ node_b_id: primaryId }).eq('node_b_id', targetId).then(() => { })
+  // Remove self-referential rows created if primary appeared on both sides before retarget
+  await (admin.from('cross_family_node_matches') as any)
+    .delete().eq('node_a_id', primaryId).eq('node_b_id', primaryId).then(() => { })
+
+  // ── 8. Audit log ───────────────────────────────────────────────────────────
   await admin.from('claim_audit_log').insert({
     node_id: primaryId,
     actor_id: user.id,
-    action: 'node_merged',
-    metadata: { absorbed_id: targetId },
+    action: 'nodes_merged', // 'nodes_merged' matches the DB constraint (migration 033)
+    metadata: {
+      absorbed_id: targetId,
+      // ISSUE-20: include any scalar conflicts so admins can review discarded data
+      ...(Object.keys(conflicts).length > 0 ? { scalar_conflicts: conflicts } : {}),
+    },
   }).then(() => { })
 
   // Return the updated primary

@@ -46,7 +46,8 @@ function findMemberByName(name: string, members: CompactMember[]): CompactMember
 // ─── Tool resolvers (pure — no DB, use client-passed member list) ─────────────
 function resolveGetRelationshipPath(
   args: Record<string, unknown>,
-  members: CompactMember[]
+  members: CompactMember[],
+  selfMember: CompactMember | null
 ): string {
   const nameA = sanitize(args.memberAName)
   const nameB = sanitize(args.memberBName)
@@ -67,7 +68,21 @@ function resolveGetRelationshipPath(
   }
 
   const chain = path.map(m => m?.name ?? '?').filter(Boolean).join(' → ')
-  return `${memberA.name} and ${memberB.name} are related as: **${label}**. Path: ${chain} (${path.length - 1} step${path.length !== 2 ? 's' : ''}).`
+  const steps = path.length - 1
+
+  // If one of the members is the logged-in user, give a viewer-relative answer
+  if (selfMember && memberA.id === selfMember.id) {
+    // "What is memberB to me?" → label is from memberA(self) → memberB
+    return `${memberB.name} is your **${label}**. Path: ${chain} (${steps} step${steps !== 1 ? 's' : ''}).`
+  }
+  if (selfMember && memberB.id === selfMember.id) {
+    // "What is memberA to me?" → compute reverse label (from self → memberA)
+    const reverseLabel = computeRelationLabel(memberB.id, memberA.id, asFamilyMembers)
+    return `${memberA.name} is your **${reverseLabel ?? label}**. Path: ${chain} (${steps} step${steps !== 1 ? 's' : ''}).`
+  }
+
+  // Third-party relationship (neither is self)
+  return `${memberA.name} is ${memberB.name}'s **${label}**. Path: ${chain} (${steps} step${steps !== 1 ? 's' : ''}).`
 }
 
 function resolveGetNodeDetails(
@@ -246,6 +261,7 @@ export async function POST(req: NextRequest) {
     messages?: { role: string; content: string }[]
     members?: CompactMember[]
     familySummary?: string
+    selfMemberId?: string | null
     // Legacy single-turn support
     message?: string
     context?: string
@@ -291,6 +307,10 @@ export async function POST(req: NextRequest) {
     spouseIds: Array.isArray(m.spouseIds) ? m.spouseIds.map(String) : [],
   }))
 
+  // ── Identify self member (the logged-in user's node in the tree) ───────────
+  const selfMemberId = body.selfMemberId ? sanitize(body.selfMemberId) : null
+  const selfMember = selfMemberId ? rawMembers.find(m => m.id === selfMemberId) : null
+
   // ── Build system prompt ────────────────────────────────────────────────────
   const memberCount = rawMembers.length
   const genCount = new Set(rawMembers.map(m => m.generation)).size
@@ -307,11 +327,11 @@ export async function POST(req: NextRequest) {
     return parts.join(', ')
   }).join('\n')
 
-  const userName = user?.email?.split('@')[0] ?? 'the user'
+  const userName = selfMember?.name ?? user?.email?.split('@')[0] ?? 'the user'
 
   const systemPrompt = `You are Copilot — an intelligent, warm AI assistant built into Family Graph, a family history and genealogy platform. You speak like a knowledgeable family historian who personally knows everyone in the tree.
 
-You are talking to: ${userName}
+You are talking to: ${userName}${selfMember ? ` (their node in the family tree is "${selfMember.name}", ID: ${selfMember.id})` : ''}
 
 Family overview:
 - ${memberCount} members recorded across ${genCount} generation(s)
@@ -336,7 +356,7 @@ PERSONALITY:
 
 FAMILY QUERY HANDLING:
 - "Who is X" → use getNodeDetails
-- "How is X related to Y" / "What is X to me" → use getRelationshipPath (use the 'self' member for 'me'/'I')
+- "How is X related to Y" / "What is X to me" / "Who is X to me" → use getRelationshipPath. When the user says "me"/"I"/"my", always use "${selfMember?.name ?? userName}" as one of the members.
 - "Who lives in [city]" / "Who is a [occupation]" → use searchFamilyNodes
 - "Show my [relative type]" → use searchFamilyNodes with the relationship type
 - Family tree summary → use the roster above, no tool needed
@@ -383,7 +403,7 @@ IMPORTANT: Never hallucinate or invent facts about family members. If something 
       // ── Resolve the tool (pure, instant) ──────────────────────────────
       let toolResult: string
       if (name === 'getRelationshipPath') {
-        toolResult = resolveGetRelationshipPath(args, rawMembers)
+        toolResult = resolveGetRelationshipPath(args, rawMembers, selfMember ?? null)
       } else if (name === 'getNodeDetails') {
         toolResult = resolveGetNodeDetails(args, rawMembers)
       } else if (name === 'searchFamilyNodes') {

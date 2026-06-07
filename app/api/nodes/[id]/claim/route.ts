@@ -67,8 +67,15 @@ function scoreIdentity(
   const reasons: string[] = []
   const mismatches: string[] = []
 
-  const a = nodeName.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
-  const b = submittedName.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+  // Unicode-aware normalization: ASCII fast-path, NFC fallback for Indian/non-Latin scripts.
+  // Without the fallback, Devanagari names (e.g. "राहुल") stripped to empty string → score=0
+  // → IDENTITY_MISMATCH for every Indian-name user regardless of correctness.
+  const norm = (s: string): string => {
+    const ascii = s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+    return ascii.length > 0 ? ascii : s.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+  const a = norm(nodeName)
+  const b = norm(submittedName)
 
   if (a && b) {
     if (a === b) {
@@ -147,9 +154,11 @@ export async function POST(
     // Fetch node — intentionally does NOT select normalized_phone here so that
     // a missing migration (018_phone_auth) doesn't block the entire claim flow.
     // The phone-bypass check does a separate targeted query below.
+    // MUC-01: Also check deleted_at IS NULL so soft-archived nodes cannot be claimed.
+    // The admin client bypasses RLS, so we must enforce this explicitly.
     const { data: node, error: nodeErr } = await admin
       .from('family_members')
-      .select('id, name, birth_year, claim_status, is_deceased, family_id')
+      .select('id, name, birth_year, claim_status, is_deceased, family_id, deleted_at')
       .eq('id', nodeId)
       .single()
 
@@ -180,6 +189,14 @@ export async function POST(
       return NextResponse.json(
         { error: 'NODE_NOT_FOUND', message: 'This profile does not exist in the family tree. The invite link may be stale — ask the family admin to send a fresh invite.' },
         { status: 404 }
+      )
+    }
+
+    // MUC-01: Reject claims on archived (soft-deleted) nodes.
+    if ((node as any).deleted_at) {
+      return NextResponse.json(
+        { error: 'NODE_ARCHIVED', message: 'This profile has been archived and cannot be claimed. Contact the family admin.' },
+        { status: 410 }
       )
     }
 
@@ -284,11 +301,12 @@ export async function POST(
         }
       }
     }
-    // (c) Phone-number match bypass: node.normalized_phone === user.phone
-    // user.phone is the E.164 number verified by Supabase OTP — high confidence.
-    // Uses a separate query so that if migration 018_phone_auth hasn't been applied
-    // (column doesn't exist) the rest of the claim flow continues unaffected.
-    if (!authorized && user.phone) {
+    // MUC-10: Evaluate phone bypass BEFORE authorization failure AND before the
+    // revoke wall. Previously the phone check was inside '!authorized' which meant
+    // it only ran for completely unauthorized users. A revoked-node user who matches
+    // by phone was authorized (gate A passed) but then hit the revoke wall below.
+    // Phone-verified identity is high-confidence — treat it like a re-invite.
+    if (user.phone) {
       try {
         const { data: phoneRow } = await admin
           .from('family_members')
@@ -296,9 +314,15 @@ export async function POST(
           .eq('id', nodeId)
           .maybeSingle()
         const nodePhone = (phoneRow as any)?.normalized_phone as string | null
-        if (nodePhone && nodePhone === user.phone) authorized = true
+        if (nodePhone && nodePhone === user.phone) {
+          authorized = true
+          // Phone match on a revoked node acts like an admin re-invite —
+          // skip the revoke wall so the user can reclaim their own profile.
+          authorizedViaNodeClaimInvite = true
+        }
       } catch { /* normalized_phone column not yet present — skip phone bypass */ }
     }
+
     if (!authorized) {
       return NextResponse.json(
         { error: 'FORBIDDEN', message: 'You are not authorized to claim this profile.' },
@@ -317,12 +341,16 @@ export async function POST(
     if (isCrossFamily && !confirmCrossFamily) {
       const targetFamilyId = (node as any).family_id as string
 
-      // Peek: does this user already have an active claimed node in their current family?
+      // Peek: does this user already have an active PRIMARY claimed node in their current family?
+      // HIGH-04: filter by is_primary=true and active status to avoid maybeSingle() ambiguity
+      // when the user has multiple inactive/stale link rows.
       const { data: existingUserLink } = await admin
         .from('user_node_links')
         .select('node_id')
         .eq('user_id', user.id)
+        .eq('is_primary', true)
         .neq('node_id', nodeId)
+        .limit(1)
         .maybeSingle()
 
       if (existingUserLink) {
@@ -559,6 +587,7 @@ export async function POST(
       .select('attempts, locked_until')
       .eq('node_id', nodeId)
       .eq('claimant_user_id', user.id)
+      .gt('expires_at', new Date().toISOString()) // RF-13: ignore expired requests (don't carry over stale lockouts)
       .maybeSingle()
 
     if (myRequest?.locked_until && new Date(myRequest.locked_until) > new Date()) {
@@ -575,7 +604,12 @@ export async function POST(
     // Invite-based claims require an exact DOB match when the tree already has
     // a DOB (or an inviter provided DOB hint). This gives a clear explanation
     // instead of falling back to a generic error.
+    // EC-03: When an invite has no birth_year_hint AND the node has no birth_year,
+    // anyone with the invite code can claim with any name (DOB check is skipped and
+    // name-only score of 30+ passes the threshold). Require a FULL name match
+    // (not partial) as the minimum bar when there is no DOB signal at all.
     const inviteExpectedBirthYear = nodeBY ?? (activeNodeClaimInvite?.birth_year_hint ?? null)
+    const hasNoDobSignal = authorizedViaNodeClaimInvite && inviteExpectedBirthYear === null
     if (authorizedViaNodeClaimInvite && inviteExpectedBirthYear !== null) {
       if (submittedBirthYear === undefined || submittedBirthYear === null) {
         return NextResponse.json(
@@ -599,6 +633,29 @@ export async function POST(
     const { score, reasons, mismatches } = authorizedViaNodeClaimInvite
       ? { score: 100, reasons: ['node_claim_invite'], mismatches: [] as string[] }
       : scoreIdentity(node.name, nodeBY, submittedName, submittedBirthYear ?? null)
+
+    // EC-03: No DOB signal on invite → enforce full name match as minimum bar.
+    // Without this, a partial first-name match (score=30) passes the threshold
+    // and anyone with the invite URL can claim any node with a matching first name.
+    if (hasNoDobSignal) {
+      const norm = (s: string): string => {
+        const ascii = s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+        return ascii.length > 0 ? ascii : s.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
+      }
+      const nodeNameNorm = norm(node.name)
+      const submittedNorm = norm(submittedName)
+      const isExactOrFuzzy = nodeNameNorm === submittedNorm ||
+        (levenshtein(nodeNameNorm, submittedNorm) <= 2 && Math.max(nodeNameNorm.length, submittedNorm.length) >= 4)
+      if (!isExactOrFuzzy) {
+        return NextResponse.json(
+          {
+            error: 'NAME_REQUIRED_NO_DOB',
+            message: 'This invite has no birth year on file. Please enter your full name exactly as it appears on your profile to verify your identity.',
+          },
+          { status: 422 }
+        )
+      }
+    }
 
     const attempts = (myRequest?.attempts ?? 0) + 1
     const MAX_ATTEMPTS = 3
@@ -647,7 +704,12 @@ export async function POST(
       {
         node_id: nodeId,
         claimant_user_id: user.id,
-        status: 'verified',
+        // RF-03: Use 'pending' (not 'verified') so the partial unique index
+        // idx_claim_requests_one_pending_per_node enforces at-most-one pending
+        // claim per node. Two simultaneous claimers both using 'verified' bypass
+        // the index and both get verified rows. 'pending' here + upgrade after the
+        // optimistic family_members lock means only the winner gets 'verified'.
+        status: 'pending',
         submitted_name: submittedName,
         submitted_birth_year: submittedBirthYear ?? null,
         confidence_score: score,
@@ -690,7 +752,25 @@ export async function POST(
     if (!nodeBY && submittedBirthYear !== undefined && submittedBirthYear !== null) {
       memberUpdate.birth_year = submittedBirthYear
     }
-    if (isGuardianClaim) memberUpdate.guardian_user_id = user.id
+    // RF-10: Guardian claim validation — require proof that the target is a minor.
+    // Without this check any user can send isGuardianClaim=true for any node (including adults).
+    if (isGuardianClaim) {
+      const targetBirthYear = (node as any).birth_year as number | null
+      const currentYear = new Date().getFullYear()
+      if (!targetBirthYear) {
+        return NextResponse.json(
+          { error: 'GUARDIAN_CLAIM_INVALID', message: 'Guardian claims require a birth year on the profile to confirm the person is a minor (under 18).' },
+          { status: 422 }
+        )
+      }
+      if (currentYear - targetBirthYear >= 18) {
+        return NextResponse.json(
+          { error: 'GUARDIAN_CLAIM_INVALID', message: 'Guardian claims can only be made for profiles of minors (under 18 years old).' },
+          { status: 422 }
+        )
+      }
+      memberUpdate.guardian_user_id = user.id
+    }
 
     const { data: claimUpdate, error: claimUpdateErr } = await admin
       .from('family_members')
@@ -717,6 +797,16 @@ export async function POST(
         { status: 409 }
       )
     }
+
+    // RF-03: Upgrade claim_request from 'pending' → 'verified' now that we've won
+    // the optimistic lock. Only the winner of the is_claimed=false lock reaches here;
+    // the loser already received ALREADY_CLAIMED above, leaving no ghost 'pending'
+    // rows from the concurrent request.
+    await admin.from('claim_requests')
+      .update({ status: 'verified', updated_at: new Date().toISOString() } as any)
+      .eq('node_id', nodeId)
+      .eq('claimant_user_id', user.id)
+      .eq('status', 'pending')
 
     // Audit
     await admin.from('claim_audit_log').insert({

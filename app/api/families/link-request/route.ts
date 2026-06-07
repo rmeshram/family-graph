@@ -73,14 +73,14 @@ export async function POST(req: Request) {
       .select('id, family_id, name')
       .eq('id', junctionMemberAId)
       .single()
-    
+
     if (!memberA) {
       return NextResponse.json(
         { error: 'JUNCTION_MEMBER_NOT_FOUND', message: 'The specified junction member does not exist.' },
         { status: 404 }
       )
     }
-    
+
     if ((memberA as any).family_id !== myFamilyId) {
       return NextResponse.json(
         { error: 'INVALID_JUNCTION_MEMBER', message: 'Junction member must belong to your family.' },
@@ -142,6 +142,13 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error('family_links insert error:', error)
+    // HIGH-08 / EC-05: Two admins from opposite families sent link requests
+    // simultaneously. Both resolved the UUID pair to (min, max) and both tried
+    // to INSERT. The second hits the UNIQUE (family_a_id, family_b_id) constraint
+    // (PG error 23505). Surface REQUEST_PENDING rather than a generic 500.
+    if ((error as any).code === '23505') {
+      return NextResponse.json({ error: 'REQUEST_PENDING', message: 'A connection request between these families already exists.' }, { status: 409 })
+    }
     return NextResponse.json({ error: 'DB_ERROR' }, { status: 500 })
   }
 

@@ -236,10 +236,44 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
   if (unplaced.length > 0) {
     const selfGen = self.generation ?? 0
 
-    // Group by relative generation
+    // Build initial relative-generation for each unplaced member
+    const memberRg = new Map<string, number>()
+    unplaced.forEach(m => {
+      memberRg.set(m.id, (m.generation ?? selfGen) - selfGen)
+    })
+
+    // ── Spouse row-coercion pass ─────────────────────────────────────────────
+    // In-laws (e.g. a cousin's wife) are sometimes stored with the wrong
+    // generation value (e.g. at the parent-gen level instead of cousin-gen).
+    // Fix: for any spouse pair both in the unplaced set whose rg values differ,
+    // move the in-law (the member with NO blood relatives in the family) to the
+    // blood-relative's row.  Two passes cover sibling-chained cases.
+    const unplacedIds = new Set(unplaced.map(m => m.id))
+    for (let pass = 0; pass < 2; pass++) {
+      unplaced.forEach(m => {
+        ;(m.spouseIds ?? []).forEach(sid => {
+          if (!unplacedIds.has(sid)) return // spouse is in core tree — skip
+          const mRg = memberRg.get(m.id)!
+          const sRg = memberRg.get(sid)!
+          if (mRg === sRg) return // already aligned
+          const sp = byId.get(sid)!
+          // "has blood" = has at least one parent present in the family
+          const mHasBlood = m.parentIds.some(pid => byId.has(pid))
+          const sHasBlood = sp.parentIds.some(pid => byId.has(pid))
+          if (!mHasBlood && sHasBlood) {
+            memberRg.set(m.id, sRg) // m is the in-law → follow spouse
+          } else if (mHasBlood && !sHasBlood) {
+            memberRg.set(sid, mRg) // spouse is the in-law → follow m
+          }
+          // Both or neither have blood (ambiguous) — leave as-is
+        })
+      })
+    }
+
+    // Build byRelGen from corrected row assignments
     const byRelGen = new Map<number, FamilyMember[]>()
     unplaced.forEach(m => {
-      const rg = (m.generation ?? selfGen) - selfGen
+      const rg = memberRg.get(m.id)!
       if (!byRelGen.has(rg)) byRelGen.set(rg, [])
       byRelGen.get(rg)!.push(m)
     })

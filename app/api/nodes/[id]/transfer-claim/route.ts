@@ -82,7 +82,7 @@ export async function POST(
   // Load both nodes
   const [{ data: fromNode }, { data: toNode }] = await Promise.all([
     admin.from('family_members')
-      .select('id, family_id, is_claimed, claimed_by_user_id, claim_status, name')
+      .select('id, family_id, is_claimed, claimed_by_user_id, claim_status, claimed_at, name')
       .eq('id', fromNodeId)
       .single(),
     admin.from('family_members')
@@ -145,21 +145,26 @@ export async function POST(
   }).eq('id', fromNodeId)
   if (detachErr) return NextResponse.json({ error: 'DETACH_FAILED', detail: detachErr.message }, { status: 500 })
 
-  // 2. Claim toNode
-  const { error: claimErr } = await (admin.from('family_members') as any).update({
+  // 2. Claim toNode — use .select('id') so we can detect 0-row matches (ISSUE-07)
+  const { data: claimResult, error: claimErr } = await (admin.from('family_members') as any).update({
     is_claimed: true,
     claimed_by_user_id: targetUserId,
     claim_status: 'claimed',
     claimed_at: now,
-  }).eq('id', toNodeId).eq('is_claimed', false)
-  if (claimErr) {
-    // Roll back the detach to avoid leaving the system in a split state
+  }).eq('id', toNodeId).eq('is_claimed', false).select('id')
+  if (claimErr || !(claimResult as any[])?.length) {
+    // ISSUE-07: 0 rows updated means toNode was claimed concurrently — roll back detach.
+    // Restore original claimed_at so audit timestamps are not lost (ISSUE-10).
     await (admin.from('family_members') as any).update({
       is_claimed: true,
       claimed_by_user_id: targetUserId,
       claim_status: 'claimed',
+      claimed_at: (fromNode as any).claimed_at ?? now,
     }).eq('id', fromNodeId)
-    return NextResponse.json({ error: 'CLAIM_FAILED', detail: claimErr.message }, { status: 500 })
+    return NextResponse.json(
+      { error: 'TARGET_ALREADY_CLAIMED', message: 'The target node was claimed by someone else. Your original claim has been restored.' },
+      { status: 409 }
+    )
   }
 
   // 3. Update user_node_links: deactivate old link, upsert new one

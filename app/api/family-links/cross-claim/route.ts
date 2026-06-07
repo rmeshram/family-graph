@@ -6,7 +6,7 @@ function adminClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false } }
+    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
   )
 }
 
@@ -19,7 +19,7 @@ async function authedClient() {
       cookies: {
         getAll: () => cs.getAll(),
         setAll: (c) => {
-          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch {}
+          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
         },
       },
     }
@@ -68,22 +68,10 @@ export async function POST(req: NextRequest) {
   const admin = adminClient()
 
   // ── Rate limit: 5 cross-claim attempts per user per hour ─────────────────
-  // Uses family_link_notifications as a lightweight counter — each cross-claim
-  // attempt writes a row tagged with the initiating user. This avoids a
-  // separate table while still providing per-user throttling.
+  // EC-25: sentinel row is written AFTER node validation (we need family IDs for
+  // NOT NULL cols). Count check runs after the write so the limiter actually fires.
+  // See the rate-limit enforcement block below, after node + family validation.
   const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
-  const { count: recentAttempts } = await admin
-    .from('family_link_notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('initiated_by_user_id', user.id)
-    .eq('event_type', 'cross_claim_attempt')
-    .gt('created_at', oneHourAgo)
-  if ((recentAttempts ?? 0) >= 5) {
-    return NextResponse.json(
-      { error: 'RATE_LIMITED', message: 'Too many connection attempts. Please wait an hour and try again.' },
-      { status: 429 }
-    )
-  }
 
   // ── Fetch both nodes ──────────────────────────────────────────────────────
   const [{ data: claimNode, error: claimErr }, { data: existingNode, error: existingErr }] = await Promise.all([
@@ -125,6 +113,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: 'SAME_FAMILY', message: 'Both profiles are in the same family — no link needed.' },
       { status: 400 }
+    )
+  }
+
+  // EC-25: Write the rate-limit sentinel NOW (we have family IDs) then check the
+  // count. Writing first ensures every attempt—including ones that fail below—
+  // is counted. If the count exceeds the limit we delete the just-inserted row
+  // (clean up) and return RATE_LIMITED, so it doesn't permanently consume a slot.
+  const { data: sentinelRow } = await admin
+    .from('family_link_notifications')
+    .insert({
+      initiated_by_user_id: user.id,
+      event_type: 'cross_claim_attempt',
+      source_family_id: existingFamilyId,
+      new_member_id: existingNodeId,
+    } as any)
+    .select('id')
+    .single()
+
+  const { count: recentAttempts } = await admin
+    .from('family_link_notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('initiated_by_user_id', user.id)
+    .eq('event_type', 'cross_claim_attempt')
+    .gt('created_at', oneHourAgo)
+
+  if ((recentAttempts ?? 0) > 5) {
+    // Over limit — delete the sentinel we just inserted to avoid inflating the
+    // counter past the true number of attempts, then reject the request.
+    if (sentinelRow) {
+      await admin.from('family_link_notifications').delete().eq('id', (sentinelRow as any).id)
+    }
+    return NextResponse.json(
+      { error: 'RATE_LIMITED', message: 'Too many connection attempts. Please wait an hour and try again.' },
+      { status: 429 }
     )
   }
 
@@ -190,10 +212,57 @@ export async function POST(req: NextRequest) {
 
   if (linkErr || !link) {
     console.error('[cross-claim] family_links insert error:', linkErr)
+    // Bug D: concurrent cross-claims hit the UNIQUE (family_a_id, family_b_id) constraint.
+    if ((linkErr as any)?.code === '23505') {
+      return NextResponse.json({ error: 'REQUEST_PENDING', message: 'A connection request between these families already exists.' }, { status: 409 })
+    }
     return NextResponse.json({ error: 'DB_ERROR', message: 'Could not create the family connection. Please try again.' }, { status: 500 })
   }
 
   const linkId = (link as any).id as string
+
+  // ── Bug A: Claim the bridge node for this user ────────────────────────────
+  // The route previously only created the family_links row and returned success,
+  // leaving claimNodeId with is_claimed=false. The user was redirected to the
+  // dashboard believing they owned the bridge profile — but they didn't.
+  // Now we complete the claim writes before returning.
+  const claimNow = new Date().toISOString()
+  const { error: bridgeClaimErr } = await admin
+    .from('family_members')
+    .update({
+      is_claimed: true,
+      claim_status: 'claimed',
+      claimed_by_user_id: user.id,
+      claimed_at: claimNow,
+    } as any)
+    .eq('id', claimNodeId)
+    .eq('is_claimed', false) // optimistic lock: fail if someone else claimed it in the race window
+
+  if (bridgeClaimErr) {
+    // Roll back the family link — we couldn't complete the claim
+    await admin.from('family_links').delete().eq('id', linkId)
+    console.error('[cross-claim] bridge node claim failed:', bridgeClaimErr)
+    return NextResponse.json({ error: 'BRIDGE_CLAIM_FAILED', message: 'Could not claim the bridge profile. Please try again.' }, { status: 500 })
+  }
+
+  // Upsert user_node_links for the bridge node.
+  // is_primary=false: the user's primary identity stays in their original family.
+  await admin.from('user_node_links').upsert({
+    user_id: user.id,
+    node_id: claimNodeId,
+    family_id: claimFamilyId,
+    is_primary: false,
+    linked_at: claimNow,
+  } as any, { onConflict: 'user_id,node_id' })
+
+  // Audit the bridge node claim
+  await admin.from('claim_audit_log').insert({
+    node_id: claimNodeId,
+    family_id: claimFamilyId,
+    actor_id: user.id,
+    action: 'claim_completed',
+    metadata: { via: 'cross_claim', family_link_id: linkId, existingNodeId, existingFamilyId },
+  } as any)
 
   // ── Fetch family names for the response ──────────────────────────────────
   const [{ data: claimFamily }, { data: existingFamily }] = await Promise.all([
@@ -202,24 +271,20 @@ export async function POST(req: NextRequest) {
   ])
 
   // ── Notify BOTH families ──────────────────────────────────────────────────
-  // The event type is the same for both: pending → link_requested (needs action),
-  // accepted → link_accepted (informational). The existing-node family must be
-  // notified even on auto-accept so their admins know the connection was made.
   const notifEvent = linkStatus === 'accepted' ? 'link_accepted' : 'link_requested'
   await Promise.all([
-    // Rate-limit sentinel (also serves as an audit trail for the initiator)
-    admin.from('family_link_notifications').insert({
-      link_id: linkId,
-      event_type: 'cross_claim_attempt',
-      recipient_family_id: claimFamilyId,
-      initiated_by_user_id: user.id,
-      created_at: now,
-    } as any),
+    // Bug C: Previously this batch wrote a second 'cross_claim_attempt' row here,
+    // doubling the rate-limit counter per attempt (~2.5 real attempts before limit).
+    // The sentinel written at the top of the handler already counts this attempt.
+    // Only write the actionable link notifications now.
+    //
     // Inviting family notification
     admin.from('family_link_notifications').insert({
       link_id: linkId,
       event_type: notifEvent,
       recipient_family_id: claimFamilyId,
+      source_family_id: existingFamilyId,
+      new_member_id: claimNodeId,
       created_at: now,
     } as any),
     // Existing-node family notification — always, even on auto-accept
@@ -227,6 +292,8 @@ export async function POST(req: NextRequest) {
       link_id: linkId,
       event_type: notifEvent,
       recipient_family_id: existingFamilyId,
+      source_family_id: claimFamilyId,
+      new_member_id: claimNodeId,
       created_at: now,
     } as any),
   ])

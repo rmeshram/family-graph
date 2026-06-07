@@ -84,13 +84,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // NOTIFICATION FIX: Notify the other family about revocation
   const isFamilyA = myFamilyId === l.family_a_id
   const otherFamilyId = isFamilyA ? l.family_b_id : l.family_a_id
-  
-  await admin.from('family_link_notifications').insert({
+
+  // ISSUE-17: write a structural audit log entry for link revocation
+  await (admin.from('claim_audit_log') as any).insert({
+    node_id: null,
+    family_id: myFamilyId,
+    actor_id: user.id,
+    action: 'link_revoked',
+    metadata: { link_id: id, family_a: l.family_a_id, family_b: l.family_b_id, revoked_by_initiator: isInitiator },
+  }).then(() => { })
+
+  // ISSUE-17: upsert with ignoreDuplicates — prevents a second notification row
+  // if two concurrent revoke requests both reach this point.
+  // (unique constraint uniq_link_notification added in migration 039)
+  await (admin.from('family_link_notifications') as any).upsert({
     link_id: id,
     event_type: 'link_revoked',
     recipient_family_id: otherFamilyId,
-    created_at: new Date().toISOString()
-  } as any)
+    created_at: new Date().toISOString(),
+  }, { onConflict: 'link_id,event_type,recipient_family_id', ignoreDuplicates: true })
 
   return NextResponse.json({ ok: true })
 }

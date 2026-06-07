@@ -73,5 +73,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'CREATE_FAILED' }, { status: 500 })
   }
 
+  // ISSUE-19: atomically set profiles.family_id + role server-side so the family
+  // is never left without an admin if the client disconnects after the 200.
+  const { error: profileErr } = await adminClient
+    .from('profiles')
+    .update({ family_id: family.id, role: 'admin' } as any)
+    .eq('id', createdBy)
+
+  if (profileErr) {
+    // Compensating write: delete the orphaned family so it cannot be reused
+    await adminClient.from('families').delete().eq('id', family.id)
+    console.error('create-family profile update error:', profileErr)
+    return NextResponse.json({ error: 'PROFILE_UPDATE_FAILED' }, { status: 500 })
+  }
+
   return NextResponse.json({ family: { id: family.id, invite_code: family.invite_code } })
 }

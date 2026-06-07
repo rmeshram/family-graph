@@ -64,44 +64,69 @@ import {
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Skeleton } from '@/components/ui/skeleton'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
 import { normalizeStoredName, findExactNameMatch } from '@/lib/match-detection'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── FamilyTreeSkeleton ────────────────────────────────────────────────────
-// Mimics the hierarchical tree: grandparents → parents → self+spouse → children.
-// Uses the same `animate-pulse` pattern as the layout shell skeleton.
-function TreeNodeSkel({ w, highlight = false }: { w: number; highlight?: boolean }) {
+// Shown in the main canvas while the DB loads (after auth resolves).
+// Ghost blurred tree in background + sharp shimmer card rows in foreground.
+function TreeNodeSkel({ w, highlight = false, delay = 0 }: { w: number; highlight?: boolean; delay?: number }) {
   return (
     <div
-      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 ${highlight ? 'border-primary/30 bg-primary/5' : 'border-border/30 bg-muted/15'}`}
+      className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${
+        highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
+      }`}
       style={{ width: w + 16 }}
     >
-      <Skeleton className={`h-10 w-10 rounded-full ${highlight ? 'bg-primary/20' : ''}`} />
-      <Skeleton className="h-2.5 rounded-full" style={{ width: w * 0.6 }} />
-      <Skeleton className="h-2 rounded-full" style={{ width: w * 0.4 }} />
+      {/* shimmer sweep */}
+      <div
+        className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none"
+        style={{ animation: `shimmer 2s ease-in-out ${delay}ms infinite` }}
+      />
+      <div className={`h-10 w-10 rounded-full ${highlight ? 'bg-primary/25' : 'bg-muted'}`} />
+      <div className="h-2.5 rounded-full bg-muted" style={{ width: w * 0.65 }} />
+      <div className="h-2 rounded-full bg-muted/70" style={{ width: w * 0.45 }} />
     </div>
   )
 }
 
 function FamilyTreeSkeleton() {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 pointer-events-none select-none overflow-hidden px-4 animate-pulse">
-      {/* grandparents */}
-      <div className="flex items-end gap-14 md:gap-20">
-        {[80, 72].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-9 pointer-events-none select-none overflow-hidden px-4">
+      {/* Ghost blurred tree silhouette — gives "data coming into focus" feel */}
+      <div className="absolute inset-0" aria-hidden>
+        {[
+          { l: '31%', t: '10%', s: 88 }, { l: '58%', t: '10%', s: 80 },
+          { l: '33%', t: '28%', s: 78 }, { l: '56%', t: '28%', s: 74 },
+          { l: '27%', t: '47%', s: 72 }, { l: '44%', t: '45%', s: 80 }, { l: '60%', t: '47%', s: 68 },
+          { l: '35%', t: '65%', s: 62 }, { l: '56%', t: '65%', s: 58 },
+        ].map((n, i) => (
+          <div key={i} className="absolute rounded-2xl bg-muted/40 dark:bg-muted/20"
+            style={{ left: n.l, top: n.t, width: n.s + 16, height: n.s + 44, transform: 'translate(-50%,-50%)', filter: 'blur(16px)' }} />
+        ))}
+        <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg"
+          style={{ filter: 'blur(4px)', opacity: 0.15 }}>
+          <line x1="33%" y1="15%" x2="36%" y2="34%" stroke="currentColor" strokeWidth="2" />
+          <line x1="58%" y1="15%" x2="56%" y2="34%" stroke="currentColor" strokeWidth="2" />
+          <line x1="36%" y1="34%" x2="46%" y2="51%" stroke="currentColor" strokeWidth="2" />
+          <line x1="56%" y1="34%" x2="58%" y2="51%" stroke="currentColor" strokeWidth="2" />
+          <line x1="46%" y1="51%" x2="37%" y2="68%" stroke="currentColor" strokeWidth="2" />
+          <line x1="46%" y1="51%" x2="56%" y2="68%" stroke="currentColor" strokeWidth="2" />
+        </svg>
       </div>
-      {/* parents */}
-      <div className="flex items-end gap-10 md:gap-16">
-        {[72, 68].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      {/* skeleton card rows */}
+      <div className="flex items-end gap-14 md:gap-20 relative z-10">
+        {[80, 72].map((w, i) => <TreeNodeSkel key={i} w={w} delay={i * 150} />)}
       </div>
-      {/* self + spouse */}
-      <div className="flex items-end gap-6 md:gap-10">
-        {([68, 64, 60] as const).map((w, i) => <TreeNodeSkel key={i} w={w} highlight={i === 1} />)}
+      <div className="flex items-end gap-10 md:gap-16 relative z-10">
+        {[72, 68].map((w, i) => <TreeNodeSkel key={i} w={w} delay={300 + i * 150} />)}
       </div>
-      {/* children */}
-      <div className="flex items-end gap-10 md:gap-14">
-        {[56, 52].map((w, i) => <TreeNodeSkel key={i} w={w} />)}
+      <div className="flex items-end gap-6 md:gap-10 relative z-10">
+        {([68, 64, 60] as const).map((w, i) => <TreeNodeSkel key={i} w={w} highlight={i === 1} delay={600 + i * 150} />)}
+      </div>
+      <div className="flex items-end gap-10 md:gap-14 relative z-10">
+        {[56, 52].map((w, i) => <TreeNodeSkel key={i} w={w} delay={900 + i * 150} />)}
       </div>
     </div>
   )
@@ -897,8 +922,12 @@ export default function FamilyGraphApp() {
 
   // ── Mission progress (mobile strip) ─────────────────────────────────────────
   // Mirrors buildMissionSteps logic but only computes done/total — no callbacks.
+  // Respects wizard_skipped: a step counts as done if data is present OR user
+  // explicitly said "Don't have" (stored as 'mission_<stepId>' in wizard_skipped).
   const missionProgress = useMemo(() => {
     if (!selfMember) return { done: 0, total: 10 }
+    const skipped = new Set(profile?.wizard_skipped ?? [])
+    const doneOrSkipped = (id: string, dataPresent: boolean) => dataPresent || skipped.has(`mission_${id}`)
     const byId = new Map(members.map(m => [m.id, m]))
     const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
     const father = parents.find(p => p.gender === 'male')
@@ -912,14 +941,17 @@ export default function FamilyGraphApp() {
     const fatherParents = father ? father.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[] : []
     const checks = [
       true, // add self — always done
-      !!father, !!mother, hasSibling, hasSpouse, hasChild,
-      fatherParents.some(p => p.gender === 'male'),
-      fatherParents.some(p => p.gender === 'female'),
+      !!father, !!mother,
+      doneOrSkipped('add_sibling', hasSibling),
+      doneOrSkipped('add_spouse', hasSpouse),
+      doneOrSkipped('add_child', hasChild),
+      doneOrSkipped('add_paternal_gf', fatherParents.some(p => p.gender === 'male')),
+      doneOrSkipped('add_paternal_gm', fatherParents.some(p => p.gender === 'female')),
       checklistHasStories,
       checklistHasOtherClaims,
     ]
     return { done: checks.filter(Boolean).length, total: checks.length }
-  }, [selfMember, members, checklistHasStories, checklistHasOtherClaims])
+  }, [selfMember, members, profile?.wizard_skipped, checklistHasStories, checklistHasOtherClaims])
 
   // ── Mission drawer: auto-open once for new users ────────────────────────────
   // Fires when user is on tree view, has < 4 members, and hasn't seen it yet.
@@ -1157,6 +1189,20 @@ export default function FamilyGraphApp() {
   const handleAddRelative = useCallback((anchorId: string, relType: QuickRelType) => {
     setQuickAdd({ anchorId, relType })
   }, [])
+
+  // Persist a "Don't have" skip for a mission step. Stored in profiles.wizard_skipped
+  // as 'mission_<stepId>' so it doesn't collide with the relationship wizard keys.
+  const handleMissionSkip = useCallback(async (stepId: string) => {
+    if (!user) return
+    const key = `mission_${stepId}`
+    const existing: string[] = profile?.wizard_skipped ?? []
+    if (existing.includes(key)) return
+    const updated = [...existing, key]
+    const db = createClient()
+    await db.from('profiles').update({ wizard_skipped: updated }).eq('id', user.id)
+    // Refresh auth profile so wizard_skipped reflects the new value in UI
+    refreshProfile()
+  }, [user, profile?.wizard_skipped, refreshProfile])
 
   // Called by QuickAddMemberDialog on submit — creates the new member and handles bidirectional wiring
   const handleQuickAddSubmit = useCallback(async (
@@ -2217,6 +2263,8 @@ export default function FamilyGraphApp() {
                 onInviteMember={(m) => setInviteToClaimTarget(m)}
                 onEditSelf={() => setEditingMember(selfMember)}
                 hasStories={checklistHasStories}
+                wizardSkipped={profile?.wizard_skipped ?? []}
+                onSkipStep={handleMissionSkip}
               />
             )}
 
@@ -2304,6 +2352,8 @@ export default function FamilyGraphApp() {
                       onInviteMember={(m) => { setShowMissionDrawer(false); setInviteToClaimTarget(m) }}
                       onEditSelf={() => { setShowMissionDrawer(false); setEditingMember(selfMember) }}
                       hasStories={checklistHasStories}
+                      wizardSkipped={profile?.wizard_skipped ?? []}
+                      onSkipStep={handleMissionSkip}
                     />
                   )}
                 </div>

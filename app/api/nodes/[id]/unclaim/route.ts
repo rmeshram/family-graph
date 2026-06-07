@@ -125,7 +125,11 @@ export async function POST(
   }
 
   // 1. Reset the node's claim fields.
-  await admin
+  // Bug E: Capture the error. If this write fails, do NOT execute the subsequent
+  // cleanup steps — doing so would orphan the node (is_claimed=true but no
+  // user_node_links or profiles.member_id pointing to it), creating a state that
+  // requires manual DB intervention to fix.
+  const { error: unclaimNodeErr } = await admin
     .from('family_members')
     .update({
       is_claimed: false,
@@ -134,6 +138,14 @@ export async function POST(
       claimed_at: null,
     } as any)
     .eq('id', nodeId)
+
+  if (unclaimNodeErr) {
+    console.error('[unclaim] family_members reset failed:', unclaimNodeErr)
+    return NextResponse.json(
+      { error: 'UNCLAIM_FAILED', message: 'Could not reset the profile claim. Please try again.' },
+      { status: 500 }
+    )
+  }
 
   // 2. Mark existing claim_requests as abandoned (preserves audit trail).
   if (previousClaimantId) {
@@ -168,7 +180,10 @@ export async function POST(
   }
 
   // 5. Audit log
-  const auditAction = isAdmin && !isSelfUnclaim ? 'admin_revoke' : 'claim_unclaimed'
+  // RF-08: 'admin_revoke' is not in the claim_audit_log action check constraint.
+  // Use 'claim_revoked' (which IS in the constraint) for admin-initiated unclaims,
+  // consistent with the revoke-claim route which already uses 'claim_revoked'.
+  const auditAction = isAdmin && !isSelfUnclaim ? 'claim_revoked' : 'claim_unclaimed'
   await admin.from('claim_audit_log').insert({
     node_id: nodeId,
     family_id: (node as any).family_id,

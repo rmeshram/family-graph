@@ -3,39 +3,26 @@ import { createServerClient } from '@supabase/ssr'
 import { normalizePhone } from '@/lib/phone-utils'
 import type { Database } from '@/lib/supabase/database.types'
 
-// ─── Simple in-memory rate limiter ───────────────────────────────────────────
-// 5 requests per IP per 60-second window. Resets per serverless instance restart.
-// Supabase OTP has its own rate limits on top of this.
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+// ISSUE-25: replace per-process in-memory Map with a DB-backed rate limit table
+// (phone_discovery_rate_limits, created in migration 039) so the 5-req/min limit
+// applies globally across all warm serverless instances, not just per-process.
 const RATE_LIMIT = 5
 const RATE_WINDOW_MS = 60_000
 
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
+function adminClient() {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
+  )
 }
 
 // ─── Route handler ───────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  // Rate limit by IP
   const ip =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
     request.headers.get('x-real-ip') ??
     'unknown'
-
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json(
-      { error: 'Too many requests. Please wait a minute and try again.' },
-      { status: 429 }
-    )
-  }
 
   let body: { phone?: string }
   try {
@@ -72,6 +59,25 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
+
+  // ISSUE-25: DB-based rate limit — global across all serverless instances.
+  // Count how many requests this user has made in the last RATE_WINDOW_MS ms.
+  const rl = adminClient()
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count: recentCount } = await rl
+    .from('phone_discovery_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .gt('created_at', windowStart)
+  if ((recentCount ?? 0) >= RATE_LIMIT) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a minute and try again.' },
+      { status: 429 }
+    )
+  }
+  await rl.from('phone_discovery_rate_limits').insert({
+    user_id: user.id, ip, created_at: new Date().toISOString(),
+  } as any)
 
   // Search for unclaimed nodes with this phone across families.
   // We intentionally do NOT filter by family_id — the point is cross-family discovery.

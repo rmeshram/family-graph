@@ -64,6 +64,8 @@ export async function GET() {
     .eq('claim_status', 'unclaimed')
     .neq('family_id', (profile as any).family_id ?? '')
     .eq('is_deceased', false)
+    .neq('visibility', 'private') // MUC-15: never surface private nodes in match suggestions
+    .is('deleted_at', null)       // exclude archived nodes
     .limit(200)
 
   if (!nodes?.length) return NextResponse.json({ matches: [] })
