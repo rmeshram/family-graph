@@ -68,22 +68,10 @@ export async function POST(req: NextRequest) {
   const admin = adminClient()
 
   // ── Rate limit: 5 cross-claim attempts per user per hour ─────────────────
-  // Uses family_link_notifications as a lightweight counter — each cross-claim
-  // attempt writes a row tagged with the initiating user. This avoids a
-  // separate table while still providing per-user throttling.
+  // EC-25: sentinel row is written AFTER node validation (we need family IDs for
+  // NOT NULL cols). Count check runs after the write so the limiter actually fires.
+  // See the rate-limit enforcement block below, after node + family validation.
   const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
-  const { count: recentAttempts } = await admin
-    .from('family_link_notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('initiated_by_user_id', user.id)
-    .eq('event_type', 'cross_claim_attempt')
-    .gt('created_at', oneHourAgo)
-  if ((recentAttempts ?? 0) >= 5) {
-    return NextResponse.json(
-      { error: 'RATE_LIMITED', message: 'Too many connection attempts. Please wait an hour and try again.' },
-      { status: 429 }
-    )
-  }
 
   // ── Fetch both nodes ──────────────────────────────────────────────────────
   const [{ data: claimNode, error: claimErr }, { data: existingNode, error: existingErr }] = await Promise.all([
@@ -125,6 +113,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: 'SAME_FAMILY', message: 'Both profiles are in the same family — no link needed.' },
       { status: 400 }
+    )
+  }
+
+  // EC-25: Write the rate-limit sentinel NOW (we have family IDs) then check the
+  // count. Writing first ensures every attempt—including ones that fail below—
+  // is counted. If the count exceeds the limit we delete the just-inserted row
+  // (clean up) and return RATE_LIMITED, so it doesn't permanently consume a slot.
+  const { data: sentinelRow } = await admin
+    .from('family_link_notifications')
+    .insert({
+      initiated_by_user_id: user.id,
+      event_type: 'cross_claim_attempt',
+      source_family_id: existingFamilyId,
+      new_member_id: existingNodeId,
+    } as any)
+    .select('id')
+    .single()
+
+  const { count: recentAttempts } = await admin
+    .from('family_link_notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('initiated_by_user_id', user.id)
+    .eq('event_type', 'cross_claim_attempt')
+    .gt('created_at', oneHourAgo)
+
+  if ((recentAttempts ?? 0) > 5) {
+    // Over limit — delete the sentinel we just inserted to avoid inflating the
+    // counter past the true number of attempts, then reject the request.
+    if (sentinelRow) {
+      await admin.from('family_link_notifications').delete().eq('id', (sentinelRow as any).id)
+    }
+    return NextResponse.json(
+      { error: 'RATE_LIMITED', message: 'Too many connection attempts. Please wait an hour and try again.' },
+      { status: 429 }
     )
   }
 

@@ -83,6 +83,16 @@ export async function POST(
   if (pe || !primary) return NextResponse.json({ error: 'Primary node not found' }, { status: 404 })
   if (de || !duplicate) return NextResponse.json({ error: 'Duplicate node not found' }, { status: 404 })
 
+  // HIGH-10: Reject soft-deleted nodes. Admin client bypasses RLS, so we must
+  // enforce deleted_at IS NULL explicitly. Merging an archived node could cause
+  // the surviving primary to inherit archived state or lose visibility.
+  if ((primary as any).deleted_at) {
+    return NextResponse.json({ error: 'PRIMARY_ARCHIVED', message: 'The primary node is archived. Restore it before merging.' }, { status: 409 })
+  }
+  if ((duplicate as any).deleted_at) {
+    return NextResponse.json({ error: 'DUPLICATE_ARCHIVED', message: 'The duplicate node is already archived — no merge needed.' }, { status: 409 })
+  }
+
   // Verify same family — prevent cross-family merges
   if ((primary as any).family_id !== (duplicate as any).family_id) {
     return NextResponse.json({ error: 'Cannot merge nodes from different families' }, { status: 403 })
@@ -97,6 +107,15 @@ export async function POST(
   if ((profile as any).role !== 'admin') {
     return NextResponse.json({ error: 'ADMIN_REQUIRED' }, { status: 403 })
   }
+
+  // DCR-06: Prevent concurrent merges on the same primary node overwriting each other.
+  // Two admins simultaneously merging different duplicates into the same primary would
+  // both read the same primary row, compute different `merged` objects, and whichever
+  // completes last wins — silently dropping the other's changes.
+  // Optimistic lock: update only if updated_at still matches what we read.
+  // The actual merge update (step 8) already uses .eq('id', primaryId) — we add
+  // a timestamp check there. Store the read timestamp now for use at step 8.
+  const primaryReadAt: string = (primary as any).updated_at as string
 
   // ── 2. Merge scalar fields ──────────────────────────────────────────────────
   const merged: Record<string, unknown> = {}
@@ -295,7 +314,7 @@ export async function POST(
     .then(() => { }) // best-effort
 
   // ── 7. Apply merged update to primary, then delete duplicate ───────────────
-  const { error: updateErr } = await admin
+  const { data: updatedPrimary, error: updateErr } = await admin
     .from('family_members')
     .update({
       ...merged,
@@ -305,8 +324,17 @@ export async function POST(
       updated_at: new Date().toISOString(),
     })
     .eq('id', primaryId)
+    .eq('updated_at', primaryReadAt) // DCR-06: optimistic lock — reject if another merge already ran
+    .select('id')
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+  // DCR-06: 0 rows updated means another merge beat us to it — reject to prevent silent data loss.
+  if (!(updatedPrimary as any[])?.length) {
+    return NextResponse.json(
+      { error: 'MERGE_CONFLICT', message: 'This node was modified by another concurrent merge. Please refresh and retry.' },
+      { status: 409 }
+    )
+  }
 
   // RF-02: Soft-delete the duplicate instead of hard-deleting.
   // Hard DELETE would cascade-destroy audit logs, claim_requests, and break graph

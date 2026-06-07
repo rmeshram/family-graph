@@ -131,6 +131,14 @@ export async function POST(
       return NextResponse.json({ error: 'NODE_UPDATE_FAILED', message: fmErr.message }, { status: 500 })
     }
     if (!fmData?.length) {
+      // MUC-06: Node was already claimed by a different concurrent approval.
+      // Mark THIS claim_request as 'rejected' so it doesn't stay stuck in
+      // 'pending' forever and clog the admin queue.
+      await admin
+        .from('claim_requests')
+        .update({ status: 'rejected', reviewed_by: user.id, reviewed_at: new Date().toISOString(), review_note: 'Auto-rejected: node was claimed by another concurrent approval.' } as any)
+        .eq('id', id)
+        .eq('status', 'pending')
       return NextResponse.json({ error: 'CLAIM_ALREADY_REVIEWED' }, { status: 409 })
     }
 

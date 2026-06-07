@@ -110,10 +110,13 @@ export async function POST(
     )
   }
 
-  // RF-01: Include inviteCode in the body so the node claim route can set
-  // authorizedViaNodeClaimInvite=true — required for cross-family and new-user flows
-  // (where the caller has no family_id yet and gate A alone would return FORBIDDEN).
+  // EC-06: Warn loudly if NEXT_PUBLIC_APP_URL is not set. In production, using
+  // req.nextUrl.origin behind a proxy may resolve to http://localhost:3000,
+  // causing the internal fetch to ECONNREFUSED and returning an unhandled 500.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin
+  if (!process.env.NEXT_PUBLIC_APP_URL) {
+    console.warn('[invites/claim] NEXT_PUBLIC_APP_URL is not set; falling back to', appUrl, '- set this env var in production to prevent routing failures')
+  }
   const claimRes = await fetch(`${appUrl}/api/nodes/${node.id}/claim`, {
     method: 'POST',
     headers: {
@@ -133,14 +136,10 @@ export async function POST(
     await admin.from('invite_links').update({
       used_count: ((invite as any).used_count ?? 0) + 1,
     } as any).eq('id', (invite as any).id)
-
-    await admin.from('claim_audit_log').insert({
-      node_id: node.id,
-      family_id: node.family_id,
-      actor_id: user.id,
-      action: 'claim_completed',
-      metadata: { via: 'invite', inviteId: (invite as any).id },
-    })
+    // HIGH-11: Do NOT insert a second claim_audit_log row here.
+    // The node claim route already inserts action='claim_completed' for every
+    // successful claim. Inserting again here produces a duplicate record for
+    // the same operation, polluting the audit trail.
   } else {
     // RF-05: Rollback — restore the invite so the user can retry or the admin can re-send.
     await admin.from('invite_links')
