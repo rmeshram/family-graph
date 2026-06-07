@@ -447,11 +447,17 @@ export function buildUniverse(
   }
 
   // ── 7. Build UEdge list (deduplicated) ────────────────────────────────────
+  // Use enrichedMembers (which includes relationship-label-derived virtual edges)
+  // so that members added with only a `relationship` field (no parent_ids/spouse_ids)
+  // still get connecting lines. Virtual nodes (id starts with __virt_) are skipped
+  // since they have no position in the rendered canvas.
   const edgeSet = new Set<string>()
   const edges: UEdge[] = []
 
   const addEdge = (from: string, to: string, kind: UEdgeKind) => {
     if (!positions.has(from) || !positions.has(to)) return
+    // Skip edges to/from virtual structural nodes — they are BFS-only
+    if (from.startsWith('__virt_') || to.startsWith('__virt_')) return
     const key = [from, to].sort().join('|')
     if (!edgeSet.has(key)) {
       edgeSet.add(key)
@@ -459,7 +465,8 @@ export function buildUniverse(
     }
   }
 
-  for (const m of members) {
+  for (const m of enrichedMembers) {
+    if (m.id.startsWith('__virt_')) continue
     for (const pid of m.parentIds) addEdge(m.id, pid, 'blood')
     for (const sid of m.spouseIds) addEdge(m.id, sid, 'marriage')
   }
