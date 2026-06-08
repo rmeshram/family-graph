@@ -60,31 +60,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'User has no family', recovered: 0 }, { status: 200 })
   }
 
-  // Find all family_members claimed by this user that are in a DIFFERENT family.
-  // This is the telltale sign of a failed cross-family migration.
-  const { data: orphanedClaims, error: claimErr } = await admin
+  // ── Detection strategy ────────────────────────────────────────────────────
+  // We find orphaned families using TWO independent signals (union of both):
+  //
+  // Signal A — claimed node in wrong family:
+  //   family_members.claimed_by_user_id = user.id AND family_id != currentFamilyId
+  //   Catches: user claimed a node in their old family via the formal join flow.
+  //
+  // Signal B — family creator:
+  //   families.created_by = user.id AND id != currentFamilyId
+  //   Catches: user created a family via onboarding (profile.member_id was null,
+  //   so their old node was never formally claimed → Signal A finds nothing).
+  //   This is Rahul's exact scenario — he was the MESHRAM family admin with
+  //   member_id = null, so his nodes had no claimed_by_user_id set.
+
+  // Signal A: orphaned claimed nodes
+  const { data: claimedOrphans } = await admin
     .from('family_members')
-    .select('id, family_id, name')
+    .select('family_id')
     .eq('claimed_by_user_id', user.id)
     .neq('family_id', currentFamilyId)
 
-  if (claimErr) {
-    console.error('[recover-family] query error:', claimErr.message)
-    return NextResponse.json({ error: claimErr.message }, { status: 500 })
-  }
+  // Signal B: families the user created that aren't their current family
+  const { data: createdFamilies } = await admin
+    .from('families')
+    .select('id')
+    .eq('created_by', user.id)
+    .neq('id', currentFamilyId)
 
-  if (!orphanedClaims || orphanedClaims.length === 0) {
+  const orphanedFamilyIds = [
+    ...new Set([
+      ...((claimedOrphans ?? []) as any[]).map((r: any) => r.family_id as string),
+      ...((createdFamilies ?? []) as any[]).map((r: any) => r.id as string),
+    ])
+  ].filter(id => id && id !== currentFamilyId)
+
+  if (orphanedFamilyIds.length === 0) {
     return NextResponse.json({ recovered: 0, message: 'Nothing to recover' })
   }
-
-  // Collect unique family IDs that need to be migrated
-  const orphanedFamilyIds = [...new Set((orphanedClaims as any[]).map(r => r.family_id as string))]
 
   let totalMigrated = 0
   const errors: string[] = []
 
   for (const orphanedFamilyId of orphanedFamilyIds) {
-    // Safety check: don't accidentally migrate the current family into itself
     if (orphanedFamilyId === currentFamilyId) continue
 
     const { data: movedRows, error: moveErr } = await admin
