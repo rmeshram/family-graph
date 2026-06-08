@@ -53,6 +53,12 @@ export interface FamilyMissionPanelProps {
   wizardSkipped: string[]
   /** Called when user clicks "Don't have" on a skippable step. Should persist to DB. */
   onSkipStep: (stepId: string) => void
+  /**
+   * When provided AND selfMember is null (user is in the family but hasn't
+   * claimed a node yet), the panel shows a "Claim your profile" card as the
+   * primary action instead of the mission steps.
+   */
+  onClaimProfile?: () => void
   /** Override outer container className (e.g. full-width in mobile drawer) */
   className?: string
 }
@@ -226,6 +232,7 @@ export function FamilyMissionPanel({
   hasStories,
   wizardSkipped,
   onSkipStep,
+  onClaimProfile,
   className,
 }: FamilyMissionPanelProps) {
   const router = useRouter()
@@ -251,13 +258,19 @@ export function FamilyMissionPanel({
   )
 
   const waitingPeople = useMemo<WaitingPerson[]>(() => {
-    if (!selfMember) return []
     return members
       // Exclude deceased — they cannot join the app; invite buttons on
       // deceased members are confusing and technically meaningless.
-      .filter(m => !isEffectivelyClaimed(m) && m.id !== selfMember.id && m.isAlive !== false)
+      .filter(m => !isEffectivelyClaimed(m) && m.id !== selfMember?.id && m.isAlive !== false)
       .slice(0, 8)
-      .map(m => ({ member: m, relationship: inferRelLabel(m, selfMember, members) }))
+      .map(m => ({
+        member: m,
+        // If selfMember is unknown (unlinked), fall back to the stored relationship
+        // field which is relative to the tree creator — imprecise but better than blank.
+        relationship: selfMember
+          ? inferRelLabel(m, selfMember, members)
+          : (m.relationship ? String(m.relationship).replace(/-/g, ' ') : 'Family member'),
+      }))
   }, [members, selfMember])
 
   const missingProfileFields = selfMember ? [
@@ -300,6 +313,20 @@ export function FamilyMissionPanel({
               Update →
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Claim Your Profile — shown when user is in family but not linked to a node ── */}
+      {!selfMember && onClaimProfile && (
+        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-blue-500/30 bg-blue-500/[0.08] px-3 py-2.5">
+          <p className="text-[12px] font-semibold text-foreground leading-snug mb-1">Claim your profile first</p>
+          <p className="text-[10px] text-muted-foreground leading-tight mb-2">
+            You're in the family but haven't linked to your node yet. Claim it to see the mission and start adding relatives.
+          </p>
+          <button type="button" onClick={onClaimProfile}
+            className="w-full rounded-lg border border-blue-500/40 bg-blue-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/25 transition-colors">
+            Find my place in the tree →
+          </button>
         </div>
       )}
 
