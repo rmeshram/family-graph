@@ -1446,7 +1446,7 @@ export default function FamilyGraphApp() {
                 </span>
               </div>
               <a
-                href="mailto:support@outverse.in?subject=Outverse%20Feedback"
+                href="mailto:meshram22rahul@gmail.com?subject=Outverse%20Feedback"
                 className="text-amber-600 hover:text-amber-700 underline font-medium"
               >
                 Send Feedback
@@ -2759,6 +2759,7 @@ export default function FamilyGraphApp() {
           return undefined
         })() : undefined}
         familyName={(profile as any)?.family_name ?? undefined}
+        members={members}
       />
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>

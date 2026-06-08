@@ -426,15 +426,24 @@ export function FamilyMissionPanel({
         </div>
       )}
 
-      {/* ── People Waiting to Join ──────────────────────────────────────── */}
+      {/* ── People Waiting to Unlock Their Branch ─────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0">
         <button type="button" onClick={() => setWaitingOpen(v => !v)}
           className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors border-b border-border/40">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-amber-400" />
-            <span className="text-sm font-semibold text-foreground">People Waiting to Join</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="h-4 w-4 text-amber-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground leading-tight">
+                Unlock their branches
+              </p>
+              {waitingPeople.length > 0 && (
+                <p className="text-[10px] text-muted-foreground leading-tight">
+                  Each one who joins grows the tree for everyone
+                </p>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0 ml-2">
             {waitingPeople.length > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-semibold text-amber-400 tabular-nums">
                 {waitingPeople.length}
@@ -469,7 +478,7 @@ export function FamilyMissionPanel({
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
                           <p className="text-[10px] text-muted-foreground">{relationship}</p>
                           {inviteSent && (
                             <span className="flex items-center gap-0.5 text-[9px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-full px-1.5 py-0.5 leading-none">
@@ -477,6 +486,26 @@ export function FamilyMissionPanel({
                               Invite sent
                             </span>
                           )}
+                          {/* Elder urgency badge */}
+                          {(member.birthYear && member.birthYear < 1960 || relationship.toLowerCase().includes('grand') || relationship.toLowerCase().includes('dada') || relationship.toLowerCase().includes('nana')) && (
+                            <span className="text-[9px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-1.5 py-0.5 leading-none">
+                              ⏳ Elder · stories at risk
+                            </span>
+                          )}
+                          {/* Unlock count estimate */}
+                          {!inviteSent && (() => {
+                            const rel = relationship.toLowerCase()
+                            const isElder = (member.birthYear && member.birthYear < 1960) || rel.includes('grand') || rel.includes('dada') || rel.includes('nana')
+                            if (isElder) return null
+                            const est = (rel === 'father' || rel === 'mother' || rel === 'parent') ? 2
+                              : (rel === 'son' || rel === 'daughter' || rel === 'child' || rel === 'brother' || rel === 'sister' || rel === 'sibling' || rel === 'husband' || rel === 'wife' || rel === 'spouse') ? 3
+                              : 2
+                            return (
+                              <span className="text-[9px] font-medium text-emerald-400">
+                                +{est} they might add
+                              </span>
+                            )
+                          })()}
                         </div>
                       </div>
                       <Button size="sm" onClick={() => onInviteMember(member)}

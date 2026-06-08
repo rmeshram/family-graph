@@ -29,13 +29,13 @@ export function buildPersonalizedClaimMessage(
   const familyRef = familyName ? `the ${familyName}` : 'our family'
   return (
     `${salutation} 🙏\n\n` +
-    `I'm building ${familyRef} tree on Outverse and I've already added your profile.\n\n` +
-    `Claim your profile to:\n` +
-    `• Edit your bio, photo & details\n` +
+    `Your place in ${familyRef} tree on Outverse is reserved — your profile is already there.\n\n` +
+    `When you claim it you can:\n` +
+    `• See exactly how you're connected to everyone\n` +
     `• Add your spouse, children & relatives\n` +
-    `• Control who sees your profile\n` +
-    `• Get birthday & family update notifications\n\n` +
-    `Claim here (link valid 72 hrs):\n${inviteLink}`
+    `• Share your own stories & memories\n` +
+    `• Control what the family sees about you\n\n` +
+    `Claim your spot (link valid 72 hrs):\n${inviteLink}`
   )
 }
 
@@ -66,15 +66,18 @@ export function buildMemberInviteMessage(memberName: string, inviteLink: string)
  * @param familyName  Name of the family (e.g. "Sharma Family")
  * @param inviteLink  The join link
  */
-export function buildFamilyInviteMessage(familyName: string, inviteLink: string): string {
+export function buildFamilyInviteMessage(familyName: string, inviteLink: string, memberCount?: number): string {
+  const countLine = memberCount && memberCount > 1
+    ? `${memberCount} family members are already here. ` : ''
   return (
-    `🌳 Join our family tree on Outverse!\n\n` +
-    `I'm building the ${familyName} family tree and would love for you to join.\n\n` +
+    `🌳 Join the ${familyName} family tree on Outverse!\n\n` +
+    `${countLine}I'd love for you to join too.\n\n` +
     `Join here:\n${inviteLink}\n\n` +
-    `You can:\n` +
+    `When you join you can:\n` +
     `• See how everyone is connected\n` +
-    `• Add your own family branch\n` +
-    `• Share stories and memories`
+    `• Add your own spouse, children & relatives\n` +
+    `• Share stories and memories\n` +
+    `• Get birthday reminders for everyone in the tree`
   )
 }
 

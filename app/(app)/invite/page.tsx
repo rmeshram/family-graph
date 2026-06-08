@@ -28,9 +28,11 @@ import {
   Clock,
   Trash2,
   RefreshCw,
+  TrendingUp,
 } from "lucide-react"
 import { cn, copyToClipboard } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth"
+import { useMembers } from "@/hooks/use-members"
 import { useInvites } from "@/hooks/use-invites"
 import { useToast } from "@/hooks/use-toast"
 import { DemoBanner } from "@/components/demo-banner"
@@ -70,6 +72,7 @@ interface InviteLink {
 
 export default function InvitePage() {
   const { familyId, user, profile } = useAuth()
+  const { members } = useMembers(familyId)
   const { createInviteLink, getActiveLinks, revokeInvite } = useInvites(familyId)
   const { toast } = useToast()
   const [selectedRole, setSelectedRole] = useState<string>('contributor')
@@ -81,6 +84,15 @@ export default function InvitePage() {
   const [activeUrl, setActiveUrl] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const isSharing = useRef(false)
+
+  // ── Tree stats — show inviter why inviting matters ──────────────────────────
+  const livingMembers = members.filter(m => m.isAlive !== false)
+  const claimedCount = livingMembers.filter(
+    m => m.isClaimed === true || !!m.claimedByUserId || m.claimStatus === 'claimed'
+  ).length
+  const unclaimedCount = livingMembers.length - claimedCount
+  const treeScore = livingMembers.length > 0
+    ? Math.round((claimedCount / livingMembers.length) * 100) : 0
   const currentRole = (profile?.role ?? 'viewer') as 'admin' | 'contributor' | 'viewer'
   const canCreateInvites = currentRole !== 'viewer'
   const visibleRoles = currentRole === 'admin' ? ROLES : ROLES.filter(role => role.value !== 'admin')
@@ -114,7 +126,13 @@ export default function InvitePage() {
 
   const inviteUrl = activeUrl
   const whatsappMessage = encodeURIComponent(
-    `🌳 Join our family tree on Outverse!\n\nHi! I'm building a digital family tree for our family. Join us to view, add memories, and connect with family members.\n\nClick to join: ${inviteUrl}\n\n_Sent via Outverse_`
+    `🌳 Join our family tree on Outverse!\n\n` +
+    `${claimedCount > 1 ? `${claimedCount} family members are already here. ` : ''}I'd love for you to join too.\n\n` +
+    `When you join you can:\n` +
+    `• See how you're connected to everyone\n` +
+    `• Add your own spouse, children & relatives\n` +
+    `• Share stories & memories\n\n` +
+    `Join here: ${inviteUrl}\n\n_Sent via Outverse_`
   )
   const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`
 
@@ -219,6 +237,36 @@ export default function InvitePage() {
             </div>
           </div>
 
+          {/* ── Tree Stats — why inviting matters ── */}
+          {familyId && livingMembers.length > 1 && (
+            <div className="rounded-2xl border border-border/40 bg-gradient-to-br from-primary/5 via-transparent to-emerald-500/5 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold">Your family at a glance</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center mb-3">
+                <div className="rounded-xl bg-card border border-border/30 p-2.5">
+                  <p className="text-2xl font-bold text-foreground">{livingMembers.length}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">in your tree</p>
+                </div>
+                <div className="rounded-xl bg-card border border-amber-500/20 p-2.5">
+                  <p className="text-2xl font-bold text-amber-400">{unclaimedCount}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">haven't joined</p>
+                </div>
+                <div className="rounded-xl bg-card border border-emerald-500/20 p-2.5">
+                  <p className="text-2xl font-bold text-emerald-400">{claimedCount}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">already here</p>
+                </div>
+              </div>
+              <div className="h-1.5 rounded-full bg-muted/60 overflow-hidden mb-2">
+                <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${treeScore}%` }} />
+              </div>
+              <p className="text-[11px] text-muted-foreground text-center">
+                Each person who joins can add their own branch — growing the tree for everyone
+              </p>
+            </div>
+          )}
+
           {/* Role Selector */}
           <div>
             <h3 className="text-sm font-semibold mb-3">Select Permission Level</h3>
@@ -321,11 +369,12 @@ export default function InvitePage() {
                       <p className="text-xs text-muted-foreground mt-0.5">Share directly to WhatsApp with a pre-written message</p>
                     </div>
                   </div>
-                  <div className="mt-3 rounded-xl bg-card border border-border/50 p-3 text-xs text-muted-foreground">
+                  <div className="mt-3 rounded-xl bg-card border border-border/50 p-3 text-xs text-muted-foreground space-y-1">
                     <p>🌳 <strong>Join our family tree on Outverse!</strong></p>
-                    <p className="mt-1 text-primary">Click to join: {inviteUrl}</p>
-                    <p className="mt-1 italic">Hi! I'm building a digital family tree. Join us to view memories and connect with family members.</p>
-                    <p className="mt-1 text-muted-foreground/60 italic">Sent via Outverse</p>
+                    {claimedCount > 1 && <p className="text-muted-foreground">{claimedCount} family members are already here.</p>}
+                    <p className="text-muted-foreground">When you join you can see how you're connected to everyone, add your own relatives, and share stories.</p>
+                    <p className="text-primary">Join here: {inviteUrl}</p>
+                    <p className="text-muted-foreground/60 italic">Sent via Outverse</p>
                   </div>
                   <Button
                     onClick={handleShareWhatsApp}
