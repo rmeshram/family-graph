@@ -84,7 +84,7 @@ async function mergeNodes(admin: AdminClient, keepId: string, deleteId: string) 
     const newP = (m.parent_ids ?? []).map((id: string) => id === deleteId ? keepId : id)
     const newS = (m.spouse_ids ?? []).map((id: string) => id === deleteId ? keepId : id)
     if (JSON.stringify(newP) !== JSON.stringify(m.parent_ids ?? []) ||
-        JSON.stringify(newS) !== JSON.stringify(m.spouse_ids ?? [])) {
+      JSON.stringify(newS) !== JSON.stringify(m.spouse_ids ?? [])) {
       await admin.from('family_members').update({ parent_ids: newP, spouse_ids: newS }).eq('id', m.id)
     }
   }
@@ -193,19 +193,30 @@ export async function POST(req: NextRequest) {
   // ── Phase 2: Find and migrate orphaned family members ─────────────────────
   // Signal A — user has a claimed node in a different family
   // Signal B — user created a family that is not their current family
-  const [{ data: claimedOrphans }, { data: createdFamilies }] = await Promise.all([
+  // Signal C — user_node_links: persistent link records survive even after
+  //   the node is unclaimed. When Rahul originally claimed his node in his own
+  //   family, a user_node_links row was created. When he later claimed a new
+  //   node in Shikha's family, a second row was created. The first row was
+  //   NOT deleted (old code only deleted it in the skipFamilyLink path).
+  //   This is the most reliable signal: it survives unclaim, dedup, and reset.
+  const [{ data: claimedOrphans }, { data: createdFamilies }, { data: linkedInOther }] = await Promise.all([
     admin.from('family_members').select('family_id')
       .eq('claimed_by_user_id', user.id)
       .neq('family_id', currentFamilyId),
     admin.from('families').select('id')
       .eq('created_by', user.id)
       .neq('id', currentFamilyId),
+    // Signal C: any node link entry pointing at a different family
+    (admin.from('user_node_links') as any).select('family_id')
+      .eq('user_id', user.id)
+      .neq('family_id', currentFamilyId),
   ])
 
   const orphanedFamilyIds = [
     ...new Set([
       ...((claimedOrphans ?? []) as any[]).map((r: any) => r.family_id as string),
       ...((createdFamilies ?? []) as any[]).map((r: any) => r.id as string),
+      ...((linkedInOther ?? []) as any[]).map((r: any) => r.family_id as string),
     ])
   ].filter(id => id && id !== currentFamilyId)
 
@@ -253,11 +264,66 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fix other users in the orphaned family
+    // Fix other users in the orphaned family: point them at the new family too
     await admin.from('profiles')
       .update({ family_id: currentFamilyId })
       .eq('family_id', orphanedFamilyId)
       .neq('id', user.id)
+  }
+
+  // ── Phase 3: Re-dedup after migration ─────────────────────────────────────
+  // Migration may have introduced new duplicate names (e.g. old Rahul node +
+  // existing new Rahul node both now in currentFamily). Run dedup once more.
+  if (totalMoved > 0 || totalMerged > 0) {
+    const { data: postMigrMembers } = await admin
+      .from('family_members')
+      .select('id, name, parent_ids, spouse_ids, is_claimed, claimed_by_user_id')
+      .eq('family_id', currentFamilyId)
+
+    if (postMigrMembers && (postMigrMembers as any[]).length > 0) {
+      const byName2: Record<string, any[]> = {}
+      for (const m of postMigrMembers as any[]) {
+        const key = normName(m.name)
+        if (!key) continue
+        if (!byName2[key]) byName2[key] = []
+        byName2[key].push(m)
+      }
+      for (const [, group] of Object.entries(byName2)) {
+        if (group.length < 2) continue
+        group.sort((a, b) => {
+          if (a.is_claimed && !b.is_claimed) return -1
+          if (!a.is_claimed && b.is_claimed) return 1
+          const ae = (a.parent_ids?.length ?? 0) + (a.spouse_ids?.length ?? 0)
+          const be = (b.parent_ids?.length ?? 0) + (b.spouse_ids?.length ?? 0)
+          return be - ae
+        })
+        const primary = group[0]
+        for (const dup of group.slice(1)) {
+          console.log(`[recover-family] post-migrate dedup: "${dup.name}" (${dup.id}) → (${primary.id})`)
+          await mergeNodes(admin, primary.id, dup.id)
+          deduped++
+        }
+      }
+    }
+  }
+
+  // Clean up stale user_node_links entries pointing at deleted/orphaned nodes
+  // so they don't trigger recovery on subsequent page loads.
+  if (orphanedFamilyIds.length > 0) {
+    const { data: currentLinks } = await (admin.from('user_node_links') as any)
+      .select('node_id, family_id')
+      .eq('user_id', user.id)
+      .neq('family_id', currentFamilyId)
+    for (const link of (currentLinks ?? []) as any[]) {
+      // Check if this linked node now exists in the current family (was moved/merged)
+      const { data: movedNode } = await admin
+        .from('family_members').select('id, family_id').eq('id', link.node_id).maybeSingle()
+      if (!movedNode || (movedNode as any).family_id === currentFamilyId) {
+        // Node is gone or was moved — delete the stale link entry
+        await (admin.from('user_node_links') as any)
+          .delete().eq('user_id', user.id).eq('node_id', link.node_id)
+      }
+    }
   }
 
   return NextResponse.json({

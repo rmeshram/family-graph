@@ -703,7 +703,7 @@ export default function FamilyGraphApp() {
       return false
     })
 
-    const recoveryKey = `family_recovery_v3_${user.id}_${familyId}`
+    const recoveryKey = `family_recovery_v4_${user.id}_${familyId}`
     const alreadyRan = typeof window !== 'undefined' && !!sessionStorage.getItem(recoveryKey)
 
     // Skip if already ran AND no duplicates detected
