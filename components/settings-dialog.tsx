@@ -122,24 +122,6 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
   // Remove from family confirmation
   const [removeConfirmUserId, setRemoveConfirmUserId] = useState<string | null>(null)
 
-  // Display name edit
-  const [editingName, setEditingName] = useState(false)
-  const [nameValue, setNameValue] = useState('')
-  const [savingName, setSavingName] = useState(false)
-  const startEditName = () => {
-    setNameValue((profile as any)?.display_name ?? '')
-    setEditingName(true)
-  }
-  const saveDisplayName = async () => {
-    if (!user || !nameValue.trim()) return
-    setSavingName(true)
-    const { error } = await supabase.from('profiles').update({ display_name: nameValue.trim() }).eq('id', user.id)
-    setSavingName(false)
-    if (error) { toast.error('Could not save name'); return }
-    toast.success('Name updated')
-    setEditingName(false)
-  }
-
   // Self-unclaim state
   const [unclaiming, setUnclaiming] = useState(false)
   const [showUnclaimConfirm, setShowUnclaimConfirm] = useState(false)
