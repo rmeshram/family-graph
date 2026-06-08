@@ -833,10 +833,10 @@ export default function JoinPage() {
                   in another family and must explicitly confirm before we switch them. */}
               {crossFamilyJoinConfirm && (
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-amber-400">⚠️ You&apos;re already in a family</p>
+                  <p className="text-sm font-semibold text-amber-400">⚠️ You&apos;re already in another tree</p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Your account is linked to <strong className="text-foreground">{crossFamilyJoinConfirm.existingNodeName || 'a profile'}</strong> in another family.
-                    Joining this family will move your account here. Your existing family data stays intact — other members can still see it.
+                    Your account is linked to <strong className="text-foreground">{crossFamilyJoinConfirm.existingNodeName || 'a profile'}</strong> in a different family tree.
+                    Joining this tree will move your account here. Your data in the other tree stays intact — its members can still see it.
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -1200,21 +1200,21 @@ export default function JoinPage() {
                       <GitBranch className="h-4 w-4 text-indigo-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-indigo-300">Connect both family trees</p>
+                      <p className="text-sm font-semibold text-indigo-300">Link both family trees</p>
                       <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                         Your account is already linked to{' '}
                         <strong className="text-foreground">{familyLinkSuggestion.existingNodeName}</strong>{' '}
-                        in <strong className="text-foreground">{familyLinkSuggestion.existingFamilyName}</strong>.
-                        Instead of claiming a separate profile, you can link both families together —
-                        your profile will serve as the bridge between the two trees.
+                        in the <strong className="text-foreground">{familyLinkSuggestion.existingFamilyName}</strong> tree.
+                        Instead of claiming a separate profile, you can link both trees together —
+                        your profile will serve as the bridge connecting the two.
                       </p>
                     </div>
                   </div>
                   <ul className="space-y-1 pl-1">
                     {[
-                      '🌳  Both family trees stay intact — no data is lost',
-                      '🔗  Members from both families will appear linked',
-                      `🪢  "${familyLinkSuggestion.targetFamilyName}" will see your family as connected relatives`,
+                      '🌳  Both trees stay intact — no data is lost',
+                      '🔗  Members from both trees will appear linked',
+                      `🪢  The "${familyLinkSuggestion.targetFamilyName}" tree will see your tree as connected relatives`,
                     ].map(t => (
                       <li key={t} className="text-xs text-muted-foreground">{t}</li>
                     ))}
@@ -1238,7 +1238,7 @@ export default function JoinPage() {
                       disabled={familyLinkSubmitting}
                     >
                       {familyLinkSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitBranch className="h-3.5 w-3.5" />}
-                      Connect Families
+                      Link Trees
                     </Button>
                   </div>
                 </div>
@@ -1247,13 +1247,13 @@ export default function JoinPage() {
               {/* ── Cross-family confirmation ── */}
               {!familyLinkSuggestion && crossFamilyConfirmData ? (
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-amber-400">⚠️ Family Switch Required</p>
+                  <p className="text-sm font-semibold text-amber-400">⚠️ You&apos;re in a different tree</p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    You&apos;re currently a member of <strong className="text-foreground">{crossFamilyConfirmData.currentFamilyName}</strong>.
-                    Claiming this profile will move your account to <strong className="text-foreground">{crossFamilyConfirmData.targetFamilyName}</strong>.
+                    Your account is currently linked to the <strong className="text-foreground">{crossFamilyConfirmData.currentFamilyName}</strong> tree.
+                    Claiming this profile will switch you to the <strong className="text-foreground">{crossFamilyConfirmData.targetFamilyName}</strong> tree.
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Your existing family data stays intact — other members can still see it.
+                    Your data in the other tree stays intact — its members can still see it.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setCrossFamilyConfirmData(null)}>
@@ -1364,11 +1364,11 @@ export default function JoinPage() {
               <CheckCircle2 className="h-12 w-12 text-green-400 mx-auto" />
               {familyLinkResult ? (
                 <>
-                  <h1 className="text-xl font-bold">Families connected! 🌳</h1>
+                  <h1 className="text-xl font-bold">Trees linked! 🌳</h1>
                   <p className="text-muted-foreground text-sm leading-relaxed">
                     {familyLinkResult.autoAccepted
-                      ? <>Both <strong>{familyLinkResult.existingFamilyName}</strong> and <strong>{familyLinkResult.claimFamilyName}</strong> are now linked. Members from both trees will appear connected.</>
-                      : <>A connection request has been sent to <strong>{familyLinkResult.existingFamilyName}</strong> admins. Once accepted, both trees will be linked.</>}
+                      ? <>The <strong>{familyLinkResult.existingFamilyName}</strong> and <strong>{familyLinkResult.claimFamilyName}</strong> trees are now linked. Members from both trees will appear connected.</>
+                      : <>A connection request has been sent to the admins of <strong>{familyLinkResult.existingFamilyName}</strong>. Once accepted, both trees will be linked.</>}
                   </p>
                 </>
               ) : (
