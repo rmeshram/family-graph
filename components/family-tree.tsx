@@ -338,9 +338,9 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
   const AFFILIATED_PALETTE = [
     { stroke: '#14B8A6', fill: 'rgba(20,184,166,0.07)', text: 'rgba(20,184,166,0.80)', badge: 'rgba(20,184,166,0.18)' },
     { stroke: '#8B5CF6', fill: 'rgba(139,92,246,0.07)', text: 'rgba(167,139,250,0.80)', badge: 'rgba(139,92,246,0.18)' },
-    { stroke: '#F43F5E', fill: 'rgba(244,63,94,0.07)',  text: 'rgba(251,113,133,0.80)', badge: 'rgba(244,63,94,0.18)'  },
-    { stroke: '#F59E0B', fill: 'rgba(245,158,11,0.07)', text: 'rgba(252,211,77,0.80)',  badge: 'rgba(245,158,11,0.18)' },
-    { stroke: '#22C55E', fill: 'rgba(34,197,94,0.07)',  text: 'rgba(134,239,172,0.80)', badge: 'rgba(34,197,94,0.18)'  },
+    { stroke: '#F43F5E', fill: 'rgba(244,63,94,0.07)', text: 'rgba(251,113,133,0.80)', badge: 'rgba(244,63,94,0.18)' },
+    { stroke: '#F59E0B', fill: 'rgba(245,158,11,0.07)', text: 'rgba(252,211,77,0.80)', badge: 'rgba(245,158,11,0.18)' },
+    { stroke: '#22C55E', fill: 'rgba(34,197,94,0.07)', text: 'rgba(134,239,172,0.80)', badge: 'rgba(34,197,94,0.18)' },
   ]
 
   //  Affiliated cluster metadata (bounds, junction pos, per-family color)
@@ -1133,30 +1133,35 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
               )
             }
 
-            const midY = (conn.from.y + conn.to.y) / 2
             const isHighlighted = hoveredMemberId === conn.fromId || hoveredMemberId === conn.toId
 
-            const d = `M ${conn.from.x + offsetX} ${conn.from.y + 40 + offsetY}
-                        C ${conn.from.x + offsetX} ${midY + offsetY},
-                          ${conn.to.x + offsetX} ${midY + offsetY},
-                          ${conn.to.x + offsetX} ${conn.to.y - 40 + offsetY}`
+            // Orthogonal elbow routing — no crossing curves
+            const fx = conn.from.x + offsetX
+            const tx = conn.to.x + offsetX
+            const py = conn.from.y + 40 + offsetY   // parent node bottom
+            const cy = conn.to.y - 40 + offsetY    // child node top
+            const ey = py + (cy - py) * 0.32        // elbow at ~1/3 down
+            const r = 6                              // corner radius
+            const goRight = tx >= fx
+            // Rounded elbow corners via quadratic bezier
+            const d = fx === tx
+              ? `M ${fx} ${py} L ${tx} ${cy}`  // same column — straight line
+              : `M ${fx} ${py}
+                 L ${fx} ${ey - r}
+                 Q ${fx} ${ey} ${fx + (goRight ? r : -r)} ${ey}
+                 L ${tx + (goRight ? -r : r)} ${ey}
+                 Q ${tx} ${ey} ${tx} ${ey + r}
+                 L ${tx} ${cy}`
 
             const edgeColor = bothExtended ? 'url(#edgeVioletGradient)' : 'url(#edgeGoldGradient)'
-            const glowColor = bothExtended ? '#7C3AED' : '#F59E0B'
 
             return (
-              <g key={i}>
-                <path d={d} fill="none"
-                  stroke={glowColor} strokeWidth={14}
-                  opacity={isHighlighted ? 0.12 : 0.06}
-                />
-                <path d={d} fill="none"
-                  stroke={edgeColor}
-                  strokeWidth={isHighlighted ? 2.5 : 1.8}
-                  opacity={isHighlighted ? 1 : 0.75}
-                  filter={isHighlighted ? 'url(#glowGold)' : undefined}
-                />
-              </g>
+              <path key={i} d={d} fill="none"
+                stroke={edgeColor}
+                strokeWidth={isHighlighted ? 2 : 1.5}
+                opacity={isHighlighted ? 0.95 : 0.55}
+                filter={isHighlighted ? 'url(#glowGold)' : undefined}
+              />
             )
           })}
         </svg>
@@ -1310,18 +1315,13 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                         isSelf ? 'border-amber-400/70'
                           : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
                       )}
-                      style={clusterColor && !isSelected && !isSelf ? { borderColor: `${clusterColor.stroke}59` } : undefined}
+                        style={clusterColor && !isSelected && !isSelf ? { borderColor: `${clusterColor.stroke}59` } : undefined}
                       >
                         {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover object-top" />}
                         <AvatarFallback
-                          className={cn('text-[9px] font-semibold',
-                            isAnonymous ? 'bg-muted/60 text-muted-foreground'
-                              : isUnclaimed ? 'bg-slate-700/40 text-slate-400'
-                                : isExtended ? 'bg-gradient-to-br from-violet-600/25 to-purple-600/25 text-violet-300'
-                                  : !clusterColor ? 'bg-gradient-to-br from-indigo-600/20 to-violet-600/20 text-indigo-200' : ''
-                          )}
+                          className="text-[9px] font-semibold bg-muted/50 text-muted-foreground"
                           style={clusterColor && !isAnonymous && !isUnclaimed ? {
-                            background: `linear-gradient(135deg, ${clusterColor.stroke}40, ${clusterColor.stroke}26)`,
+                            background: `${clusterColor.stroke}22`,
                             color: clusterColor.text,
                           } : undefined}
                         >{displayInitials}</AvatarFallback>
@@ -1440,14 +1440,14 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                                   ? 'border-slate-500/35'
                                   : isHovered
                                     ? (isExtended
-                                        ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
-                                        : !clusterColor ? 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]' : '')
+                                      ? 'border-violet-400/50 ring-2 ring-violet-400/15 ring-offset-1 ring-offset-[var(--surface-base)]'
+                                      : !clusterColor ? 'border-indigo-400/50 ring-2 ring-indigo-400/15 ring-offset-1 ring-offset-[var(--surface-base)]' : '')
                                     : (isExtended ? 'border-violet-600/35' : !clusterColor ? 'border-slate-600/40' : '')
                             )}
-                          style={clusterColor && !isSelected && !isUnclaimed ? {
-                            borderColor: isHovered ? `${clusterColor.stroke}cc` : `${clusterColor.stroke}59`,
-                            ...(isHovered ? { boxShadow: `0 0 0 2px ${clusterColor.stroke}26` } : {}),
-                          } : undefined}
+                            style={clusterColor && !isSelected && !isUnclaimed ? {
+                              borderColor: isHovered ? `${clusterColor.stroke}cc` : `${clusterColor.stroke}59`,
+                              ...(isHovered ? { boxShadow: `0 0 0 2px ${clusterColor.stroke}26` } : {}),
+                            } : undefined}
                           >
                             {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover object-top" />}
                             <AvatarFallback
