@@ -1118,30 +1118,46 @@ export function HierarchicalTree({
   // isUserInteracted: set true when user pans/zooms; suppresses auto-fit after that
   const isUserInteracted = useRef(false)
 
-  // Wizard state — persisted in localStorage so it survives new tabs/sessions.
-  // Previously used sessionStorage which caused the wizard to re-appear on every new session.
-  const [wizardDone, setWizardDone] = useState(() =>
+  // Wizard state — session-only dismissal (survives tab switches but resets on new sessions).
+  // We intentionally do NOT persist "done" to localStorage permanently, because close family
+  // might still be missing when the user returns — we want the wizard to re-trigger in that case.
+  const [wizardDismissedThisSession, setWizardDismissedThisSession] = useState(() =>
     typeof window !== 'undefined' &&
-    (localStorage.getItem(`fg_wizard_done_${selfMemberId ?? ''}`) === '1' ||
-      sessionStorage.getItem('fg_wizard_done') === '1')
+    sessionStorage.getItem('fg_wizard_done') === '1'
   )
 
-  // When parent forces the wizard open, clear the done state
+  // When parent forces the wizard open, clear the dismissal
   useEffect(() => {
     if (forceWizard) {
-      setWizardDone(false)
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('fg_wizard_done')
-        if (selfMemberId) localStorage.removeItem(`fg_wizard_done_${selfMemberId}`)
-      }
+      setWizardDismissedThisSession(false)
+      if (typeof window !== 'undefined') sessionStorage.removeItem('fg_wizard_done')
     }
   }, [forceWizard])
   const [showConfetti, setShowConfetti] = useState(false)
 
-  const showWizard = !wizardDone &&
+  // Core family steps: father + mother. If either is missing and not permanently skipped,
+  // the wizard should always show — even if the user previously dismissed it this session.
+  const CORE_STEPS = WIZARD_STEPS_DEF.slice(0, 2) // father, mother
+  const coreStillMissing = !!selfMemberId && (() => {
+    if (!selfMemberId) return false
+    const dbSkippedSet = new Set(wizardSkipped ?? [])
+    const lsSkipped = typeof window !== 'undefined' ? getWizardDismissed(selfMemberId) : new Set<string>()
+    return CORE_STEPS.some(s =>
+      s.checkMissing(members, selfMemberId) &&
+      !dbSkippedSet.has(s.relType) &&
+      !lsSkipped.has(s.relType)
+    )
+  })()
+
+  const showWizard =
     !!selfMemberId &&
     !!onQuickAdd &&
-    (forceWizard || WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)))
+    (forceWizard ||
+      // Always show when core family (father/mother) is genuinely missing & not skipped
+      coreStillMissing ||
+      // Show for remaining steps only if not dismissed this session
+      (!wizardDismissedThisSession && WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)))
+    )
 
   /** Write a permanently-skipped rel type to Supabase (best-effort, non-blocking). */
   const handlePermanentWizardSkip = useCallback(async (relType: string) => {
@@ -1167,10 +1183,11 @@ export function HierarchicalTree({
   }, [userId])
 
   const handleWizardDone = useCallback(() => {
-    setWizardDone(true)
+    setWizardDismissedThisSession(true)
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('fg_wizard_done', '1')
-      if (selfMemberId) localStorage.setItem(`fg_wizard_done_${selfMemberId}`, '1')
+      // Do NOT write to localStorage permanently — we want the wizard to re-trigger
+      // on next session if core family is still missing.
     }
     if (members.length > 1) {
       setShowConfetti(true)
@@ -1462,11 +1479,11 @@ export function HierarchicalTree({
         ))}
       </div>
 
-      {/* ── Restart guide link (bottom-left, only when wizard is done but key nodes missing) */}
-      {wizardDone && selfMemberId && WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)) && (
+      {/* ── Restart guide link (bottom-left, only when wizard is dismissed this session but key nodes missing) */}
+      {wizardDismissedThisSession && selfMemberId && WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)) && (
         <button
           type="button"
-          onClick={() => { sessionStorage.removeItem('fg_wizard_done'); setWizardDone(false) }}
+          onClick={() => { sessionStorage.removeItem('fg_wizard_done'); setWizardDismissedThisSession(false) }}
           className="absolute left-4 z-40 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
           style={{ bottom: bottomControlsInset !== undefined ? bottomControlsInset : 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
         >
