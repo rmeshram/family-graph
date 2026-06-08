@@ -161,13 +161,13 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       rowMembers.forEach(m => {
         if (added.has(m.id)) return
         sorted.push(m); added.add(m.id)
-        // Keep spouse pairs adjacent
-        ;(m.spouseIds ?? []).forEach(sid => {
-          const sp = byId.get(sid)
-          if (sp && rowMembers.includes(sp) && !added.has(sid)) {
-            sorted.push(sp); added.add(sid)
-          }
-        })
+          // Keep spouse pairs adjacent
+          ; (m.spouseIds ?? []).forEach(sid => {
+            const sp = byId.get(sid)
+            if (sp && rowMembers.includes(sp) && !added.has(sid)) {
+              sorted.push(sp); added.add(sid)
+            }
+          })
       })
       const totalW = sorted.length * NODE_W + (sorted.length - 1) * H_GAP
       const startX = -(totalW / 2) + NODE_W / 2
@@ -183,17 +183,17 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
     const edges: EdgeDef[] = []
     nodes.forEach(n => {
       const m = n.member
-      ;(m.parentIds ?? []).forEach(pid => {
-        const ppos = pos.get(pid)
-        if (!ppos) return
-        edges.push({ id: `e-${pid}-${m.id}`, x1: ppos.x, y1: ppos.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood' })
-      })
-      ;(m.spouseIds ?? []).forEach(sid => {
-        if (sid > m.id) return // draw once per pair
-        const spos = pos.get(sid)
-        if (!spos) return
-        edges.push({ id: `e-sp-${m.id}-${sid}`, x1: n.x + NODE_W / 2, y1: n.y, x2: spos.x - NODE_W / 2, y2: spos.y, kind: 'spouse' })
-      })
+        ; (m.parentIds ?? []).forEach(pid => {
+          const ppos = pos.get(pid)
+          if (!ppos) return
+          edges.push({ id: `e-${pid}-${m.id}`, x1: ppos.x, y1: ppos.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood' })
+        })
+        ; (m.spouseIds ?? []).forEach(sid => {
+          if (sid > m.id) return // draw once per pair
+          const spos = pos.get(sid)
+          if (!spos) return
+          edges.push({ id: `e-sp-${m.id}-${sid}`, x1: n.x + NODE_W / 2, y1: n.y, x2: spos.x - NODE_W / 2, y2: spos.y, kind: 'spouse' })
+        })
     })
 
     return { nodes, ghosts: [] as GhostSlot[], edges }
@@ -310,7 +310,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
     const unplacedIds = new Set(unplaced.map(m => m.id))
     for (let pass = 0; pass < 2; pass++) {
       unplaced.forEach(m => {
-        ;(m.spouseIds ?? []).forEach(sid => {
+        ; (m.spouseIds ?? []).forEach(sid => {
           if (!unplacedIds.has(sid)) return // spouse is in core tree — skip
           const mRg = memberRg.get(m.id)!
           const sRg = memberRg.get(sid)!
