@@ -82,9 +82,33 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownloadTemplate, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous, onUnclaim }: SettingsDialogProps) {
   const isMobile = useIsMobile()
-  const { user, profile, familyId, loading: authLoading } = useAuth()
+  const { user, profile, familyId, loading: authLoading, refreshProfile } = useAuth()
   const supabase = createClient()
   const isAdmin = (profile as any)?.role === 'admin'
+
+  // ── Controlled tab state — avoids Tabs key= hack which resets all local state ──
+  const [activeTab, setActiveTab] = useState(defaultTab)
+  // Sync when defaultTab changes (e.g. notification bell opens Settings > Notifications)
+  useEffect(() => { setActiveTab(defaultTab) }, [defaultTab])
+
+  // ── Display name inline editing ─────────────────────────────────────────────
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const startEditName = () => {
+    setNameValue((profile as any)?.display_name ?? '')
+    setEditingName(true)
+  }
+  const saveDisplayName = async () => {
+    if (!user || !nameValue.trim()) return
+    setSavingName(true)
+    const { error } = await supabase.from('profiles').update({ display_name: nameValue.trim() }).eq('id', user.id)
+    setSavingName(false)
+    if (error) { toast.error('Could not save name'); return }
+    toast.success('Name updated')
+    setEditingName(false)
+    refreshProfile()
+  }
 
   // Account-level privacy settings
   const { settings: privacySettings, saving: savingPrivacySettings, saveSettings: savePrivacySettings } = usePrivacySettings(user?.id)
@@ -279,11 +303,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
     setPhoneInviteError('')
     setPhoneInviteResult(null)
     try {
-      const { useInviteByPhone } = await import('@/hooks/use-invites')
-      // We call the hook's function directly since we can't call hooks conditionally;
-      // instead, use a lazy dynamic import of the utility function only.
-      const { normalizePhone, whatsappUrl } = await import('@/lib/phone-utils')
-      const { isValidIndianPhone } = await import('@/lib/phone-utils')
+      const { normalizePhone, whatsappUrl, isValidIndianPhone } = await import('@/lib/phone-utils')
       if (!isValidIndianPhone(phoneInviteInput)) {
         setPhoneInviteError('Please enter a valid 10-digit Indian mobile number.')
         return
@@ -487,6 +507,9 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
       }
       setFamilyProfiles(prev => prev.map(p => p.id === userId ? { ...p, role } : p))
       toast.success('Role updated')
+      // If the role change affects the current user, refresh their auth profile
+      // so the sidebar badge and admin-gated UI update without a page reload.
+      if (userId === user?.id) refreshProfile()
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not update role')
     }
@@ -515,6 +538,9 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message ?? data.error ?? 'Revoke failed')
       toast.success('Claim revoked')
+      // Refresh the profiles list so the ShieldOff button disappears and
+      // the member_id column reflects the cleared state.
+      await fetchFamilyProfiles()
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not revoke claim')
     } finally {
@@ -541,7 +567,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
         <DialogDescription>Manage your Family Graph preferences and team</DialogDescription>
       </DialogHeader>
 
-      <Tabs key={defaultTab} defaultValue={defaultTab}>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full mb-4 overflow-x-auto flex-nowrap justify-start">
           <TabsTrigger value="general" className="flex-1 shrink-0 text-xs sm:text-sm">General</TabsTrigger>
           <TabsTrigger value="team" className="flex-1 shrink-0 text-xs sm:text-sm">
@@ -593,10 +619,10 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                           onKeyDown={e => { if (e.key === 'Enter') saveDisplayName(); if (e.key === 'Escape') setEditingName(false) }}
                           autoFocus
                         />
-                        <Button size="sm" className="h-7 px-2 text-xs" onClick={saveDisplayName} disabled={savingName}>
+                        <Button size="sm" className="h-7 px-2 text-xs shrink-0" onClick={saveDisplayName} disabled={savingName || !nameValue.trim()}>
                           {savingName ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditingName(false)}>Cancel</Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs shrink-0" onClick={() => setEditingName(false)}>Cancel</Button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
