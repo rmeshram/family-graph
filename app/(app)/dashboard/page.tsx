@@ -433,13 +433,12 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
   const [link, setLink] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [inviteRole, setInviteRole] = useState<'contributor' | 'viewer'>('contributor')
 
-  const generateLink = useCallback((role: 'contributor' | 'viewer') => {
+  const generateLink = useCallback(() => {
     if (!familyId || !userId) return
     setLink(null)
     setGenerating(true)
-    createInviteLink(role, 72, userId)
+    createInviteLink('contributor', 72, userId)
       .then(result => setLink(result.link))
       .catch(() => {/* silently fall back to placeholder */ })
       .finally(() => setGenerating(false))
@@ -447,7 +446,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
 
   // Generate a real invite link on mount (for authenticated users with a family)
   useEffect(() => {
-    generateLink(inviteRole)
+    generateLink()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId, userId])
 
@@ -475,26 +474,7 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div className="rounded-xl border border-border/50 bg-muted/30 p-3 space-y-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Invite Link</p>
-          {/* Role picker — controls who the link invites as */}
-          <div className="flex items-center gap-1 rounded-lg bg-muted/50 p-0.5">
-            {(['contributor', 'viewer'] as const).map(r => (
-              <button
-                key={r}
-                onClick={() => { setInviteRole(r); generateLink(r) }}
-                className={cn(
-                  'flex-1 rounded-md py-1 text-[10px] font-semibold transition-colors',
-                  inviteRole === r
-                    ? 'bg-card text-foreground shadow-sm border border-border/50'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {r === 'contributor' ? '✏️ Contributor' : '👁 Viewer'}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            {inviteRole === 'contributor' ? 'Can add and edit family members' : 'Can view only — cannot edit'}
-          </p>
+          <p className="text-[10px] text-muted-foreground">Anyone who joins can add &amp; edit family members</p>
           <div className="flex items-center gap-2">
             {generating ? (
               <span className="flex-1 text-[10px] text-muted-foreground animate-pulse">Generating link…</span>
@@ -902,12 +882,10 @@ export default function FamilyGraphApp() {
   }, [pfResult])
 
   const isAdmin = !isDemoMode && (profile as any)?.role === 'admin'
-  const isViewer = !isDemoMode && (profile as any)?.role === 'viewer'
-  // Contributors (non-viewer, non-admin logged-in users) can add AND delete unclaimed nodes.
-  // Admins can delete any node (including claimed ones). Contributors are blocked from
-  // archiving a node that is claimed by a different user — that requires an admin.
-  // The logged-in user's own node can NEVER be deleted by anyone.
-  const canDelete = !isDemoMode && !isViewer && !!user
+  // Everyone who joins the family has full edit access — no viewer tier.
+  // isViewer kept as false so all downstream !isViewer guards remain true.
+  const isViewer = false
+  const canDelete = !isDemoMode && !!user
 
   // ── Progressive onboarding checklist data ────────────────────────────────────
   const checklistHasStories = useMemo(() =>
@@ -1679,23 +1657,17 @@ export default function FamilyGraphApp() {
                       'flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors',
                       isAdmin
                         ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                        : (profile as any)?.role === 'contributor'
-                          ? 'border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20'
-                          : 'border-border/50 bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                        : 'border-border/50 bg-muted/30 text-muted-foreground hover:bg-muted/50'
                     )}
                   >
-                    {isAdmin ? <Crown className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+                    {isAdmin && <Crown className="h-2.5 w-2.5" />}
                     <span className="hidden sm:inline">
-                      {isAdmin ? 'Admin' : (profile as any)?.role ?? 'viewer'}
+                      {isAdmin ? 'Admin' : 'Member'}
                     </span>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {isAdmin
-                    ? 'You are the Family Admin — full access'
-                    : (profile as any)?.role === 'contributor'
-                      ? 'Contributor — can add & edit members'
-                      : 'Viewer — read-only access'}
+                  {isAdmin ? 'You are the Family Admin' : 'Family Member'}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -1828,24 +1800,7 @@ export default function FamilyGraphApp() {
                   <TreePine className="h-10 w-10 text-primary/50" />
                 </div>
 
-                {isViewer ? (
-                  <>
-                    <div>
-                      <h2 className="text-xl font-bold text-foreground mb-2">This family tree is empty</h2>
-                      <p className="text-muted-foreground text-sm max-w-xs">
-                        You joined as a <strong>viewer</strong>. Ask the family admin to add members, or request contributor access so you can build the tree yourself.
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsSettingsOpen(true)}
-                      className="h-11 px-6 gap-2"
-                    >
-                      <Settings className="h-4 w-4" />
-                      Request access
-                    </Button>
-                  </>
-                ) : (identityState === 'unlinked' || !selfMember) ? (
+                {(identityState === 'unlinked' || !selfMember) ? (
                   <>
                     <div>
                       <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Let's build your tree 🌱</h2>

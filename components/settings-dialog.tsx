@@ -584,17 +584,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
     }
   }
 
-  const roleIcon = (role: string) => {
-    if (role === 'admin') return <Crown className="h-3 w-3 text-amber-400" />
-    if (role === 'contributor') return <Edit3 className="h-3 w-3 text-green-400" />
-    return <Eye className="h-3 w-3 text-blue-400" />
-  }
-
-  const roleBadgeClass = (role: string) => {
-    if (role === 'admin') return 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-    if (role === 'contributor') return 'bg-green-500/10 text-green-400 border-green-500/20'
-    return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-  }
+  // No role badge needed — everyone is a member. Admin crown is the only distinction.
 
   const innerContent = (
     <>
@@ -670,8 +660,8 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                     )}
                     <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                   </div>
-                  <Badge variant="outline" className={`ml-auto text-xs shrink-0 ${roleBadgeClass((profile as any)?.role ?? 'viewer')}`}>
-                    {(profile as any)?.role ?? 'viewer'}
+                  <Badge variant="outline" className={`ml-auto text-xs shrink-0 ${isAdmin ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'border-border text-muted-foreground'}`}>
+                    {isAdmin ? <><Crown className="h-3 w-3 mr-1" />Admin</> : 'Member'}
                   </Badge>
                 </div>
               ) : (
@@ -866,25 +856,23 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
         {/* ── Team / Family Members ─────────────────────────────── */}
         <TabsContent value="team" className="mt-0 space-y-4">
 
-          {/* ── Your Role Card ───────────────────────────────────── */}
-          <div className={`rounded-xl border p-3 flex items-center gap-3 ${isAdmin ? 'border-amber-500/30 bg-amber-500/5' : 'border-border/50 bg-muted/20'}`}>
-            <div className={`h-9 w-9 rounded-lg grid place-items-center shrink-0 ${isAdmin ? 'bg-amber-500/15' : 'bg-muted'}`}>
-              {isAdmin ? <Crown className="h-4 w-4 text-amber-400" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+          {/* ── Your Family Role Card ─────────────────────────────────
+               Only shown for the family admin — regular members don't
+               need to know about roles, they all have the same access.
+          ── */}
+          {isAdmin && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg grid place-items-center shrink-0 bg-amber-500/15">
+                <Crown className="h-4 w-4 text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">You are the Family Admin</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  You can approve profile claims, manage members, and connect other family trees.
+                </p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">
-                {isAdmin ? 'You are the Family Admin' : `Your role: ${(profile as any)?.role ?? 'viewer'}`}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {isAdmin
-                  ? 'You can approve or reject profile claims, manage members, and change invite settings.'
-                  : 'Contact the family admin to get elevated access.'}
-              </p>
-            </div>
-            <Badge variant="outline" className={`shrink-0 text-[10px] px-1.5 py-0 ${isAdmin ? 'border-amber-500/30 text-amber-400' : 'border-border text-muted-foreground'}`}>
-              {isAdmin ? 'Admin' : (profile as any)?.role ?? 'viewer'}
-            </Badge>
-          </div>
+          )}
 
           {/* Pending Claims — admin only */}
           {isAdmin && (
@@ -974,16 +962,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                 <Users className="h-4 w-4 text-muted-foreground" />
                 Family Members with Access
               </CardTitle>
-              {/* Non-admin hint: show who to contact for role changes */}
-              {!isAdmin && familyProfiles.some(fp => fp.role === 'admin') && (
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Contact{' '}
-                  <span className="font-semibold text-amber-400">
-                    {familyProfiles.find(fp => fp.role === 'admin')?.display_name ?? 'the admin'}
-                  </span>
-                  {' '}to change your role or get admin access.
-                </p>
-              )}
+              {/* Non-admin hint removed — everyone has the same access */}
             </CardHeader>
             <CardContent className="space-y-0 p-0">
               {!familyId && authLoading ? (
@@ -996,16 +975,17 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                 <p className="text-sm text-muted-foreground p-4">No family members have joined yet. Share your invite link!</p>
               ) : (
                 <div className="divide-y divide-border/40">
-                  {/* Sort: admins first, then contributors, then viewers */}
+                  {/* Sort: admins first, then everyone else alphabetically */}
                   {[...familyProfiles]
                     .sort((a, b) => {
-                      const order = { admin: 0, contributor: 1, viewer: 2 }
-                      return (order[a.role as keyof typeof order] ?? 3) - (order[b.role as keyof typeof order] ?? 3)
+                      if (a.role === 'admin' && b.role !== 'admin') return -1
+                      if (b.role === 'admin' && a.role !== 'admin') return 1
+                      return (a.display_name ?? '').localeCompare(b.display_name ?? '')
                     })
                     .map(fp => (
                       <div
                         key={fp.id}
-                        className={`flex items-center gap-3 px-4 py-3 ${fp.role === 'admin' ? 'bg-amber-500/3' : ''}`}
+                        className="flex items-center gap-3 px-4 py-3"
                       >
                         <div className="relative shrink-0">
                           <Avatar className="h-8 w-8">
@@ -1025,31 +1005,17 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                             {fp.id === user?.id && (
                               <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0 rounded-full border border-primary/20">you</span>
                             )}
+                            {fp.role === 'admin' && (
+                              <span className="text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-1.5 py-0 rounded-full border border-amber-500/20">Admin</span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            {roleIcon(fp.role)}
-                            <p className={`text-[10px] capitalize font-medium ${fp.role === 'admin' ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                              {fp.role}
-                              {fp.role === 'admin' && ' · Family Admin'}
-                            </p>
-                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {fp.role === 'admin' ? 'Family Admin' : 'Member'}
+                          </p>
                         </div>
-                        {/* Admin: show role selector + remove button for others */}
+                        {/* Admin: remove button (no role selector — everyone is equal) */}
                         {isAdmin && fp.id !== user?.id && (
                           <div className="flex items-center gap-2">
-                            <Select
-                              value={fp.role}
-                              onValueChange={v => updateRole(fp.id, v)}
-                            >
-                              <SelectTrigger className="h-7 w-28 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="viewer">Viewer</SelectItem>
-                                <SelectItem value="contributor">Contributor</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                              </SelectContent>
-                            </Select>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1074,13 +1040,6 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                               </Button>
                             )}
                           </div>
-                        )}
-                        {/* Non-admin or viewing own row: just show role badge */}
-                        {(!isAdmin || fp.id === user?.id) && (
-                          <Badge variant="outline" className={`text-[10px] shrink-0 ${roleBadgeClass(fp.role)}`}>
-                            {roleIcon(fp.role)}
-                            <span className="ml-1">{fp.role}</span>
-                          </Badge>
                         )}
                       </div>
                     ))}
