@@ -1136,28 +1136,14 @@ export function HierarchicalTree({
   const [showConfetti, setShowConfetti] = useState(false)
 
   // Core family steps: father + mother. If either is missing and not permanently skipped,
-  // the wizard should always show — even if the user previously dismissed it this session.
-  const CORE_STEPS = WIZARD_STEPS_DEF.slice(0, 2) // father, mother
-  const coreStillMissing = !!selfMemberId && (() => {
-    if (!selfMemberId) return false
-    const dbSkippedSet = new Set(wizardSkipped ?? [])
-    const lsSkipped = typeof window !== 'undefined' ? getWizardDismissed(selfMemberId) : new Set<string>()
-    return CORE_STEPS.some(s =>
-      s.checkMissing(members, selfMemberId) &&
-      !dbSkippedSet.has(s.relType) &&
-      !lsSkipped.has(s.relType)
-    )
-  })()
+  // the wizard will re-appear on the next fresh session (sessionStorage resets per tab/session).
+  // We do NOT override session dismissal here — once dismissed this session, it stays gone.
 
   const showWizard =
     !!selfMemberId &&
     !!onQuickAdd &&
-    (forceWizard ||
-      // Always show when core family (father/mother) is genuinely missing & not skipped
-      coreStillMissing ||
-      // Show for remaining steps only if not dismissed this session
-      (!wizardDismissedThisSession && WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)))
-    )
+    !wizardDismissedThisSession &&
+    (forceWizard || WIZARD_STEPS_DEF.some(s => s.checkMissing(members, selfMemberId)))
 
   /** Write a permanently-skipped rel type to Supabase (best-effort, non-blocking). */
   const handlePermanentWizardSkip = useCallback(async (relType: string) => {
