@@ -1122,23 +1122,23 @@ export default function JoinPage() {
                 <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/30 mb-3">
                   <Shield className="h-5 w-5 text-blue-400" />
                 </div>
-                <h2 className="text-lg font-bold">Is this you?</h2>
+                <h2 className="text-lg font-bold">Your place is waiting</h2>
                 <p className="text-sm text-muted-foreground mt-1">
                   {preview?.inviterName
-                    ? <><strong className="text-foreground">{preview.inviterName}</strong> added you to the{' '}
-                      <strong className="text-foreground">{preview?.name ?? 'family'}</strong> tree and sent you this link.</>
-                    : 'Someone added you to this family tree and sent you this link to claim your profile.'}
+                    ? <><strong className="text-foreground">{preview.inviterName}</strong> has reserved a place for you in the{' '}
+                      <strong className="text-foreground">{preview?.name ?? 'family'}</strong> tree. Claim it — this branch is yours.</>
+                    : 'Your family has kept a place for you in this tree. Claim it to take full ownership of your branch.'}
                 </p>
               </div>
 
               {/* What you get by claiming */}
               <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-1.5">
-                <p className="text-[10px] font-semibold text-primary/70 uppercase tracking-wide">Once you claim your profile</p>
+                <p className="text-[10px] font-semibold text-primary/70 uppercase tracking-wide">Once you claim your place</p>
                 <ul className="space-y-1">
                   {[
-                    '✏️  Edit your own bio, photo & details',
+                    '✏️  You own your bio, photo & details — edit anytime',
                     '👁  Control who can see your profile',
-                    '🌿  Add your spouse, children & relatives',
+                    '🌿  Extend the tree from you — add your spouse, children & relatives',
                     '🔔  Get birthday & family update notifications',
                   ].map(t => (
                     <li key={t} className="text-xs text-muted-foreground">{t}</li>
@@ -1182,7 +1182,7 @@ export default function JoinPage() {
                   className="h-10 bg-muted/50 border-border"
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Enter your birth year to verify and claim this profile.
+                  Confirm your birth year — it verifies this place was reserved for you.
                 </p>
               </div>
 
@@ -1279,7 +1279,7 @@ export default function JoinPage() {
                     onClick={() => handleNodeClaim()}
                     className="w-full h-11 bg-primary hover:bg-primary/90"
                   >
-                    {isAuthed ? "Yes, that's me — Claim this profile" : 'Sign in & Claim'}
+                    {isAuthed ? "Yes, that's me — Claim my place" : 'Sign in & Claim my place'}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
 
@@ -1312,7 +1312,7 @@ export default function JoinPage() {
                 </div>
                 <div>
                   <p className="font-semibold text-sm leading-tight">{nodeClaim.identityHint}</p>
-                  <p className="text-xs text-green-500">Profile claimed ✓</p>
+                  <p className="text-xs text-green-500">Your branch is now yours ✓</p>
                 </div>
               </div>
 
@@ -1354,7 +1354,7 @@ export default function JoinPage() {
           {status === 'joining' && (
             <div className="p-10 text-center">
               <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">Placing you in the family tree…</p>
+              <p className="text-sm text-muted-foreground">Securing your place in the tree…</p>
             </div>
           )}
 
@@ -1369,6 +1369,13 @@ export default function JoinPage() {
                     {familyLinkResult.autoAccepted
                       ? <>The <strong>{familyLinkResult.existingFamilyName}</strong> and <strong>{familyLinkResult.claimFamilyName}</strong> trees are now linked. Members from both trees will appear connected.</>
                       : <>A connection request has been sent to the admins of <strong>{familyLinkResult.existingFamilyName}</strong>. Once accepted, both trees will be linked.</>}
+                  </p>
+                </>
+              ) : nodeClaim ? (
+                <>
+                  <h1 className="text-xl font-bold">Your place is yours now! 🙏</h1>
+                  <p className="text-muted-foreground text-sm">
+                    Your profile is unlocked. Edit your details, add your own relatives, and build your branch of the tree.
                   </p>
                 </>
               ) : (

@@ -169,7 +169,7 @@ export function InviteToClaimDialog({
           <DialogDescription>
             {isDeceased
               ? 'This person has passed away. Their profile is preserved in the family tree as a memorial.'
-              : 'Send a secure link. They\'ll verify their identity with name and birth year before claiming.'}
+              : 'Send a link that reserves their place. They verify with name + birth year, then the profile is fully theirs.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -218,20 +218,20 @@ export function InviteToClaimDialog({
                   {member.birthYear ? ` · b. ${member.birthYear}` : ''}
                 </p>
               </div>
-              <Badge variant="outline" className="ml-auto shrink-0 text-xs">
-                Unclaimed
+              <Badge variant="outline" className="ml-auto shrink-0 text-xs text-amber-400 border-amber-400/30">
+                Place reserved
               </Badge>
             </div>
 
             {/* Why claim? — benefits for the invitee */}
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
-              <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">What they'll experience</p>
+              <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">What happens when they open the link</p>
               <ul className="space-y-1.5">
                 {([
-                  { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'They tap the link → see the family tree with their node highlighted' },
-                  { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'Enter their name + birth year to verify it\'s really them' },
-                  { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Profile unlocked — they can edit, add photos & see all relationships' },
-                  { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'You\'ll get notified the moment they join 🎉' },
+                  { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'They see the tree with their own node highlighted — their place in the family' },
+                  { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'They confirm name + birth year to verify it\'s really them' },
+                  { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Their branch is unlocked — they own their profile and can extend the tree from their node' },
+                  { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'You\'ll be notified the moment they claim their place 🎉' },
                 ] as { icon: React.ReactNode; text: string }[]).map(({ icon, text }) => (
                   <li key={text} className="flex items-start gap-2 text-xs text-muted-foreground">
                     <span className="shrink-0 mt-0.5">{icon}</span>
