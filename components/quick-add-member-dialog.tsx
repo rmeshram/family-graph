@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { AlertTriangle, UserCheck } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -87,7 +87,20 @@ export function QuickAddMemberDialog({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
 
+  // Which rel types are structurally impossible for this anchor — used to disable
+  // the pill buttons so the user can't accidentally select an already-filled slot.
+  const blockedTypes = useMemo(() => {
+    const blocked = new Set<QuickRelType>()
+    if (!existingMembers?.length) return blocked
+    const parents = existingMembers.filter(m => (anchorMember.parentIds ?? []).includes(m.id))
+    if (parents.some(p => p.gender === 'male')) blocked.add('father')
+    if (parents.some(p => p.gender === 'female')) blocked.add('mother')
+    if ((anchorMember.spouseIds ?? []).length > 0) blocked.add('spouse')
+    return blocked
+  }, [existingMembers, anchorMember])
+
   const handleRelTypeChange = (type: QuickRelType) => {
+    if (blockedTypes.has(type)) return // silently ignore clicks on disabled pills
     setRelType(type)
     // Auto-update gender default when the user switches relation type,
     // but only if they haven't explicitly made a choice yet.
@@ -168,19 +181,24 @@ export function QuickAddMemberDialog({
 
     const storedName = normalizeStoredName(name)
 
-    // Issue 5: Block structural duplicates — two fathers / two mothers
-    if (existingMembers?.length && (relType === 'father' || relType === 'mother')) {
+    // Block structural duplicates — one father, one mother, one spouse per person.
+    if (existingMembers?.length && (relType === 'father' || relType === 'mother' || relType === 'spouse')) {
       const existingParents = existingMembers.filter(m =>
         (anchorMember.parentIds ?? []).includes(m.id)
       )
       if (relType === 'father' && existingParents.some(p => p.gender === 'male')) {
         const existing = existingParents.find(p => p.gender === 'male')
-        setSubmitError(`${existing?.name ?? 'A father'} is already in the tree. Edit that profile instead, or choose Stepfather if this is a different person.`)
+        setSubmitError(`${existing?.name ?? 'A father'} is already added. Edit that profile instead, or use Stepfather for a different person.`)
         return
       }
       if (relType === 'mother' && existingParents.some(p => p.gender === 'female')) {
         const existing = existingParents.find(p => p.gender === 'female')
-        setSubmitError(`${existing?.name ?? 'A mother'} is already in the tree. Edit that profile instead, or choose Stepmother if this is a different person.`)
+        setSubmitError(`${existing?.name ?? 'A mother'} is already added. Edit that profile instead, or use Stepmother for a different person.`)
+        return
+      }
+      if (relType === 'spouse' && (anchorMember.spouseIds ?? []).length > 0) {
+        const existingSpouse = existingMembers.find(m => m.id === anchorMember.spouseIds![0])
+        setSubmitError(`${existingSpouse?.name ?? 'A spouse'} is already linked. Edit that profile instead.`)
         return
       }
     }
@@ -243,19 +261,27 @@ export function QuickAddMemberDialog({
           <div className="space-y-2">
             <Label>Relation to {anchorFirstName}</Label>
             <div className="grid grid-cols-5 gap-1">
-              {ALL_REL_TYPES.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => handleRelTypeChange(type)}
-                  className={`rounded-lg border py-2 text-xs font-medium transition-all ${relType === type
-                    ? 'border-primary bg-primary/15 text-primary'
-                    : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70 hover:text-foreground'
+              {ALL_REL_TYPES.map((type) => {
+                const isBlocked = blockedTypes.has(type)
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    disabled={isBlocked}
+                    title={isBlocked ? `${REL_PILL_LABELS[type]} already added` : undefined}
+                    onClick={() => handleRelTypeChange(type)}
+                    className={`rounded-lg border py-2 text-xs font-medium transition-all ${
+                      isBlocked
+                        ? 'cursor-not-allowed border-border/20 bg-muted/10 text-muted-foreground/30 line-through'
+                        : relType === type
+                          ? 'border-primary bg-primary/15 text-primary'
+                          : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70 hover:text-foreground'
                     }`}
-                >
-                  {REL_PILL_LABELS[type]}
-                </button>
-              ))}
+                  >
+                    {REL_PILL_LABELS[type]}
+                  </button>
+                )
+              })}
             </div>
           </div>
 

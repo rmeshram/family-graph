@@ -1231,6 +1231,22 @@ export default function FamilyGraphApp() {
     const anchor = members.find(m => m.id === anchorId)
     if (!anchor) return
 
+    // Hard guard — enforce one father / one mother / one spouse even if the
+    // dialog validation is bypassed (e.g. programmatic calls, race conditions).
+    const existingParents = members.filter(m => (anchor.parentIds ?? []).includes(m.id))
+    if (relType === 'father' && existingParents.some(p => p.gender === 'male')) {
+      const dup = existingParents.find(p => p.gender === 'male')
+      throw new Error(`${dup?.name ?? 'A father'} is already in the tree.`)
+    }
+    if (relType === 'mother' && existingParents.some(p => p.gender === 'female')) {
+      const dup = existingParents.find(p => p.gender === 'female')
+      throw new Error(`${dup?.name ?? 'A mother'} is already in the tree.`)
+    }
+    if (relType === 'spouse' && (anchor.spouseIds ?? []).length > 0) {
+      const dup = members.find(m => m.id === anchor.spouseIds![0])
+      throw new Error(`${dup?.name ?? 'A spouse'} is already linked.`)
+    }
+
     const birthYear = birthYearStr ? parseInt(birthYearStr) : undefined
 
     // Normalize stored name — collapses extra whitespace, preserves casing
