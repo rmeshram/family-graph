@@ -703,8 +703,9 @@ export default function FamilyGraphApp() {
         const res = await fetch('/api/users/me/recover-family', { method: 'POST' })
         if (res.ok) {
           const data = await res.json()
-          if (data.recovered > 0) {
-            console.log(`[dashboard] recovered ${data.recovered} orphaned members from ${data.orphanedFamilies} families`)
+          // Refetch if anything changed: members moved, merges performed, or dedup ran
+          if ((data.recovered ?? 0) > 0 || (data.deduped ?? 0) > 0) {
+            console.log(`[dashboard] recovery: moved=${data.moved} mergedIn=${data.mergedIn} deduped=${data.deduped}`)
             refetchMembers()
           }
         }
