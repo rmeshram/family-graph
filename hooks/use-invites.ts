@@ -419,6 +419,82 @@ export function useJoinFamily() {
             .eq('is_claimed', false)
         }
 
+        // ── Wire the relationship between joiner's node and the inviter's node ──
+        // The confirmCrossFamily path returns early (below), so the relationship
+        // wiring in step 3/4 is never reached. Handle it here so the joiner
+        // appears connected to the inviter in the merged tree.
+        const relToInviter = opts?.relationshipToInviter ?? 'skip'
+        if (relToInviter !== 'skip' && invite.created_by && newMemberId) {
+          try {
+            const { data: inviterProf } = await supabase
+              .from('profiles').select('member_id').eq('id', invite.created_by).single()
+            const inviterMemberId = (inviterProf as any)?.member_id as string | null
+
+            if (inviterMemberId && inviterMemberId !== newMemberId) {
+              const [{ data: joinerNode }, { data: inviterNode }] = await Promise.all([
+                supabase.from('family_members').select('generation, parent_ids, spouse_ids').eq('id', newMemberId).single(),
+                supabase.from('family_members').select('generation, parent_ids, spouse_ids').eq('id', inviterMemberId).single(),
+              ])
+              if (joinerNode && inviterNode) {
+                const invGen = (inviterNode as any).generation as number
+                const existingPIds = ((joinerNode as any).parent_ids ?? []) as string[]
+                const existingSIds = ((joinerNode as any).spouse_ids ?? []) as string[]
+                let newParentIds = [...existingPIds]
+                let newSpouseIds = [...existingSIds]
+                let newGeneration = (joinerNode as any).generation as number
+
+                switch (relToInviter) {
+                  case 'spouse':
+                    if (!newSpouseIds.includes(inviterMemberId)) newSpouseIds.push(inviterMemberId)
+                    newGeneration = invGen
+                    break
+                  case 'child':
+                    if (!newParentIds.includes(inviterMemberId)) newParentIds.push(inviterMemberId)
+                    newGeneration = invGen + 1
+                    break
+                  case 'parent':
+                    newGeneration = invGen - 1
+                    break
+                  case 'sibling': {
+                    const invPIds = ((inviterNode as any).parent_ids ?? []) as string[]
+                    invPIds.forEach((pid: string) => { if (!newParentIds.includes(pid)) newParentIds.push(pid) })
+                    newGeneration = invGen
+                    break
+                  }
+                  default:
+                    newGeneration = invGen
+                }
+
+                await (supabase.from('family_members') as any)
+                  .update({ parent_ids: newParentIds, spouse_ids: newSpouseIds, generation: newGeneration })
+                  .eq('id', newMemberId)
+
+                // Bidirectional: inviter's spouse_ids when joiner is their spouse
+                if (relToInviter === 'spouse') {
+                  const invSIds = ((inviterNode as any).spouse_ids ?? []) as string[]
+                  if (!invSIds.includes(newMemberId)) {
+                    await (supabase.from('family_members') as any)
+                      .update({ spouse_ids: [...invSIds, newMemberId] })
+                      .eq('id', inviterMemberId)
+                  }
+                }
+                // Bidirectional: inviter's parent_ids when joiner is their parent
+                if (relToInviter === 'parent') {
+                  const invPIds2 = ((inviterNode as any).parent_ids ?? []) as string[]
+                  if (!invPIds2.includes(newMemberId)) {
+                    await (supabase.from('family_members') as any)
+                      .update({ parent_ids: [...invPIds2, newMemberId] })
+                      .eq('id', inviterMemberId)
+                  }
+                }
+              }
+            }
+          } catch {
+            // Non-fatal: relationship wiring failure doesn't block the join.
+            // The user can add the relationship manually from the dashboard.
+          }
+        }
+
         const incrQ = supabase.from('invite_links') as any
         let chain = incrQ
           .update({ used_count: invite.used_count + 1 })

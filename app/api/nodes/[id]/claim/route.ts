@@ -388,7 +388,11 @@ export async function POST(
             const alreadyLinked = existingFamilyLink &&
               ((existingFamilyLink as any).status === 'accepted' || (existingFamilyLink as any).status === 'pending')
 
-            if (!alreadyLinked) {
+            // For node_claim invites the admin explicitly invited this person to claim their
+            // node — suggesting a family link instead of a claim is confusing and blocks the
+            // intended flow. Fall through to the CROSS_FAMILY_CLAIM prompt so the user sees
+            // "Merge & Claim" rather than a dead-end "Link Trees" card.
+            if (!alreadyLinked && !authorizedViaNodeClaimInvite) {
               const [{ data: existingFamily }, { data: targetFamily }] = await Promise.all([
                 admin.from('families').select('name').eq('id', existingNodeFamilyId).maybeSingle() as any,
                 admin.from('families').select('name').eq('id', targetFamilyId).maybeSingle() as any,
@@ -448,9 +452,9 @@ export async function POST(
       if (isStale) {
         // Auto-heal: clear the stale member_id so the claim can proceed.
         await admin.from('profiles').update({ member_id: null } as any).eq('id', user.id)
-      } else if (skipFamilyLink) {
-        // Option B: user explicitly chose to switch families.
-        // Unclaim the old node so the family admin can see it became available.
+      } else if (skipFamilyLink || (effectiveConfirmCrossFamily && isCrossFamily)) {
+        // Option B / confirmed cross-family merge: user is intentionally moving to a new family.
+        // Unclaim the old node so it becomes available again in its original family.
         await admin.from('family_members').update({
           is_claimed: false, claim_status: 'unclaimed',
           claimed_by_user_id: null, claimed_at: null,
@@ -459,7 +463,7 @@ export async function POST(
         await admin.from('claim_audit_log').insert({
           node_id: profileMemberId, family_id: callerFamilyId,
           actor_id: user.id, action: 'claim_revoked',
-          metadata: { reason: 'user_switched_family', newNodeId: nodeId },
+          metadata: { reason: skipFamilyLink ? 'user_switched_family' : 'user_merged_family', newNodeId: nodeId },
         } as any)
       } else {
         return NextResponse.json(
@@ -887,6 +891,88 @@ export async function POST(
         .eq('code', inviteCode.trim().toUpperCase())
         .is('consumed_at', null)
         .eq('node_id', nodeId)
+    }
+
+    // ── Cross-family member migration ─────────────────────────────────────────
+    // Root cause of "members disappear after invite accept":
+    // The claim above updates profile.family_id to the new family, but all members
+    // from the old family remain in the old family_id bucket and become invisible.
+    // Fix: when the user confirmed a cross-family merge, move every member from their
+    // old family to the new family so the full combined tree is visible.
+    // If the user also had a separate "self" node in their old family, merge its
+    // parent/spouse edges into the newly claimed node and remove the duplicate.
+    const claimTargetFamilyId = (node as any).family_id as string
+    if (isCrossFamily && effectiveConfirmCrossFamily && callerFamilyId && callerFamilyId !== claimTargetFamilyId) {
+      try {
+        // 1. Move all members from old family → new family
+        await admin
+          .from('family_members')
+          .update({ family_id: claimTargetFamilyId })
+          .eq('family_id', callerFamilyId)
+
+        // 2. If the user had a self-node in the old family (profileMemberId), merge its
+        //    edges into the newly claimed node and delete the now-duplicate old node.
+        //    profileMemberId was captured before the B4 block cleared profile.member_id.
+        if (profileMemberId && profileMemberId !== nodeId) {
+          const [{ data: oldNodeEdges }, { data: newNodeEdges }] = await Promise.all([
+            admin.from('family_members').select('parent_ids, spouse_ids, generation').eq('id', profileMemberId).maybeSingle() as any,
+            admin.from('family_members').select('parent_ids, spouse_ids, generation').eq('id', nodeId).maybeSingle() as any,
+          ])
+
+          if (oldNodeEdges && newNodeEdges) {
+            const mergedParents = [...new Set([
+              ...((newNodeEdges as any).parent_ids ?? [] as string[]),
+              ...((oldNodeEdges as any).parent_ids ?? [] as string[]),
+            ])].filter((id: string) => id !== nodeId && id !== profileMemberId)
+
+            const mergedSpouses = [...new Set([
+              ...((newNodeEdges as any).spouse_ids ?? [] as string[]),
+              ...((oldNodeEdges as any).spouse_ids ?? [] as string[]),
+            ])].filter((id: string) => id !== nodeId && id !== profileMemberId)
+
+            const mergedGeneration: number = (newNodeEdges as any).generation ?? (oldNodeEdges as any).generation
+
+            await admin.from('family_members')
+              .update({ parent_ids: mergedParents, spouse_ids: mergedSpouses, generation: mergedGeneration } as any)
+              .eq('id', nodeId)
+
+            // Remap any member that referenced the old node → now references the new node
+            const { data: membersToRemap } = await admin
+              .from('family_members')
+              .select('id, parent_ids, spouse_ids')
+              .eq('family_id', claimTargetFamilyId)
+              .neq('id', profileMemberId)
+              .neq('id', nodeId)
+
+            for (const m of (membersToRemap ?? []) as any[]) {
+              const pids: string[] = m.parent_ids ?? []
+              const sids: string[] = m.spouse_ids ?? []
+              const newPids = pids.map((id: string) => id === profileMemberId ? nodeId : id)
+              const newSids = sids.map((id: string) => id === profileMemberId ? nodeId : id)
+              if (
+                newPids.some((id: string, i: number) => id !== pids[i]) ||
+                newSids.some((id: string, i: number) => id !== sids[i])
+              ) {
+                await admin.from('family_members')
+                  .update({ parent_ids: newPids, spouse_ids: newSids } as any)
+                  .eq('id', m.id)
+              }
+            }
+
+            // Delete the old duplicate self-node
+            await admin.from('family_members').delete().eq('id', profileMemberId)
+
+            // Update any profiles still pointing to the old node → new node
+            await admin.from('profiles')
+              .update({ member_id: nodeId } as any)
+              .eq('member_id', profileMemberId)
+          }
+        }
+      } catch (migErr) {
+        // Non-fatal: log but don't block the claim success response.
+        // The dashboard's orphan recovery will fix this on next page load.
+        console.error('[claim] cross-family migration failed:', migErr)
+      }
     }
 
     // ── Integrity check: is the claimed node an orphan? ─────────────────────
