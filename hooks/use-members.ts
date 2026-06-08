@@ -114,6 +114,10 @@ export function useMembers(familyId: string | null) {
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
   const [members, setMembers] = useState<FamilyMember[]>([])
+  // membersRef always mirrors the latest members state so callbacks with stale
+  // closures (e.g. updateMember called right after addMember in the same tick)
+  // still see the freshly-added member instead of the pre-add snapshot.
+  const membersRef = useRef<FamilyMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState<number>(0)
@@ -213,6 +217,13 @@ export function useMembers(familyId: string | null) {
     return () => { supabase.removeChannel(channel) }
   }, [familyId, supabase])
 
+  // Keep membersRef in sync with members state for all update paths.
+  // The eager update inside addMember handles the same-tick case; this
+  // effect handles everything else (realtime inserts, edits, deletes).
+  useEffect(() => {
+    membersRef.current = members
+  }, [members])
+
   const addMember = useCallback(async (memberData: Omit<FamilyMember, 'id'>, userId: string) => {
     if (!familyId) return null
 
@@ -307,6 +318,12 @@ export function useMembers(familyId: string | null) {
     }
 
     // Immediately add to local state (real-time will also fire but deduplicates)
+    // Also eagerly update membersRef so that an updateMember call in the same
+    // synchronous tick (e.g. wizard: add parent then wire anchor.parentIds)
+    // can see the new member without waiting for the React re-render.
+    membersRef.current = membersRef.current.some(m => m.id === newMember.id)
+      ? membersRef.current
+      : [...membersRef.current, newMember]
     setMembers(prev => prev.some(m => m.id === newMember.id) ? prev : [...prev, newMember])
     setTotalCount(c => c + 1)
 
@@ -373,8 +390,11 @@ export function useMembers(familyId: string | null) {
       // A dangling parent reference would create an invisible graph hole —
       // the child appears parentless in the tree even though parent_ids is set.
       if (updates.parentIds && updates.parentIds.length > 0) {
+        // Use membersRef (always current) rather than the stale `members`
+        // closure — avoids false-positive errors when a parent was just added
+        // in the same event loop tick (e.g. wizard: addMember → updateMember).
         const unknownParents = updates.parentIds.filter(
-          pid => !members.some(m => m.id === pid)
+          pid => !membersRef.current.some(m => m.id === pid)
         )
         if (unknownParents.length > 0) {
           throw new Error(

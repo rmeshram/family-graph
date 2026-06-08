@@ -12,7 +12,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, ChevronDown, ChevronUp, MessageCircle, UserPlus, Target, Users, TrendingUp, Clock, Send } from 'lucide-react'
+import { Camera, Check, ChevronDown, ChevronUp, UserPlus, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FamilyMember } from '@/lib/types'
 import { getRelationshipBetweenPeople } from '@/lib/relationship-engine'
@@ -280,13 +280,16 @@ export function FamilyMissionPanel({
   ].filter(Boolean) as string[] : []
   const profileComplete = missingProfileFields.length === 0
 
+  const allMissionsDone = completedCount === totalCount
+  const pendingSteps = steps.filter(s => !s.done)
+
   return (
     <div className={cn("flex h-full flex-col border-l border-border/40 shrink-0 overflow-hidden", className ?? "w-64 lg:w-72")}
       style={{ background: 'var(--surface-header, hsl(var(--card)))' }}>
 
-      {/* ── Complete Your Profile — primary action, hidden once done ── */}
+      {/* ── Complete Your Profile ── */}
       {!profileComplete && selfMember && (
-        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5">
+        <div className="shrink-0 mx-3 mt-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2.5">
           <div className="flex items-center gap-2.5">
             <div className="relative shrink-0">
               <Avatar className="h-9 w-9">
@@ -303,209 +306,184 @@ export function FamilyMissionPanel({
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-semibold text-foreground leading-snug">Complete your profile</p>
-              <p className="text-[10px] text-amber-400/80 leading-tight mt-0.5">
-                Missing: {missingProfileFields.join(', ')}
-              </p>
+              <p className="text-[12px] font-semibold text-foreground">Complete your profile</p>
+              <p className="text-[10px] text-amber-400/80 mt-0.5">Add {missingProfileFields.join(', ')}</p>
             </div>
             <button type="button" onClick={onEditSelf}
-              className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap">
-              Update →
+              className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors">
+              Edit →
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Claim Your Profile — shown when user is in family but not linked to a node ── */}
+      {/* ── Claim Your Profile ── */}
       {!selfMember && onClaimProfile && (
-        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-blue-500/30 bg-blue-500/[0.08] px-3 py-2.5">
-          <p className="text-[12px] font-semibold text-foreground leading-snug mb-1">Claim your profile first</p>
-          <p className="text-[10px] text-muted-foreground leading-tight mb-2">
-            You're in the family but haven't linked to your node yet. Claim it to see the mission and start adding relatives.
-          </p>
+        <div className="shrink-0 mx-3 mt-3 rounded-xl border border-blue-500/30 bg-blue-500/[0.06] px-3 py-2.5">
+          <p className="text-[12px] font-semibold text-foreground mb-1">Find your place</p>
+          <p className="text-[10px] text-muted-foreground mb-2">You're in the family but haven't claimed your profile yet.</p>
           <button type="button" onClick={onClaimProfile}
             className="w-full rounded-lg border border-blue-500/40 bg-blue-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/25 transition-colors">
-            Find my place in the tree →
+            Claim my spot →
           </button>
         </div>
       )}
 
-      {/* ── Family Mission ──────────────────────────────────────────────── */}
-      <div className="border-b border-border/40">
-        <button type="button" onClick={() => setMissionsOpen(v => !v)}
-          className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold text-foreground">Family Mission</span>
+      {/* ── Family Mission — collapses to a single line when complete ── */}
+      <div className={cn("border-b border-border/40", !profileComplete && selfMember ? "mt-2" : "mt-3")}>
+        {allMissionsDone ? (
+          /* All done: slim celebration bar, no list */
+          <div className="flex items-center gap-2 px-4 py-2.5">
+            <span className="text-sm">🌳</span>
+            <span className="text-[11px] font-medium text-emerald-400">Tree foundation complete</span>
+            <span className="ml-auto text-[10px] text-muted-foreground/60">{completedCount}/{totalCount}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
-              {completedCount} / {totalCount} completed
-            </span>
-            {missionsOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-          </div>
-        </button>
-
-        {missionsOpen && (
+        ) : (
           <>
-            <div className="px-4 pb-2">
-              <div className="h-1.5 rounded-full bg-muted/60 overflow-hidden">
-                <div className="h-full rounded-full bg-primary transition-all duration-500"
-                  style={{ width: `${progressPct}%` }} />
+            <button type="button" onClick={() => setMissionsOpen(v => !v)}
+              className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors">
+              <div className="flex items-center gap-2">
+                <Target className="h-3.5 w-3.5 text-primary" />
+                <span className="text-[12px] font-semibold text-foreground">Build your tree</span>
               </div>
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: '240px' }}>
-              <ul className="px-3 pb-3 space-y-0.5">
-                {steps.map(step => (
-                  <li key={step.id}>
-                    <div className={cn(
-                      'flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[12px]',
-                      step.done ? 'opacity-60' : 'hover:bg-muted/30',
-                    )}>
-                      <div className={cn(
-                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
-                        step.done ? 'border-emerald-500/60 bg-emerald-500/15' : 'border-border/50 bg-muted/30',
-                      )}>
-                        {step.done && <Check className="h-2.5 w-2.5 text-emerald-400" />}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] tabular-nums text-muted-foreground">{completedCount}/{totalCount}</span>
+                {missionsOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+              </div>
+            </button>
+
+            {missionsOpen && (
+              <>
+                <div className="px-4 pb-2">
+                  <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
+                    <div className="h-full rounded-full bg-primary transition-all duration-500"
+                      style={{ width: `${progressPct}%` }} />
+                  </div>
+                </div>
+                <ul className="px-3 pb-2.5 space-y-0">
+                  {/* Show only pending steps — done items are hidden to reduce noise */}
+                  {pendingSteps.map(step => (
+                    <li key={step.id}>
+                      <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/30 transition-colors">
+                        <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/30" />
+                        <span className="flex-1 text-[12px] leading-tight text-foreground truncate">
+                          <span className="mr-1">{step.emoji}</span>{step.label}
+                        </span>
+                        {step.cta && step.onAction && (
+                          <button type="button" onClick={step.onAction}
+                            className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors">
+                            {step.cta}
+                          </button>
+                        )}
+                        {step.skippable && SKIPPABLE_STEP_IDS.has(step.id) && (
+                          <button type="button" title="Doesn't apply to me" onClick={() => onSkipStep(step.id)}
+                            className="shrink-0 text-[9px] text-muted-foreground/50 hover:text-rose-400 transition-colors px-1">
+                            N/A
+                          </button>
+                        )}
                       </div>
-                      <span className={cn(
-                        'flex-1 leading-tight',
-                        step.done ? 'line-through text-muted-foreground' : 'text-foreground',
-                      )}>
-                        <span className="mr-1">{step.emoji}</span>
-                        {step.label}
-                      </span>
-                      {!step.done && step.cta && step.onAction && (
-                        <button type="button" onClick={step.onAction}
-                          className="shrink-0 rounded-md border border-border/40 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors">
-                          {step.cta}
-                        </button>
-                      )}
-                      {/* "N/A" — skip skippable steps that don't apply */}
-                      {!step.done && step.skippable && SKIPPABLE_STEP_IDS.has(step.id) && (
-                        <button
-                          type="button"
-                          title="Doesn't apply to me"
-                          onClick={() => onSkipStep(step.id)}
-                          className="shrink-0 rounded-md border border-border/40 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-400 transition-colors"
-                        >
-                          N/A
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                    </li>
+                  ))}
+                  {/* Completed count hint */}
+                  {completedCount > 0 && (
+                    <li className="px-2 pt-1">
+                      <p className="text-[10px] text-muted-foreground/50">{completedCount} step{completedCount !== 1 ? 's' : ''} done</p>
+                    </li>
+                  )}
+                </ul>
+              </>
+            )}
           </>
         )}
       </div>
 
-      {/* ── Tree Completeness Score ─────────────────────────────────────── */}
-      {completeness.totalCount > 1 && (
-        <div className="shrink-0 mx-3 mt-3 mb-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <div className="flex items-center gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5 text-primary" />
-              <span className="text-[11px] font-semibold text-foreground">Tree Participation</span>
-            </div>
-            <span className="text-[13px] font-bold text-primary tabular-nums">{completeness.score}%</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-muted/60 overflow-hidden mb-1.5">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-700"
-              style={{ width: `${completeness.score}%` }}
-            />
-          </div>
-          <p className="text-[10px] text-muted-foreground leading-tight">
-            {completeness.joinedCount} of {completeness.totalCount} members have joined
-            {completeness.waitingCount > 0 && (
-              <> · <span className="text-amber-400 font-medium">{completeness.waitingCount} waiting for invite</span></>
-            )}
-          </p>
-        </div>
-      )}
-
-      {/* ── People Waiting to Join ──────────────────────────────────────── */}
+      {/* ── Grow Your Tree — invite section with participation score ── */}
       <div className="flex flex-col flex-1 min-h-0">
-        <button type="button" onClick={() => setWaitingOpen(v => !v)}
-          className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors border-b border-border/40">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-amber-400" />
-            <span className="text-sm font-semibold text-foreground">People Waiting to Join</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {waitingPeople.length > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-semibold text-amber-400 tabular-nums">
-                {waitingPeople.length}
-              </span>
-            )}
-            {waitingOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-          </div>
-        </button>
-
-        {waitingOpen && (
-          <div className="flex-1 overflow-y-auto">
-            {waitingPeople.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center px-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 mb-2">
-                  <Check className="h-5 w-5 text-emerald-400" />
+        {/* Header with score baked in */}
+        <div className="shrink-0 px-4 py-2.5 border-b border-border/40">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[12px] font-semibold text-foreground">Grow your tree</p>
+            {completeness.totalCount > 1 && (
+              <div className="flex items-center gap-1.5">
+                <div className="h-1 w-14 rounded-full bg-muted/50 overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-700"
+                    style={{ width: `${completeness.score}%` }} />
                 </div>
-                <p className="text-xs font-medium text-foreground">Everyone's joined!</p>
-                <p className="text-[11px] text-muted-foreground mt-1">All added members have claimed their profiles.</p>
+                <span className="text-[11px] font-bold tabular-nums"
+                  style={{ color: completeness.score >= 80 ? '#10b981' : completeness.score >= 40 ? '#f59e0b' : 'var(--muted-foreground)' }}>
+                  {completeness.score}%
+                </span>
               </div>
-            ) : (
-              <ul className="px-3 py-2 space-y-1">
-                {waitingPeople.map(({ member, relationship }) => {
-                  const inviteSent = member.claimStatus === 'invite_sent'
-                  return (
-                    <li key={member.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-muted/30 transition-colors">
-                      <Avatar className="h-8 w-8 shrink-0">
+            )}
+          </div>
+          {waitingPeople.length > 0 ? (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {waitingPeople.length} {waitingPeople.length === 1 ? "person hasn't" : "people haven't"} joined yet
+            </p>
+          ) : completeness.totalCount > 1 ? (
+            <p className="text-[10px] text-emerald-400/80 mt-0.5">Everyone's in! 🎉</p>
+          ) : null}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {waitingPeople.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center px-5">
+              <p className="text-2xl mb-2">🎉</p>
+              <p className="text-[13px] font-semibold text-foreground">All members joined!</p>
+              <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                Add more family members to keep growing the tree.
+              </p>
+            </div>
+          ) : (
+            <ul className="px-3 py-2 space-y-0.5">
+              {waitingPeople.map(({ member, relationship }) => {
+                const inviteSent = member.claimStatus === 'invite_sent'
+                return (
+                  <li key={member.id}
+                    className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-muted/25 transition-colors group"
+                  >
+                    <div className="relative shrink-0">
+                      <Avatar className="h-8 w-8">
                         {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} />}
-                        <AvatarFallback className="text-[11px] font-bold text-white"
+                        <AvatarFallback className="text-[10px] font-bold text-white"
                           style={{ background: genderColor(member.gender) }}>
                           {getInitials(member.name)}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-semibold text-foreground truncate">{member.name}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <p className="text-[10px] text-muted-foreground">{relationship}</p>
-                          {inviteSent && (
-                            <span className="flex items-center gap-0.5 text-[9px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded-full px-1.5 py-0.5 leading-none">
-                              <Clock className="h-2 w-2" />
-                              Invite sent
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <Button size="sm" onClick={() => onInviteMember(member)}
-                        className={cn(
-                          "h-6 shrink-0 gap-1 rounded-lg px-2 text-[10px] font-semibold border-0",
-                          inviteSent
-                            ? "bg-sky-600/80 hover:bg-sky-500 text-white"
-                            : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                        )}>
-                        {inviteSent ? <><Send className="h-3 w-3" />Resend</> : <><MessageCircle className="h-3 w-3" />Invite</>}
-                      </Button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+                      {inviteSent && (
+                        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-sky-400 border-2"
+                          style={{ borderColor: 'var(--background)' }} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-medium text-foreground truncate leading-tight">{member.name}</p>
+                      <p className="text-[10px] text-muted-foreground/70 truncate">{relationship}</p>
+                    </div>
+                    <Button size="sm" onClick={() => onInviteMember(member)}
+                      className={cn(
+                        "h-6 shrink-0 rounded-lg px-2.5 text-[10px] font-semibold border-0 opacity-80 group-hover:opacity-100 transition-opacity",
+                        inviteSent
+                          ? "bg-muted text-muted-foreground hover:bg-sky-600/80 hover:text-white"
+                          : "bg-primary/90 hover:bg-primary text-primary-foreground"
+                      )}>
+                      {inviteSent ? 'Resend' : 'Invite'}
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
 
-            {waitingPeople.length > 1 && (
-              <div className="px-4 pb-3">
-                <button type="button"
-                  onClick={() => router.push('/invite')}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-border/40 py-2 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-border/70 transition-colors">
-                  <UserPlus className="h-3 w-3" />
-                  View all invites ({waitingPeople.length})
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          {waitingPeople.length > 0 && (
+            <div className="px-3 pb-3">
+              <button type="button" onClick={() => router.push('/invite')}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-border/30 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:border-border/60 transition-colors">
+                <UserPlus className="h-3 w-3" />
+                Manage all invites
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

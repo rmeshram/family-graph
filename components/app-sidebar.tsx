@@ -262,13 +262,10 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
               color: '#34d399',
               weight: '30%',
             },
-          ].map(({ label, sublabel, current, target, pct, color, weight }) => (
+          ].map(({ label, sublabel, current, target, pct, color }) => (
             <div key={label} className="py-2.5">
               <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[11px] font-semibold text-foreground truncate">{label}</span>
-                  <span className="text-[9px] text-muted-foreground/60 shrink-0">({weight})</span>
-                </div>
+                <span className="text-[11px] font-semibold text-foreground truncate">{label}</span>
                 <span className="text-[11px] font-bold tabular-nums shrink-0 ml-2" style={{ color }}>
                   {current}/{target}
                 </span>

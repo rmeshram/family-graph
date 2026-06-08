@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { UserPlus, Send, RefreshCw, Copy, Check, Shield, MessageCircle, Pencil, Eye, GitBranch, Bell } from 'lucide-react'
+import { UserPlus, Send, RefreshCw, Copy, Check, Shield, MessageCircle, Pencil, Eye, GitBranch, Bell, TrendingUp, Unlock, Cake } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,18 @@ import { createClient } from '@/lib/supabase/client'
 import { buildPersonalizedClaimMessage } from '@/lib/whatsapp-invite'
 import { toast } from 'sonner'
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function estimateUnlockCount(member: FamilyMember, relationship: string | undefined): number {
+  const rel = (relationship ?? member.relationship ?? '').toLowerCase()
+  const isElder = (member.birthYear ? member.birthYear < 1960 : false) ||
+    rel.includes('grand') || rel.includes('dada') || rel.includes('nana')
+  if (isElder) return 0
+  if (rel === 'father' || rel === 'mother' || rel === 'parent') return 2
+  if (['son','daughter','child','brother','sister','sibling','husband','wife','spouse'].includes(rel)) return 3
+  return 2
+}
+
 interface InviteToClaimDialogProps {
   member: FamilyMember | null
   open: boolean
@@ -29,6 +41,8 @@ interface InviteToClaimDialogProps {
   relationship?: string
   /** Family name used in the invite message (e.g. "Sharma family") */
   familyName?: string
+  /** All family members — used to compute tree completeness delta shown to inviter */
+  members?: FamilyMember[]
 }
 
 export function InviteToClaimDialog({
@@ -39,6 +53,7 @@ export function InviteToClaimDialog({
   userId,
   relationship,
   familyName,
+  members = [],
 }: InviteToClaimDialogProps) {
   const [generating, setGenerating] = useState(false)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
@@ -101,7 +116,7 @@ export function InviteToClaimDialog({
       const link = `${window.location.origin}/claim/${(data as any).code}`
       setInviteLink(link)
       setExpiresAt((data as any).expires_at)
-      toast.success('Invite link created!')
+      toast.success(`Invite created! You'll be notified the moment ${member.name.split(' ')[0]} joins 🎉`)
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to create invite')
     } finally {
@@ -146,6 +161,18 @@ export function InviteToClaimDialog({
   // A deceased member cannot be invited. When the dialog is opened for one
   // (e.g. via a stale invite_sent node), show a memorial screen instead.
   const isDeceased = member.isAlive === false
+
+  // ── Completeness delta — show inviter what they personally gain ────────────
+  const livingMembers = members.filter(m => m.isAlive !== false)
+  const totalCount = livingMembers.length
+  const joinedCount = livingMembers.filter(
+    m => m.isClaimed === true || !!m.claimedByUserId || m.claimStatus === 'claimed'
+  ).length
+  const currentScore = totalCount > 0 ? Math.round((joinedCount / totalCount) * 100) : 0
+  const projectedScore = totalCount > 0 ? Math.round(((joinedCount + 1) / totalCount) * 100) : 0
+  const scoreGain = projectedScore - currentScore
+  const unlockEstimate = estimateUnlockCount(member, relationship)
+  const firstName = member.name.split(' ')[0]
 
   // Life-span label: "1942 – 2003", "b. 1942", or blank
   const lifeSpan = member.birthYear && member.deathYear
@@ -223,15 +250,51 @@ export function InviteToClaimDialog({
               </Badge>
             </div>
 
-            {/* Why claim? — benefits for the invitee */}
+            {/* ── What YOU (the inviter) unlock — shown first for maximum motivation ── */}
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-emerald-400/90 uppercase tracking-wide flex items-center gap-1.5">
+                <Unlock className="h-3 w-3" />
+                What you unlock when {firstName} joins
+              </p>
+              <ul className="space-y-1.5">
+                <li className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 mt-0.5 text-emerald-400" />
+                  <span>
+                    Their branch opens for the whole family — spouse, children &amp; parents become visible
+                    {unlockEstimate > 0 && (
+                      <span className="ml-1 font-semibold text-emerald-400">(+{unlockEstimate} potential relatives)</span>
+                    )}
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Cake className="h-3.5 w-3.5 shrink-0 mt-0.5 text-pink-400" />
+                  <span>Automatic birthday reminder for {firstName} every year 🎂</span>
+                </li>
+                <li className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Bell className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                  <span>You'll be notified the moment they join 🎉</span>
+                </li>
+                {scoreGain > 0 && (
+                  <li className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <TrendingUp className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
+                    <span>
+                      Tree participation: <span className="font-semibold text-foreground">{currentScore}%</span>
+                      {' → '}
+                      <span className="font-semibold text-primary">{projectedScore}%</span>
+                    </span>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            {/* ── What the invitee experiences ── */}
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
-              <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">What happens when they open the link</p>
+              <p className="text-[11px] font-semibold text-primary/80 uppercase tracking-wide">What {firstName} will experience</p>
               <ul className="space-y-1.5">
                 {([
-                  { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'They see the tree with their own node highlighted — their place in the family' },
+                  { icon: <Pencil className="h-3.5 w-3.5 text-violet-400" />, text: 'They see the tree with their own node highlighted — their reserved place' },
                   { icon: <Eye className="h-3.5 w-3.5 text-blue-400" />, text: 'They confirm name + birth year to verify it\'s really them' },
-                  { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Their branch is unlocked — they own their profile and can extend the tree from their node' },
-                  { icon: <Bell className="h-3.5 w-3.5 text-amber-400" />, text: 'You\'ll be notified the moment they claim their place 🎉' },
+                  { icon: <GitBranch className="h-3.5 w-3.5 text-green-400" />, text: 'Their profile unlocks — they own it and can extend the tree from their node' },
                 ] as { icon: React.ReactNode; text: string }[]).map(({ icon, text }) => (
                   <li key={text} className="flex items-start gap-2 text-xs text-muted-foreground">
                     <span className="shrink-0 mt-0.5">{icon}</span>
