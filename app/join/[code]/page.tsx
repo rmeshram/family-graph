@@ -628,7 +628,7 @@ export default function JoinPage() {
   }
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
-  const shareText = `🌳 Join the ${preview?.name ?? 'Family'} tree on Family Graph! ${shareUrl}`
+  const shareText = `🌳 Join the ${preview?.name ?? 'Family'} tree on Outverse! ${shareUrl}`
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12">
@@ -640,7 +640,7 @@ export default function JoinPage() {
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-xl shadow-primary/30 mb-4">
             <TreePine className="h-7 w-7 text-white" />
           </div>
-          <p className="text-sm text-muted-foreground">Family Graph</p>
+          <p className="text-sm text-muted-foreground">Outverse</p>
         </div>
 
         <div className="rounded-3xl border border-border/50 bg-card shadow-2xl overflow-hidden">
@@ -1117,55 +1117,49 @@ export default function JoinPage() {
 
           {/* ── Node Claim Confirmation (B2) ──────────────────── */}
           {status === 'node_claim' && nodeClaim && (
-            <div className="p-6 space-y-5">
+            <div className="p-6 space-y-4">
               <div className="text-center">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/30 mb-3">
-                  <Shield className="h-5 w-5 text-blue-400" />
-                </div>
-                <h2 className="text-lg font-bold">Is this you?</h2>
-                <p className="text-sm text-muted-foreground mt-1">
+                <h2 className="text-xl font-bold">Is this you?</h2>
+                <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
                   {preview?.inviterName
-                    ? <><strong className="text-foreground">{preview.inviterName}</strong> added you to the{' '}
-                      <strong className="text-foreground">{preview?.name ?? 'family'}</strong> tree and sent you this link.</>
-                    : 'Someone added you to this family tree and sent you this link to claim your profile.'}
+                    ? <><strong className="text-foreground">{preview.inviterName}</strong> reserved your spot in the <strong className="text-foreground">{preview?.name ?? 'family'}</strong> tree.</>
+                    : 'Your spot in this family tree has been reserved. Claim it to take ownership.'}
                 </p>
               </div>
 
-              {/* What you get by claiming */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-1.5">
-                <p className="text-[10px] font-semibold text-primary/70 uppercase tracking-wide">Once you claim your profile</p>
-                <ul className="space-y-1">
-                  {[
-                    '✏️  Edit your own bio, photo & details',
-                    '👁  Control who can see your profile',
-                    '🌿  Add your spouse, children & relatives',
-                    '🔔  Get birthday & family update notifications',
-                  ].map(t => (
-                    <li key={t} className="text-xs text-muted-foreground">{t}</li>
-                  ))}
-                </ul>
+              {/* Profile identity card — clean, no border-2 */}
+              <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 p-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-base font-bold">
+                  {(nodeClaim.identityHint ?? '?').slice(0, 2).toUpperCase()}
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-foreground text-base leading-tight">
+                    {nodeClaim.identityHint ?? 'Unknown'}
+                  </p>
+                  {nodeClaim.parentNames.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Child of {nodeClaim.parentNames.join(' & ')}
+                    </p>
+                  )}
+                  {nodeClaim.birthYear && (
+                    <p className="text-xs text-muted-foreground">Born {nodeClaim.birthYear}</p>
+                  )}
+                </div>
               </div>
 
-              {/* Profile identity card */}
-              <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-base font-bold">
-                    {(nodeClaim.identityHint ?? '?').slice(0, 2).toUpperCase()}
+              {/* What claiming unlocks — minimal, no emoji clutter */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { icon: '✦', text: 'Own your profile' },
+                  { icon: '✦', text: 'Add your relatives' },
+                  { icon: '✦', text: 'Control your privacy' },
+                  { icon: '✦', text: 'Birthday reminders' },
+                ].map(({ icon, text }) => (
+                  <div key={text} className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2">
+                    <span className="text-primary text-[10px]">{icon}</span>
+                    <span className="text-[11px] text-muted-foreground">{text}</span>
                   </div>
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-foreground text-base leading-tight">
-                      {nodeClaim.identityHint ?? 'Unknown'}
-                    </p>
-                    {nodeClaim.parentNames.length > 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        Child of {nodeClaim.parentNames.join(' & ')}
-                      </p>
-                    )}
-                    {nodeClaim.birthYear && (
-                      <p className="text-xs text-muted-foreground">Born {nodeClaim.birthYear}</p>
-                    )}
-                  </div>
-                </div>
+                ))}
               </div>
 
               <div className="space-y-1.5">
@@ -1244,16 +1238,16 @@ export default function JoinPage() {
                 </div>
               )}
 
-              {/* ── Cross-family confirmation ── */}
+              {/* ── Cross-family merge confirmation ── */}
               {!familyLinkSuggestion && crossFamilyConfirmData ? (
-                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-amber-400">⚠️ You&apos;re in a different tree</p>
+                <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-emerald-400">🌳 Merge your trees</p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Your account is currently linked to the <strong className="text-foreground">{crossFamilyConfirmData.currentFamilyName}</strong> tree.
-                    Claiming this profile will switch you to the <strong className="text-foreground">{crossFamilyConfirmData.targetFamilyName}</strong> tree.
+                    You're currently in the <strong className="text-foreground">{crossFamilyConfirmData.currentFamilyName}</strong> tree.
+                    Claiming this profile will merge your tree into <strong className="text-foreground">{crossFamilyConfirmData.targetFamilyName}</strong> — both trees become one.
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Your data in the other tree stays intact — its members can still see it.
+                    Nothing is deleted. All your members move with you.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setCrossFamilyConfirmData(null)}>
@@ -1261,10 +1255,10 @@ export default function JoinPage() {
                     </Button>
                     <Button
                       size="sm"
-                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white"
                       onClick={() => { setCrossFamilyConfirmData(null); handleNodeClaim(true) }}
                     >
-                      Switch &amp; Claim
+                      Merge &amp; Claim
                     </Button>
                   </div>
                 </div>
@@ -1397,7 +1391,7 @@ export default function JoinPage() {
         </div>
 
         <p className="text-center text-[11px] text-muted-foreground/60">
-          Family Graph · Your family story, preserved forever
+          Outverse · Your family story, preserved forever
         </p>
       </div>
     </div>
