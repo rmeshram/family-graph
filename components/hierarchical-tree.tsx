@@ -133,11 +133,70 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
   const self = selfId ? byId.get(selfId) : undefined
 
   if (!self) {
-    const nodes: LayoutNode[] = members.map((m, i) => ({
-      id: m.id, member: m, row: 0, col: i, role: 'other' as const,
-      x: (i - Math.floor(members.length / 2)) * (NODE_W + H_GAP), y: 0,
-    }))
-    return { nodes, ghosts: [] as GhostSlot[], edges: [] as EdgeDef[] }
+    // No self anchor — build a generation-aware fallback layout so the tree
+    // is still structurally meaningful (e.g. after an admin revokes a claim).
+    //
+    // Algorithm:
+    //   1. Use the `generation` field from the DB to assign each member a row.
+    //      Normalise so the minimum generation sits at row 0.
+    //   2. Within each row sort members by insertion order; keep spouse pairs adjacent.
+    //   3. Build parent→child and spouse edges from structural parentIds/spouseIds.
+    //   4. No ghost slots — no anchor to attach them to.
+    if (members.length === 0) return { nodes: [] as LayoutNode[], ghosts: [] as GhostSlot[], edges: [] as EdgeDef[] }
+
+    const minGen = Math.min(...members.map(m => m.generation ?? 0))
+    const byRow = new Map<number, FamilyMember[]>()
+    members.forEach(m => {
+      const row = (m.generation ?? 0) - minGen
+      if (!byRow.has(row)) byRow.set(row, [])
+      byRow.get(row)!.push(m)
+    })
+
+    const nodes: LayoutNode[] = []
+    const sortedRows = [...byRow.keys()].sort((a, b) => a - b)
+    sortedRows.forEach(row => {
+      const rowMembers = byRow.get(row)!
+      const sorted: FamilyMember[] = []
+      const added = new Set<string>()
+      rowMembers.forEach(m => {
+        if (added.has(m.id)) return
+        sorted.push(m); added.add(m.id)
+        // Keep spouse pairs adjacent
+        ;(m.spouseIds ?? []).forEach(sid => {
+          const sp = byId.get(sid)
+          if (sp && rowMembers.includes(sp) && !added.has(sid)) {
+            sorted.push(sp); added.add(sid)
+          }
+        })
+      })
+      const totalW = sorted.length * NODE_W + (sorted.length - 1) * H_GAP
+      const startX = -(totalW / 2) + NODE_W / 2
+      sorted.forEach((m, i) => {
+        nodes.push({
+          id: m.id, member: m, row, col: i, role: 'other' as const,
+          x: startX + i * (NODE_W + H_GAP), y: row * ROW_H,
+        })
+      })
+    })
+
+    const pos = new Map(nodes.map(n => [n.id, { x: n.x, y: n.y }]))
+    const edges: EdgeDef[] = []
+    nodes.forEach(n => {
+      const m = n.member
+      ;(m.parentIds ?? []).forEach(pid => {
+        const ppos = pos.get(pid)
+        if (!ppos) return
+        edges.push({ id: `e-${pid}-${m.id}`, x1: ppos.x, y1: ppos.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood' })
+      })
+      ;(m.spouseIds ?? []).forEach(sid => {
+        if (sid > m.id) return // draw once per pair
+        const spos = pos.get(sid)
+        if (!spos) return
+        edges.push({ id: `e-sp-${m.id}-${sid}`, x1: n.x + NODE_W / 2, y1: n.y, x2: spos.x - NODE_W / 2, y2: spos.y, kind: 'spouse' })
+      })
+    })
+
+    return { nodes, ghosts: [] as GhostSlot[], edges }
   }
 
   const parentMembers = self.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]

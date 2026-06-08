@@ -1,6 +1,6 @@
 {
-  "name": "Family Graph",
-  "short_name": "FamilyGraph",
+  "name": "Outverse",
+  "short_name": "Outverse",
   "description": "Visualize, preserve and share your family story across generations.",
   "start_url": "/dashboard",
   "display": "standalone",

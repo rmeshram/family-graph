@@ -224,7 +224,7 @@ export default function PosterPage() {
           <div className="relative mt-10 text-center">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
               <Users style={{ height: 12, width: 12 }} />
-              <span>Made with Family Graph • family-graph-app-phi.vercel.app</span>
+              <span>Made with Outverse • outverse.in</span>
             </div>
           </div>
         </div>

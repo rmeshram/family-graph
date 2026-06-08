@@ -214,7 +214,7 @@ export function useInviteByPhone(familyId: string | null) {
     if (error) throw new Error(error.message)
 
     const link = `${getOrigin()}/join/${code}`
-    const waText = `🌳 You've been invited to join your family tree on Family Graph!\n\nTap to join: ${link}`
+    const waText = `🌳 You've been invited to join your family tree on Outverse!\n\nTap to join: ${link}`
     const waLink = whatsappUrl(e164, waText)
 
     return { code, link, waLink, invitedPhone: e164 }

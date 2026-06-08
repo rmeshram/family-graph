@@ -777,7 +777,7 @@ export function useNotifications(
     for (const m of birthdayToday) {
       const age = m.birthYear ? CURRENT_YEAR - m.birthYear : null
       const wishText = encodeURIComponent(
-        `🎂 Happy Birthday ${m.name}! ${age ? `Wishing you a wonderful ${age}th birthday! ` : ''}May this year bring joy and great health. — Family Graph 🌳`
+        `🎂 Happy Birthday ${m.name}! ${age ? `Wishing you a wonderful ${age}th birthday! ` : ''}May this year bring joy and great health. — Outverse 🌳`
       )
       notifs.push({
         id: `bday-today-${m.id}`,

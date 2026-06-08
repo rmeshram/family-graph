@@ -114,7 +114,7 @@ export default function InvitePage() {
 
   const inviteUrl = activeUrl
   const whatsappMessage = encodeURIComponent(
-    `🌳 Join our Family Graph!\n\nHi! I'm building a digital family tree for our family. Join us to view, add memories, and connect with family members.\n\nClick to join: ${inviteUrl}\n\n_Sent via Family Graph App_`
+    `🌳 Join our family tree on Outverse!\n\nHi! I'm building a digital family tree for our family. Join us to view, add memories, and connect with family members.\n\nClick to join: ${inviteUrl}\n\n_Sent via Outverse_`
   )
   const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`
 
@@ -322,10 +322,10 @@ export default function InvitePage() {
                     </div>
                   </div>
                   <div className="mt-3 rounded-xl bg-card border border-border/50 p-3 text-xs text-muted-foreground">
-                    <p>🌳 <strong>Join our Family Graph!</strong></p>
+                    <p>🌳 <strong>Join our family tree on Outverse!</strong></p>
                     <p className="mt-1 text-primary">Click to join: {inviteUrl}</p>
                     <p className="mt-1 italic">Hi! I'm building a digital family tree. Join us to view memories and connect with family members.</p>
-                    <p className="mt-1 text-muted-foreground/60 italic">Sent via Family Graph App</p>
+                    <p className="mt-1 text-muted-foreground/60 italic">Sent via Outverse</p>
                   </div>
                   <Button
                     onClick={handleShareWhatsApp}

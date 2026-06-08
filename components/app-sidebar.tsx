@@ -192,7 +192,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
           <TreeDeciduous className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-sm font-bold tracking-tight text-foreground leading-tight">Family Graph</h1>
+          <h1 className="text-sm font-bold tracking-tight text-foreground leading-tight">Outverse</h1>
           <div className="flex items-center gap-1">
             <p className="text-[11px] text-muted-foreground truncate">{familyName}</p>
             <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
