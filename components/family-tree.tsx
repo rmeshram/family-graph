@@ -1306,13 +1306,13 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     onMouseLeave={() => setHoveredMemberId(null)}
                   >
                     <div className="relative">
-                      <Avatar className={cn('border-2 h-8 w-8',
+                      <Avatar className={cn('border-2 h-10 w-10',
                         isSelf ? 'border-amber-400/70'
                           : isSelected ? 'border-amber-400/60' : isUnclaimed ? 'border-slate-500/40' : isExtended ? 'border-violet-600/35' : 'border-slate-600/40'
                       )}
                       style={clusterColor && !isSelected && !isSelf ? { borderColor: `${clusterColor.stroke}59` } : undefined}
                       >
-                        {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
+                        {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover object-top" />}
                         <AvatarFallback
                           className={cn('text-[9px] font-semibold',
                             isAnonymous ? 'bg-muted/60 text-muted-foreground'
@@ -1433,7 +1433,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                           <Avatar
                             className={cn(
                               'border-2 transition-all duration-200',
-                              isAffiliated ? 'h-11 w-11' : isExtended ? 'h-11 w-11' : 'h-12 w-12',
+                              isAffiliated ? 'h-12 w-12' : isExtended ? 'h-12 w-12' : 'h-14 w-14',
                               isSelected
                                 ? 'border-amber-400/60 ring-2 ring-amber-400/20 ring-offset-1 ring-offset-[var(--surface-base)]'
                                 : isUnclaimed
@@ -1449,7 +1449,7 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                             ...(isHovered ? { boxShadow: `0 0 0 2px ${clusterColor.stroke}26` } : {}),
                           } : undefined}
                           >
-                            {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />}
+                            {!isAnonymous && member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover object-top" />}
                             <AvatarFallback
                               className={cn(
                                 'font-bold transition-colors',

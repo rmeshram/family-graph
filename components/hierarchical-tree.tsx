@@ -544,8 +544,8 @@ const TreeNodeCard = memo(function TreeNodeCard({
         {isUnclaimed && (
           <div className="absolute top-1.5 left-2 h-1.5 w-1.5 rounded-full bg-amber-400 opacity-80" />
         )}
-        <Avatar className="h-11 w-11 border-2" style={{ borderColor: color + '55' }}>
-          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={displayName} />}
+        <Avatar className="h-14 w-14 border-2" style={{ borderColor: color + '55' }}>
+          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={displayName} className="object-cover object-top" />}
           <AvatarFallback className="text-sm font-bold text-white" style={{ background: color }}>
             {initials}
           </AvatarFallback>
