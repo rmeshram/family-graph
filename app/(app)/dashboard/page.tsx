@@ -686,16 +686,28 @@ export default function FamilyGraphApp() {
   // Detects the "members disappeared after family merge" case by calling a
   // server-side endpoint that can see across all families (service role).
   //
-  // What it detects: the user has claimed nodes in a DIFFERENT family than
-  // their current profile.family_id — meaning the migration at join time
-  // silently failed. The endpoint moves those nodes (and their whole family)
-  // into the current family, then we refetch the member list.
-  //
   // Runs once per session per family (sessionStorage key prevents looping).
+  // Also runs unconditionally when duplicate names are detected in the member
+  // list — this clears any leftover duplicates from a previous buggy migration
+  // regardless of whether recovery already ran this session.
   useEffect(() => {
     if (isDemoMode || authLoading || dbLoading || !user || !familyId) return
-    const recoveryKey = `family_recovery_v2_${user.id}_${familyId}`
-    if (typeof window !== 'undefined' && sessionStorage.getItem(recoveryKey)) return
+
+    // Detect duplicate names in the current member list
+    const normalise = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+    const seen = new Set<string>()
+    const hasDuplicateNames = dbMembers.some(m => {
+      const k = normalise(m.name)
+      if (seen.has(k)) return true
+      seen.add(k)
+      return false
+    })
+
+    const recoveryKey = `family_recovery_v3_${user.id}_${familyId}`
+    const alreadyRan = typeof window !== 'undefined' && !!sessionStorage.getItem(recoveryKey)
+
+    // Skip if already ran AND no duplicates detected
+    if (alreadyRan && !hasDuplicateNames) return
     if (typeof window !== 'undefined') sessionStorage.setItem(recoveryKey, '1')
 
     const recover = async () => {
@@ -715,7 +727,7 @@ export default function FamilyGraphApp() {
     }
     recover()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemoMode, authLoading, dbLoading, user?.id, familyId])
+  }, [isDemoMode, authLoading, dbLoading, user?.id, familyId, dbMembers])
 
   // ── Activity feed — derived from real member + story data for logged-in users ─
   const feedItems = useMemo<FamilyEvent[]>(() => {
