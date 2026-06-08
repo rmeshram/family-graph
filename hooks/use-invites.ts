@@ -358,19 +358,27 @@ export function useJoinFamily() {
       }
 
       // Guard: user already has a member node in a DIFFERENT family.
-      // This can happen when onboarding ran before the invite flow (a bug we patched,
-      // but guard defensively). Do NOT create another member — just update the profile
-      // to point to the invited family so the user can see this tree.
-      // They will appear as a viewer without a claimed node until they claim one.
+      // When confirmCrossFamily=true the user explicitly agreed to merge their tree
+      // into the invited family. We migrate ALL their family members to the new
+      // family so they don't disappear, and keep member_id intact so their node
+      // stays linked. Without migration the user's members stay in the old
+      // family_id and become completely invisible — the reported "members disappeared" bug.
       if (existingMember && existingMember.family_id !== invite.family_id) {
-        // Cap at contributor — joining via invite never grants admin
         const safeRole = invite.role === 'admin' ? 'contributor' : invite.role
-        // Clear member_id so self-resolution recalculates in the new family context.
-        // The user will be prompted to claim a node in the new family.
+        const oldFamilyId = existingMember.family_id as string
+
+        // ── Migrate all members from the old family into the new family ────────
+        // This preserves every node (nodes, relationships, claims) — only the
+        // family_id bucket changes so both families see them in one unified tree.
+        await (supabase.from('family_members') as any)
+          .update({ family_id: invite.family_id })
+          .eq('family_id', oldFamilyId)
+
+        // ── Update profile — keep member_id (node still exists, now in new family) ─
         await supabase.from('profiles').update({
           family_id: invite.family_id,
           role: safeRole,
-          member_id: null,
+          // Do NOT null member_id — the node was migrated above, not destroyed
           ...(opts?.displayName ? { display_name: opts.displayName } : {}),
         }).eq('id', userId)
         const incrQ = supabase.from('invite_links') as any
