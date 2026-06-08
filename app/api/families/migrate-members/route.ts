@@ -62,21 +62,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, migrated: 0 }) // nothing to do
   }
 
-  // Authorization: caller must belong to one of the two families.
-  // We accept both because profile.family_id may have already been updated to toFamilyId
-  // by the time this endpoint is called.
-  const { data: callerProfile } = await supabase
+  const admin = adminClient()
+
+  // Authorization: caller must belong to one of the two families OR have a
+  // claimed node in fromFamilyId. We use the ADMIN client here to bypass any
+  // RLS policies on the profiles table that could return null for the caller's
+  // own row (causing a false 403). We check three evidence paths:
+  //   1. profile.family_id matches either family (most common case)
+  //   2. caller has a claimed node in fromFamilyId (join-time case, before profile update)
+  //   3. caller has a claimed node in toFamilyId (after-profile-update case)
+  const { data: callerProfile } = await admin
     .from('profiles')
     .select('family_id')
     .eq('id', user.id)
     .single()
 
   const callerFamilyId = (callerProfile as any)?.family_id as string | null
-  if (callerFamilyId !== fromFamilyId && callerFamilyId !== toFamilyId) {
-    return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 403 })
-  }
 
-  const admin = adminClient()
+  if (callerFamilyId !== fromFamilyId && callerFamilyId !== toFamilyId) {
+    // Secondary check: does the user have any claimed node in either family?
+    const { data: claimedInFrom } = await admin
+      .from('family_members')
+      .select('id')
+      .eq('claimed_by_user_id', user.id)
+      .in('family_id', [fromFamilyId, toFamilyId])
+      .limit(1)
+
+    if (!claimedInFrom || (claimedInFrom as any[]).length === 0) {
+      console.warn(`[migrate-members] 403: user ${user.id} callerFamily=${callerFamilyId} from=${fromFamilyId} to=${toFamilyId}`)
+      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 403 })
+    }
+  }
 
   // ── 1. Move all members from fromFamily → toFamily ────────────────────────
   const { data: movedRows, error: moveErr } = await admin

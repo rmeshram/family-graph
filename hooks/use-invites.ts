@@ -374,19 +374,30 @@ export function useJoinFamily() {
         // endpoint uses the service-role key to perform the cross-family move.
         // If claimMemberId is also set, we pass it so the server can merge the
         // duplicate "same person" nodes (old Rahul node + Shikha's Rahul node).
-        await fetch('/api/families/migrate-members', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fromFamilyId: oldFamilyId,
-            toFamilyId: invite.family_id,
-            // If the user is also claiming a node in the target family,
-            // merge the old self-node into the claimed node so parent/spouse
-            // edges carry over and there's no duplicate.
-            oldNodeId: opts?.claimMemberId ? oldNodeId : undefined,
-            newNodeId: opts?.claimMemberId ?? undefined,
-          }),
-        }).catch(err => console.warn('[joinWithCode] migration API error:', err))
+        // Note: we properly await AND check the response status here.
+        // A plain .catch() only catches network errors — 403/500 responses
+        // would be silently swallowed without the explicit res.ok check below.
+        try {
+          const migrRes = await fetch('/api/families/migrate-members', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fromFamilyId: oldFamilyId,
+              toFamilyId: invite.family_id,
+              // If the user is also claiming a node in the target family,
+              // merge the old self-node into the claimed node so parent/spouse
+              // edges carry over and there's no duplicate.
+              oldNodeId: opts?.claimMemberId ? oldNodeId : undefined,
+              newNodeId: opts?.claimMemberId ?? undefined,
+            }),
+          })
+          if (!migrRes.ok) {
+            const migrErrBody = await migrRes.json().catch(() => ({}))
+            console.error('[joinWithCode] migration failed:', migrRes.status, migrErrBody)
+          }
+        } catch (migrNetErr) {
+          console.warn('[joinWithCode] migration network error:', migrNetErr)
+        }
 
         // ── Update profile ─────────────────────────────────────────────────────
         // If claimMemberId was provided and the server merged+deleted the old node,
@@ -429,18 +440,24 @@ export function useJoinFamily() {
     // Now we detect the old family_id from the profile and migrate its members.
     const oldFamilyFromProfile = (profile as any)?.family_id as string | null
     if (oldFamilyFromProfile && oldFamilyFromProfile !== invite.family_id) {
-      // Fire-and-forget: migration failure must not block the join.
-      // The user's tree will just not be visible (same as the old broken state),
-      // which is still better than crashing the join flow.
-      fetch('/api/families/migrate-members', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromFamilyId: oldFamilyFromProfile,
-          toFamilyId: invite.family_id,
-          // No node merge here — user had no claimed node, so no duplicate to resolve
-        }),
-      }).catch(err => console.warn('[joinWithCode] migration (no-node) API error:', err))
+      // Await + check status — fire-and-forget swallows HTTP errors silently.
+      try {
+        const migrRes2 = await fetch('/api/families/migrate-members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromFamilyId: oldFamilyFromProfile,
+            toFamilyId: invite.family_id,
+            // No node merge here — user had no claimed node, so no duplicate to resolve
+          }),
+        })
+        if (!migrRes2.ok) {
+          const migrErrBody2 = await migrRes2.json().catch(() => ({}))
+          console.error('[joinWithCode] migration (no-node) failed:', migrRes2.status, migrErrBody2)
+        }
+      } catch (migrNetErr2) {
+        console.warn('[joinWithCode] migration (no-node) network error:', migrNetErr2)
+      }
     }
 
     // 2. Update profile with family_id + role
