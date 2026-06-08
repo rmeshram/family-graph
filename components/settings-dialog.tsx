@@ -78,9 +78,11 @@ interface SettingsDialogProps {
   onSetAnonymous?: (memberId: string, anon: boolean) => void
   /** Called after a successful self-unclaim so the parent can refresh member data */
   onUnclaim?: () => void
+  /** Called after the user successfully leaves the family — parent should redirect to onboarding */
+  onLeaveFamily?: () => void
 }
 
-export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownloadTemplate, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous, onUnclaim }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownloadTemplate, defaultTab = 'general', selfMember, onSetVisibility, onSetAnonymous, onUnclaim, onLeaveFamily }: SettingsDialogProps) {
   const isMobile = useIsMobile()
   const { user, profile, familyId, loading: authLoading, refreshProfile } = useAuth()
   const supabase = createClient()
@@ -126,6 +128,30 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
   const [unclaiming, setUnclaiming] = useState(false)
   const [showUnclaimConfirm, setShowUnclaimConfirm] = useState(false)
   const [unclaimError, setUnclaimError] = useState<string | null>(null)
+
+  // Leave family state
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
+  const handleLeaveFamily = useCallback(async () => {
+    setLeaving(true)
+    setLeaveError(null)
+    try {
+      const res = await fetch('/api/families/leave', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setLeaveError(data.message ?? data.error ?? `Error ${res.status}`)
+        return
+      }
+      toast.success('You have left the family. Redirecting…')
+      setShowLeaveConfirm(false)
+      onLeaveFamily?.()
+    } catch (err: any) {
+      setLeaveError(err?.message ?? 'Network error — could not reach server')
+    } finally {
+      setLeaving(false)
+    }
+  }, [onLeaveFamily])
 
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -1165,6 +1191,65 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                     </>
                   )
                 })()}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Leave Family ──────────────────────────────────────── */}
+          {familyId && (
+            <Card className="bg-muted/30 border-destructive/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <UserX className="h-4 w-4 text-muted-foreground" />
+                  Leave Family
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Remove yourself from this family tree. Your member profile will stay in the tree — it just becomes unclaimed so another family member can re-add it. You will lose access to the tree immediately.
+                </p>
+                {!showLeaveConfirm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-destructive/30 text-destructive hover:bg-destructive/10"
+                    onClick={() => { setShowLeaveConfirm(true); setLeaveError(null) }}
+                  >
+                    <UserX className="h-3.5 w-3.5 mr-2" />
+                    Leave Family
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-destructive font-medium">
+                      Are you sure? You will be signed out of the tree and need a new invite to rejoin.
+                    </p>
+                    {leaveError && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        <span className="font-semibold">Error: </span>{leaveError}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => { setShowLeaveConfirm(false); setLeaveError(null) }}
+                        disabled={leaving}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="flex-1"
+                        onClick={handleLeaveFamily}
+                        disabled={leaving}
+                      >
+                        {leaving ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirm Leave'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

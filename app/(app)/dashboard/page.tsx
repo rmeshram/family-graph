@@ -2695,6 +2695,7 @@ export default function FamilyGraphApp() {
           }
         }}
         onUnclaim={() => { refetchMembers(); refreshProfile() }}
+        onLeaveFamily={() => { refreshProfile(); window.location.href = '/onboarding' }}
       />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}
