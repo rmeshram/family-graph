@@ -1238,7 +1238,7 @@ export default function JoinPage() {
                       disabled={familyLinkSubmitting}
                     >
                       {familyLinkSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitBranch className="h-3.5 w-3.5" />}
-                      Link Trees
+                      Connect Families
                     </Button>
                   </div>
                 </div>
