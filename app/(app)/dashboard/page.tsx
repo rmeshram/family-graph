@@ -682,6 +682,52 @@ export default function FamilyGraphApp() {
     return () => setFocusMode(false)
   }, [isDemoMode, dbLoading, authLoading, members.length, setFocusMode])
 
+  // ── Orphaned-member recovery ──────────────────────────────────────────────
+  // Detects the "members disappeared after family merge" case:
+  //   • The user has a member_id in their profile (they belong to a tree)
+  //   • BUT that member_id is NOT found in the current family's members list
+  //   → Their old family's members are orphaned in a different family bucket.
+  //
+  // This happens when joinWithCode's cross-family migration fails (RLS blocks it)
+  // or when the user joined without going through the confirmation dialog.
+  // Recovery: call the server-side migrate-members API which uses the service role
+  // to move the orphaned members into the current family. Runs at most ONCE per
+  // session (tracked in sessionStorage so it doesn't loop on repeated renders).
+  useEffect(() => {
+    if (isDemoMode || authLoading || dbLoading || !user || !familyId) return
+    const profileMemberId = (profile as any)?.member_id as string | null
+    if (!profileMemberId) return
+    // If the bound node IS found in the current family — no orphaning, skip
+    if (dbMembers.some(m => m.id === profileMemberId)) return
+    // Avoid repeated recovery attempts in the same session
+    const recoveryKey = `orphan_recovery_${user.id}_${familyId}`
+    if (typeof window !== 'undefined' && sessionStorage.getItem(recoveryKey)) return
+    if (typeof window !== 'undefined') sessionStorage.setItem(recoveryKey, '1')
+
+    // The bound node is missing → find which family it belongs to and migrate
+    const recover = async () => {
+      try {
+        const { data: orphanedNode } = await createClient()
+          .from('family_members')
+          .select('family_id')
+          .eq('id', profileMemberId)
+          .single()
+        const orphanedFamilyId = (orphanedNode as any)?.family_id as string | null
+        if (!orphanedFamilyId || orphanedFamilyId === familyId) return
+        const res = await fetch('/api/families/migrate-members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromFamilyId: orphanedFamilyId, toFamilyId: familyId }),
+        })
+        if (res.ok) refetchMembers()
+      } catch {
+        // non-fatal — user just won't see their old family members (same as before fix)
+      }
+    }
+    recover()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoMode, authLoading, dbLoading, user?.id, familyId])
+
   // ── Activity feed — derived from real member + story data for logged-in users ─
   const feedItems = useMemo<FamilyEvent[]>(() => {
     if (isDemoMode) return []

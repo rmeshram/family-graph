@@ -291,7 +291,7 @@ export function useJoinFamily() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('display_name, phone, member_id')
+      .select('display_name, phone, member_id, family_id')
       .eq('id', userId)
       .single()
 
@@ -366,21 +366,48 @@ export function useJoinFamily() {
       if (existingMember && existingMember.family_id !== invite.family_id) {
         const safeRole = invite.role === 'admin' ? 'contributor' : invite.role
         const oldFamilyId = existingMember.family_id as string
+        const oldNodeId = existingMember.id as string
 
-        // ── Migrate all members from the old family into the new family ────────
-        // This preserves every node (nodes, relationships, claims) — only the
-        // family_id bucket changes so both families see them in one unified tree.
-        await (supabase.from('family_members') as any)
-          .update({ family_id: invite.family_id })
-          .eq('family_id', oldFamilyId)
+        // ── Migrate all members via server-side API (bypasses RLS) ────────────
+        // The client-side Supabase cannot UPDATE family_id to a different family
+        // due to the WITH CHECK constraint on the RLS policy. The server-side
+        // endpoint uses the service-role key to perform the cross-family move.
+        // If claimMemberId is also set, we pass it so the server can merge the
+        // duplicate "same person" nodes (old Rahul node + Shikha's Rahul node).
+        await fetch('/api/families/migrate-members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromFamilyId: oldFamilyId,
+            toFamilyId: invite.family_id,
+            // If the user is also claiming a node in the target family,
+            // merge the old self-node into the claimed node so parent/spouse
+            // edges carry over and there's no duplicate.
+            oldNodeId: opts?.claimMemberId ? oldNodeId : undefined,
+            newNodeId: opts?.claimMemberId ?? undefined,
+          }),
+        }).catch(err => console.warn('[joinWithCode] migration API error:', err))
 
-        // ── Update profile — keep member_id (node still exists, now in new family) ─
+        // ── Update profile ─────────────────────────────────────────────────────
+        // If claimMemberId was provided and the server merged+deleted the old node,
+        // point member_id at the new (claimed) node. Otherwise keep the old node id
+        // (it was just moved to the new family by the migration above).
+        const newMemberId = opts?.claimMemberId ?? oldNodeId
         await supabase.from('profiles').update({
           family_id: invite.family_id,
           role: safeRole,
-          // Do NOT null member_id — the node was migrated above, not destroyed
+          member_id: newMemberId,
           ...(opts?.displayName ? { display_name: opts.displayName } : {}),
         }).eq('id', userId)
+
+        // If claiming, mark the new node as claimed too
+        if (opts?.claimMemberId) {
+          await supabase.from('family_members')
+            .update({ claimed_by_user_id: userId, is_claimed: true } as any)
+            .eq('id', opts.claimMemberId)
+            .eq('is_claimed', false)
+        }
+
         const incrQ = supabase.from('invite_links') as any
         let chain = incrQ
           .update({ used_count: invite.used_count + 1 })
@@ -394,6 +421,26 @@ export function useJoinFamily() {
         }
         return invite.family_id
       }
+    }
+
+    // ── NEW: Handle family switch even when user had NO claimed node (member_id=null) ──
+    // Previously this was skipped: the user's old family members were silently orphaned
+    // when profile.family_id changed to the new family without migrating their tree.
+    // Now we detect the old family_id from the profile and migrate its members.
+    const oldFamilyFromProfile = (profile as any)?.family_id as string | null
+    if (oldFamilyFromProfile && oldFamilyFromProfile !== invite.family_id) {
+      // Fire-and-forget: migration failure must not block the join.
+      // The user's tree will just not be visible (same as the old broken state),
+      // which is still better than crashing the join flow.
+      fetch('/api/families/migrate-members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromFamilyId: oldFamilyFromProfile,
+          toFamilyId: invite.family_id,
+          // No node merge here — user had no claimed node, so no duplicate to resolve
+        }),
+      }).catch(err => console.warn('[joinWithCode] migration (no-node) API error:', err))
     }
 
     // 2. Update profile with family_id + role
