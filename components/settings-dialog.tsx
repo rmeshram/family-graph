@@ -153,6 +153,34 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
     }
   }, [onLeaveFamily])
 
+  // Reset family tree state
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [resetting, setResetting] = useState(false)
+
+  const handleResetFamily = async () => {
+    setResetting(true)
+    try {
+      const res = await fetch('/api/admin/family/reset', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data.message ?? data.error ?? 'Failed to reset family tree.')
+        return
+      }
+      toast.success('Family tree reset. All members and content have been deleted.')
+      setShowResetConfirm(false)
+      // Reload so the empty tree is shown
+      window.location.reload()
+    } catch (err) {
+      toast.error('Network error. Please try again.')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -1433,6 +1461,26 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Reset Family Tree — admin only */}
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-orange-500/50 text-orange-500 hover:bg-orange-500/10"
+                    onClick={() => setShowResetConfirm(true)}
+                    disabled={resetting}
+                  >
+                    {resetting
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Resetting…</>
+                      : <><Trash2 className="h-4 w-4 mr-2" />Reset Family Tree</>}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Deletes all family members and content from the tree. Your account and family name are kept — you can start adding members again immediately.
+                  </p>
+                  <Separator className="bg-border/30" />
+                </>
+              )}
               {isLastAdmin && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-400">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -1633,6 +1681,30 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (removeConfirmUserId) removeFromFamily(removeConfirmUserId); setRemoveConfirmUserId(null) }}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Reset Family Tree confirmation ──────────────────────────────── */}
+      <AlertDialog open={showResetConfirm} onOpenChange={(v) => { if (!v && !resetting) setShowResetConfirm(false) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset family tree?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">This will <strong>permanently delete all family members</strong> and content (stories, memories, events) from the tree.</span>
+              <span className="block">Your account and the family itself will remain — you can start adding members again immediately.</span>
+              <span className="block font-medium text-orange-400">⚠️ This cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-orange-600 text-white hover:bg-orange-700"
+              disabled={resetting}
+              onClick={(e) => { e.preventDefault(); handleResetFamily() }}
+            >
+              {resetting ? 'Resetting…' : 'Yes, reset the tree'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
