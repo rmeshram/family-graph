@@ -1437,13 +1437,14 @@ export default function FamilyGraphApp() {
 
         {/* Beta Banner */}
         {user && (
-          <div className="border-b border-border/30 shrink-0 bg-muted/20">
+          <div className="border-b border-amber-500/20 bg-amber-500/8 shrink-0">
             <div className="px-4 py-1.5 flex items-center justify-center gap-3">
-              <span className="text-[11px] text-muted-foreground/60">Beta</span>
-              <span className="text-muted-foreground/30 text-[10px]">·</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">Beta</span>
+              <span className="text-muted-foreground/40 text-[10px]">·</span>
               <a
                 href="mailto:meshram22rahul@gmail.com?subject=Outverse%20Feedback"
-                className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors underline-offset-2 hover:underline"
               >
                 Send feedback
               </a>
