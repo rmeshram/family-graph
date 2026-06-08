@@ -98,6 +98,24 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
   // Remove from family confirmation
   const [removeConfirmUserId, setRemoveConfirmUserId] = useState<string | null>(null)
 
+  // Display name edit
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const startEditName = () => {
+    setNameValue((profile as any)?.display_name ?? '')
+    setEditingName(true)
+  }
+  const saveDisplayName = async () => {
+    if (!user || !nameValue.trim()) return
+    setSavingName(true)
+    const { error } = await supabase.from('profiles').update({ display_name: nameValue.trim() }).eq('id', user.id)
+    setSavingName(false)
+    if (error) { toast.error('Could not save name'); return }
+    toast.success('Name updated')
+    setEditingName(false)
+  }
+
   // Self-unclaim state
   const [unclaiming, setUnclaiming] = useState(false)
   const [showUnclaimConfirm, setShowUnclaimConfirm] = useState(false)
@@ -565,11 +583,32 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
                       {(profile as any)?.display_name?.[0] ?? user.email?.[0]?.toUpperCase() ?? '?'}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="text-sm font-medium">{(profile as any)?.display_name ?? 'Anonymous'}</p>
-                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                  <div className="flex-1 min-w-0">
+                    {editingName ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-7 text-sm py-0 px-2"
+                          value={nameValue}
+                          onChange={e => setNameValue(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveDisplayName(); if (e.key === 'Escape') setEditingName(false) }}
+                          autoFocus
+                        />
+                        <Button size="sm" className="h-7 px-2 text-xs" onClick={saveDisplayName} disabled={savingName}>
+                          {savingName ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditingName(false)}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium truncate">{(profile as any)?.display_name ?? 'Anonymous'}</p>
+                        <button onClick={startEditName} className="shrink-0 text-muted-foreground/50 hover:text-muted-foreground transition-colors" title="Edit name">
+                          <Edit3 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                   </div>
-                  <Badge variant="outline" className={`ml-auto text-xs ${roleBadgeClass((profile as any)?.role ?? 'viewer')}`}>
+                  <Badge variant="outline" className={`ml-auto text-xs shrink-0 ${roleBadgeClass((profile as any)?.role ?? 'viewer')}`}>
                     {(profile as any)?.role ?? 'viewer'}
                   </Badge>
                 </div>
