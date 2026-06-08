@@ -2264,7 +2264,8 @@ export default function FamilyGraphApp() {
           )}
 
           {/* Family Mission Panel — desktop aside */}
-          {viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
+          {viewMode === 'tree' && !isDemoMode && !isViewer
+            && (selfMember || identityState === 'unlinked')
             && !isMobile
             && !showAIWidget && !showInviteWidget && !selectedMember && (
               <FamilyMissionPanel
@@ -2276,16 +2277,18 @@ export default function FamilyGraphApp() {
                 onQuickAddMember={(relType, anchorId) => handleAddRelative(anchorId, relType)}
                 onAddStory={() => setIsStoryDialogOpen(true)}
                 onInviteMember={(m) => setInviteToClaimTarget(m)}
-                onEditSelf={() => setEditingMember(selfMember)}
+                onEditSelf={() => selfMember ? setEditingMember(selfMember) : setIsRelOnboardingOpen(true)}
                 hasStories={checklistHasStories}
                 wizardSkipped={profile?.wizard_skipped ?? []}
                 onSkipStep={handleMissionSkip}
+                onClaimProfile={!selfMember ? () => setIsRelOnboardingOpen(true) : undefined}
               />
             )}
 
           {/* ── Mobile Mission Strip — sticky bottom, replaces silent icon button ── */}
-          {isMobile && viewMode === 'tree' && !isDemoMode && selfMember && !isViewer
-            && !showMissionDrawer && missionProgress.done < missionProgress.total && (
+          {isMobile && viewMode === 'tree' && !isDemoMode && !isViewer
+            && (selfMember || identityState === 'unlinked')
+            && !showMissionDrawer && (selfMember ? missionProgress.done < missionProgress.total : true) && (
               <div
                 className="absolute bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-1 pointer-events-none"
                 style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
@@ -2354,7 +2357,7 @@ export default function FamilyGraphApp() {
                   </button>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {selfMember && (
+                  {(selfMember || identityState === 'unlinked') && (
                     <FamilyMissionPanel
                       className="w-full border-l-0"
                       selfMember={selfMember}
@@ -2365,10 +2368,11 @@ export default function FamilyGraphApp() {
                       onQuickAddMember={(relType, anchorId) => { setShowMissionDrawer(false); handleAddRelative(anchorId, relType) }}
                       onAddStory={() => { setShowMissionDrawer(false); setIsStoryDialogOpen(true) }}
                       onInviteMember={(m) => { setShowMissionDrawer(false); setInviteToClaimTarget(m) }}
-                      onEditSelf={() => { setShowMissionDrawer(false); setEditingMember(selfMember) }}
+                      onEditSelf={() => { setShowMissionDrawer(false); selfMember ? setEditingMember(selfMember) : setIsRelOnboardingOpen(true) }}
                       hasStories={checklistHasStories}
                       wizardSkipped={profile?.wizard_skipped ?? []}
                       onSkipStep={handleMissionSkip}
+                      onClaimProfile={!selfMember ? () => { setShowMissionDrawer(false); setIsRelOnboardingOpen(true) } : undefined}
                     />
                   )}
                 </div>
