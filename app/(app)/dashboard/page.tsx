@@ -451,14 +451,14 @@ function InviteWidget({ onClose, familyId, userId }: { onClose: () => void; fami
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId, userId])
 
-  const displayLink = link ?? (familyId ? '' : 'https://familygraph.app/join/DEMO')
+  const displayLink = link ?? (familyId ? '' : 'https://outverse.in/join/DEMO')
   const copy = () => {
     if (!displayLink) return
     copyToClipboard(displayLink)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`🌳 *Join our Family Tree!*\n\nNamaste! I'm building our family's digital history on Family Graph.\n\nJoin here: ${displayLink}\n\nNo app download needed — just click and add yourself! 🙏`)}`
+  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`🌳 *Join our Family Tree!*\n\nNamaste! I'm building our family's digital history on Outverse.\n\nJoin here: ${displayLink}\n\nNo app download needed — just click and add yourself! 🙏`)}`
 
   return (
     <div className="flex flex-col h-full">
@@ -1369,7 +1369,7 @@ export default function FamilyGraphApp() {
     const data = JSON.stringify(members, null, 2)
     const blob = new Blob([data], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'family-graph.json'; a.click()
+    const a = document.createElement('a'); a.href = url; a.download = 'outverse.json'; a.click()
     URL.revokeObjectURL(url)
     toast({ title: 'Export complete', description: 'Family data exported as JSON.' })
   }, [members, toast])
@@ -1446,7 +1446,7 @@ export default function FamilyGraphApp() {
                 </span>
               </div>
               <a
-                href="mailto:support@familygraph.app?subject=Family%20Graph%20Feedback"
+                href="mailto:support@outverse.in?subject=Outverse%20Feedback"
                 className="text-amber-600 hover:text-amber-700 underline font-medium"
               >
                 Send Feedback

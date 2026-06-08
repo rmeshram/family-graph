@@ -228,7 +228,7 @@ export default function MarketingPage() {
                 </svg>
               </div>
               <div>
-                <span className="font-bold text-foreground">Family Graph</span>
+                <span className="font-bold text-foreground">Outverse</span>
                 <span className="ml-2 hidden rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary sm:inline">
                   Early Access
                 </span>
@@ -339,7 +339,7 @@ export default function MarketingPage() {
               <div className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
               <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
               <div className="ml-2 flex-1 rounded bg-muted/50 h-5 px-2 flex items-center">
-                <span className="text-[10px] text-muted-foreground/50">familygraph.app/dashboard</span>
+                <span className="text-[10px] text-muted-foreground/50">outverse.in/dashboard</span>
               </div>
             </div>
             <div className="rounded-xl overflow-hidden border border-border/30" style={{ background: 'linear-gradient(135deg, #0C0A09 0%, #1C1917 100%)' }}>
@@ -433,7 +433,7 @@ export default function MarketingPage() {
       <section id="use-cases" className="py-20 px-4 sm:px-6">
         <div className="mx-auto max-w-5xl">
           <div className="text-center mb-12">
-            <Badge className="mb-4 border-primary/30 bg-primary/10 text-primary">Why Families Use Family Graph</Badge>
+            <Badge className="mb-4 border-primary/30 bg-primary/10 text-primary">Why Families Use Outverse</Badge>
             <h2 className="text-3xl font-bold sm:text-4xl">More than a family tree</h2>
             <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
               Discovery, matrimony context, and legacy preservation — three problems no single app has solved together. Until now.
@@ -797,7 +797,7 @@ export default function MarketingPage() {
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary">
                 <GitBranch className="h-3.5 w-3.5 text-white" />
               </div>
-              <span className="font-bold text-sm">Family Graph</span>
+              <span className="font-bold text-sm">Outverse</span>
               <span className="text-xs text-muted-foreground">© 2026</span>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">

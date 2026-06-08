@@ -195,7 +195,7 @@ function PhoneOnboardingContent() {
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-xl shadow-primary/30 mb-4">
             <TreePine className="h-7 w-7 text-white" />
           </div>
-          <p className="text-sm text-muted-foreground">Family Graph</p>
+          <p className="text-sm text-muted-foreground">Outverse</p>
         </div>
 
         {/* ── Loading ── */}
@@ -310,7 +310,7 @@ function PhoneOnboardingContent() {
         {phase === 'no-match' && (
           <div className="rounded-3xl border border-border/50 bg-card shadow-2xl overflow-hidden">
             <div className="px-6 pt-7 pb-5 border-b border-border/50 text-center">
-              <h1 className="text-xl font-bold text-foreground mb-1">Welcome to Family Graph</h1>
+              <h1 className="text-xl font-bold text-foreground mb-1">Welcome to Outverse</h1>
               <p className="text-sm text-muted-foreground">
                 No existing profile found for your number. How would you like to start?
               </p>

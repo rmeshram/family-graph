@@ -238,12 +238,17 @@ export async function POST(
               .update({ family_id: previousFamilyId, member_id: restoredMemberId, role: previousRole ?? 'contributor' } as any)
               .eq('id', revokedUserId)
           } else {
-            // Previous family deleted — fully orphan
-            await admin.from('profiles').update({ member_id: null, family_id: null } as any).eq('id', revokedUserId)
+            // Previous family was deleted — keep the user in the current family
+            // so they can still see the tree and re-claim a node.
+            await admin.from('profiles').update({ member_id: null } as any).eq('id', revokedUserId)
           }
         } else {
-          // No recovery info — orphan
-          await admin.from('profiles').update({ member_id: null, family_id: null } as any).eq('id', revokedUserId)
+          // No previous-family audit trail. Keep the user in THIS family
+          // (family_id unchanged) but clear member_id so they see the
+          // 'unlinked' banner and can claim a correct node.
+          // Revoking a claim ≠ removing a user from the family — that is
+          // a separate admin action (admin/members/[userId]/remove).
+          await admin.from('profiles').update({ member_id: null } as any).eq('id', revokedUserId)
         }
       }
     }

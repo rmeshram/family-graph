@@ -333,7 +333,7 @@ function SignInContent() {
       {showEmail && tab === 'email' && <EmailSignIn />}
 
       <p className="text-center text-sm text-muted-foreground mt-6">
-        New to Family Graph?{" "}
+        New to Outverse?{" "}
         <Link href={signupHref} className="text-primary hover:underline font-medium">Create account</Link>
       </p>
 

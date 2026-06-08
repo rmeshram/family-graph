@@ -58,11 +58,11 @@ export default function LegalPage() {
                   Acceptance of Terms
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Welcome to Family Graph. By accessing or using our service, you agree to be bound by these Terms of Service ("Terms"). 
-                  If you do not agree to these Terms, please do not use Family Graph.
+                  Welcome to Outverse. By accessing or using our service, you agree to be bound by these Terms of Service ("Terms"). 
+                  If you do not agree to these Terms, please do not use Outverse.
                 </p>
                 <p className="text-muted-foreground leading-relaxed mt-4">
-                  Family Graph is currently in beta testing. During this period, the service is provided on an "as-is" and "as-available" basis. 
+                  Outverse is currently in beta testing. During this period, the service is provided on an "as-is" and "as-available" basis. 
                   We may modify, suspend, or discontinue any aspect of the service at any time.
                 </p>
               </section>
@@ -92,7 +92,7 @@ export default function LegalPage() {
                   <div className="rounded-lg border bg-muted/50 p-4">
                     <h4 className="font-semibold mb-2">Age Requirement</h4>
                     <p className="text-sm text-muted-foreground">
-                      You must be at least 13 years old to create an account and use Family Graph.
+                      You must be at least 13 years old to create an account and use Outverse.
                     </p>
                   </div>
                 </div>
@@ -106,7 +106,7 @@ export default function LegalPage() {
                   Service Description
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Family Graph is a family tree platform that allows you to map your family network, discover relationships, 
+                  Outverse is a family tree platform that allows you to map your family network, discover relationships, 
                   and preserve family stories. Our service includes:
                 </p>
                 <ul className="mt-4 space-y-2">
@@ -168,12 +168,12 @@ export default function LegalPage() {
                 </h3>
                 <div className="space-y-4">
                   <p className="text-muted-foreground leading-relaxed">
-                    <strong>Your Content:</strong> You retain all ownership rights to the content you upload. By using Family Graph, 
+                    <strong>Your Content:</strong> You retain all ownership rights to the content you upload. By using Outverse, 
                     you grant us a worldwide, non-exclusive license to store, display, and process your content solely for the purpose 
                     of providing our service to you and your invited family members.
                   </p>
                   <p className="text-muted-foreground leading-relaxed">
-                    <strong>Our Platform:</strong> Family Graph, including its code, design, features, and branding, is owned by us 
+                    <strong>Our Platform:</strong> Outverse, including its code, design, features, and branding, is owned by us 
                     and protected by copyright and other intellectual property laws.
                   </p>
                 </div>
@@ -188,16 +188,16 @@ export default function LegalPage() {
                 </h3>
                 <div className="rounded-xl border bg-muted/50 p-6 space-y-4">
                   <p className="text-sm">
-                    <strong>No Warranty:</strong> Family Graph is provided "as-is" without warranties of any kind, either express or implied, 
+                    <strong>No Warranty:</strong> Outverse is provided "as-is" without warranties of any kind, either express or implied, 
                     including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement.
                   </p>
                   <p className="text-sm">
                     <strong>Limitation of Liability:</strong> To the maximum extent permitted by law, we shall not be liable for any indirect, 
                     incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, 
-                    or any loss of data, use, goodwill, or other intangible losses resulting from your use of Family Graph.
+                    or any loss of data, use, goodwill, or other intangible losses resulting from your use of Outverse.
                   </p>
                   <p className="text-sm">
-                    <strong>Maximum Liability:</strong> Our total liability to you for any claims arising from your use of Family Graph 
+                    <strong>Maximum Liability:</strong> Our total liability to you for any claims arising from your use of Outverse 
                     shall not exceed the amount you have paid us in the past 12 months (currently $0 during beta).
                   </p>
                 </div>
@@ -225,7 +225,7 @@ export default function LegalPage() {
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
                   We may update these Terms from time to time. When we make material changes, we will notify you via email or through the service. 
-                  Your continued use of Family Graph after such changes constitutes your acceptance of the new Terms.
+                  Your continued use of Outverse after such changes constitutes your acceptance of the new Terms.
                 </p>
               </section>
 
@@ -241,7 +241,7 @@ export default function LegalPage() {
                 </p>
                 <div className="rounded-lg border bg-card p-4">
                   <p className="text-sm">
-                    <strong>Email:</strong> <a href="mailto:support@familygraph.app" className="text-primary hover:underline">support@familygraph.app</a>
+                    <strong>Email:</strong> <a href="mailto:support@outverse.in" className="text-primary hover:underline">support@outverse.in</a>
                   </p>
                   <p className="text-sm mt-2">
                     <strong>Through the App:</strong> Settings → Help & Feedback
@@ -251,7 +251,7 @@ export default function LegalPage() {
 
               <div className="not-prose mt-12 rounded-xl border bg-muted/30 p-6 text-center">
                 <p className="text-sm text-muted-foreground">
-                  By creating an account and using Family Graph, you acknowledge that you have read, understood, 
+                  By creating an account and using Outverse, you acknowledge that you have read, understood, 
                   and agree to be bound by these Terms of Service.
                 </p>
               </div>
@@ -272,8 +272,8 @@ export default function LegalPage() {
                   Introduction
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  At Family Graph, we take your privacy seriously. This Privacy Policy explains how we collect, use, share, 
-                  and protect your personal information when you use our family tree platform. By using Family Graph, you consent 
+                  At Outverse, we take your privacy seriously. This Privacy Policy explains how we collect, use, share, 
+                  and protect your personal information when you use our family tree platform. By using Outverse, you consent 
                   to the practices described in this policy.
                 </p>
               </section>
@@ -360,7 +360,7 @@ export default function LegalPage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-lg border bg-card p-4">
                     <h4 className="font-semibold mb-2 text-sm">Service Delivery</h4>
-                    <p className="text-xs text-muted-foreground">To provide and maintain the Family Graph platform, including creating your family tree and enabling collaboration.</p>
+                    <p className="text-xs text-muted-foreground">To provide and maintain the Outverse platform, including creating your family tree and enabling collaboration.</p>
                   </div>
                   <div className="rounded-lg border bg-card p-4">
                     <h4 className="font-semibold mb-2 text-sm">Product Improvement</h4>
@@ -387,7 +387,7 @@ export default function LegalPage() {
                 <div className="space-y-6">
                   <div>
                     <h4 className="font-semibold mb-3 text-base">Service Providers</h4>
-                    <p className="text-sm text-muted-foreground mb-3">We share data with trusted third-party service providers who help us operate Family Graph:</p>
+                    <p className="text-sm text-muted-foreground mb-3">We share data with trusted third-party service providers who help us operate Outverse:</p>
                     <div className="grid gap-3">
                       <div className="rounded-lg border bg-muted/50 p-3">
                         <p className="text-sm font-medium">Supabase (Database Hosting)</p>
@@ -558,7 +558,7 @@ export default function LegalPage() {
                   International Data Transfers
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Your data is stored on servers located in the United States. By using Family Graph, you consent to the transfer of your 
+                  Your data is stored on servers located in the United States. By using Outverse, you consent to the transfer of your 
                   information to the United States and processing in accordance with this Privacy Policy and applicable U.S. law.
                 </p>
               </section>
@@ -572,7 +572,7 @@ export default function LegalPage() {
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
                   We may update this Privacy Policy from time to time. We will notify you of material changes by email or through a notice 
-                  on our service. Your continued use of Family Graph after such changes constitutes your acceptance of the updated policy.
+                  on our service. Your continued use of Outverse after such changes constitutes your acceptance of the updated policy.
                 </p>
               </section>
 
@@ -590,7 +590,7 @@ export default function LegalPage() {
                   <div>
                     <p className="text-sm font-semibold">General Privacy Questions</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Email: <a href="mailto:privacy@familygraph.app" className="text-primary hover:underline">privacy@familygraph.app</a>
+                      Email: <a href="mailto:privacy@outverse.in" className="text-primary hover:underline">privacy@outverse.in</a>
                     </p>
                   </div>
                   <Separator />
@@ -598,7 +598,7 @@ export default function LegalPage() {
                     <p className="text-sm font-semibold">Data Deletion or Export Requests</p>
                     <p className="text-sm text-muted-foreground mt-1">
                       Subject line: "Data Request - [Your Email]"<br />
-                      Email: <a href="mailto:privacy@familygraph.app" className="text-primary hover:underline">privacy@familygraph.app</a>
+                      Email: <a href="mailto:privacy@outverse.in" className="text-primary hover:underline">privacy@outverse.in</a>
                     </p>
                   </div>
                   <Separator />
@@ -611,7 +611,7 @@ export default function LegalPage() {
 
               <div className="not-prose mt-12 rounded-xl border bg-muted/30 p-6 text-center">
                 <p className="text-sm text-muted-foreground">
-                  By using Family Graph, you acknowledge that you have read and understood this Privacy Policy and consent to 
+                  By using Outverse, you acknowledge that you have read and understood this Privacy Policy and consent to 
                   the collection, use, and sharing of your information as described herein.
                 </p>
               </div>

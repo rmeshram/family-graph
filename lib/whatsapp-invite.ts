@@ -29,7 +29,7 @@ export function buildPersonalizedClaimMessage(
   const familyRef = familyName ? `the ${familyName}` : 'our family'
   return (
     `${salutation} 🙏\n\n` +
-    `I'm building ${familyRef} tree on Family Graph and I've already added your profile.\n\n` +
+    `I'm building ${familyRef} tree on Outverse and I've already added your profile.\n\n` +
     `Claim your profile to:\n` +
     `• Edit your bio, photo & details\n` +
     `• Add your spouse, children & relatives\n` +
@@ -49,7 +49,7 @@ export function buildMemberInviteMessage(memberName: string, inviteLink: string)
   const firstName = memberName.split(' ')[0] ?? memberName
   return (
     `Hi ${firstName},\n\n` +
-    `I've added you to our family tree on Family Graph.\n\n` +
+    `I've added you to our family tree on Outverse.\n\n` +
     `Join using this link:\n${inviteLink}\n\n` +
     `You can:\n` +
     `• View family connections\n` +
@@ -68,7 +68,7 @@ export function buildMemberInviteMessage(memberName: string, inviteLink: string)
  */
 export function buildFamilyInviteMessage(familyName: string, inviteLink: string): string {
   return (
-    `🌳 Join our family tree on Family Graph!\n\n` +
+    `🌳 Join our family tree on Outverse!\n\n` +
     `I'm building the ${familyName} family tree and would love for you to join.\n\n` +
     `Join here:\n${inviteLink}\n\n` +
     `You can:\n` +
