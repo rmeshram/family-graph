@@ -478,29 +478,41 @@ export async function POST(
       }
     }
 
-    const { data: existingLink } = await admin
+    const { data: existingLinks } = await admin
       .from('user_node_links')
       .select('node_id')
       .eq('user_id', user.id)
       .neq('node_id', nodeId)
-      .maybeSingle()
-    if (existingLink) {
-      // Check if the stale link is still actively claimed by this user.
-      const { data: staleLinkedNode } = await admin
+
+    // Normalize all link rows first: purge stale entries, keep only truly-active claims.
+    let activeLinkedNode: any | null = null
+    for (const link of ((existingLinks ?? []) as any[])) {
+      const linkNodeId = (link as any).node_id as string
+      const { data: linkedNode } = await admin
         .from('family_members')
         .select('id, name, family_id, is_claimed, claimed_by_user_id, claim_status')
-        .eq('id', (existingLink as any).node_id)
+        .eq('id', linkNodeId)
         .maybeSingle()
-      const isStale = !staleLinkedNode ||
-        !(staleLinkedNode as any).is_claimed ||
-        (staleLinkedNode as any).claimed_by_user_id !== user.id ||
-        (staleLinkedNode as any).claim_status === 'revoked'
+
+      const isStale = !linkedNode ||
+        !(linkedNode as any).is_claimed ||
+        (linkedNode as any).claimed_by_user_id !== user.id ||
+        (linkedNode as any).claim_status !== 'claimed'
+
       if (isStale) {
-        // Auto-heal: remove the stale link so the claim can proceed.
-        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
-      } else if (skipFamilyLink || (effectiveConfirmCrossFamily && isCrossFamily)) {
-        // Option B: user is consciously switching families — remove the old link.
-        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
+        // Auto-heal: remove stale link rows so future claims aren't blocked.
+        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', linkNodeId)
+        continue
+      }
+
+      // First truly active linked node wins.
+      if (!activeLinkedNode) activeLinkedNode = linkedNode
+    }
+
+    if (activeLinkedNode) {
+      if (skipFamilyLink || (effectiveConfirmCrossFamily && isCrossFamily)) {
+        // Option B / confirmed merge: user is consciously switching families.
+        await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (activeLinkedNode as any).id)
       } else {
         // ── Two-tree connection: SUGGEST_FAMILY_LINK ─────────────────────────
         // The caller already owns a node in another family (their own tree) and
@@ -508,7 +520,7 @@ export async function POST(
         // them, check if the two families can be linked via the family_links
         // system. If so, surface a suggestion so they can connect the trees
         // instead of hitting a dead-end error.
-        const existingNodeFamilyId = (staleLinkedNode as any).family_id as string | null
+        const existingNodeFamilyId = (activeLinkedNode as any).family_id as string | null
         const targetFamilyId = (node as any).family_id as string
 
         // Only suggest if the two families are genuinely different and not already linked
@@ -537,14 +549,14 @@ export async function POST(
             return NextResponse.json(
               {
                 error: 'SUGGEST_FAMILY_LINK',
-                existingNodeId: (staleLinkedNode as any).id,
-                existingNodeName: (staleLinkedNode as any).name,
+                existingNodeId: (activeLinkedNode as any).id,
+                existingNodeName: (activeLinkedNode as any).name,
                 existingFamilyId: existingNodeFamilyId,
                 existingFamilyName: (existingFamily as any)?.name ?? 'your family',
                 targetNodeId: nodeId,
                 targetFamilyId,
                 targetFamilyName: (targetFamily as any)?.name ?? 'this family',
-                message: `Your account is already linked to "${(staleLinkedNode as any).name}" in "${(existingFamily as any)?.name ?? 'your family'}". Instead of claiming a separate profile, you can connect both family trees — your profile will serve as the bridge between the two families.`,
+                message: `Your account is already linked to "${(activeLinkedNode as any).name}" in "${(existingFamily as any)?.name ?? 'your family'}". Instead of claiming a separate profile, you can connect both family trees — your profile will serve as the bridge between the two families.`,
               },
               { status: 409 }
             )
@@ -555,7 +567,7 @@ export async function POST(
         return NextResponse.json(
           {
             error: 'ALREADY_LINKED_ACCOUNT',
-            claimedNodeId: (existingLink as any).node_id,
+            claimedNodeId: (activeLinkedNode as any).id,
             message: 'This account is already linked to another profile. Unclaim that profile first to switch.',
           },
           { status: 409 }
