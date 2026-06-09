@@ -2372,7 +2372,7 @@ export default function FamilyGraphApp() {
           )}
 
           {/* Path Finder Panel — side panel on desktop, bottom sheet on mobile */}
-          {pathFinderOpen && viewMode === 'universe' && !showAIWidget && !showInviteWidget && (
+          {pathFinderOpen && !showAIWidget && !showInviteWidget && (
             isMobile ? (
               <Drawer open={pathFinderOpen} onOpenChange={(open) => {
                 if (!open) {
