@@ -15,7 +15,7 @@ export const FEATURE_FLAGS = {
   /** Kulgatha PDF export — not yet production-ready */
   enableKulgathaPDF: false,
   /** Live Activity widget on the graph canvas. Off by default for MVP — noise > signal until graph has scale. */
-  enableLiveActivityWidget: false,
+  enableLiveActivityWidget: true,
   /** Presence avatars (who's online) on the dashboard header. Off until realtime presence is wired. */
   enablePresenceAvatars: true,
   /** Advanced analytics / missing-data intelligence panels beyond the basic overview. */
@@ -25,10 +25,10 @@ export const FEATURE_FLAGS = {
   /** Google Places autocomplete for location fields. Off until GOOGLE_MAPS_API_KEY is configured. */
   enableGooglePlaces: false,
   /** Full multipage PDF export of the entire graph universe. Off until export pipeline ships. */
-  enableFullGraphPdfExport: false,
+  enableFullGraphPdfExport: true,
   /** Asks "how are you related to the inviter?" during the /join flow. */
   /** Per DECISION 1 (claim = join) this step is removed; relationship is set during node creation. */
-  enableInviteRelationshipStep: false,  // HIGH-08: was true, conflicts with DECISION 1 comment
+  enableInviteRelationshipStep: true,  // HIGH-08: was true, conflicts with DECISION 1 comment
   /** Admin review queue for low-confidence claims. ON — already shipped in settings dialog. */
   enableClaimReviewQueue: true,
   /** Moderator role: dedicated claim review + conflict resolution UI (/admin/moderation). */
@@ -36,9 +36,9 @@ export const FEATURE_FLAGS = {
   /** Graph conflict detection panel in settings — shows pending_conflicts from DB. */
   enableConflictPanel: true,
   /** Relationship step wizard during invite join — requires enableInviteRelationshipStep to also be true. */
-  enableStructuralMappingWizard: false,
+  enableStructuralMappingWizard: true,
   /** branch_admin role: scoped edit permissions on a subtree. */
-  enableBranchAdmin: false,
+  enableBranchAdmin: true,
   /** Realtime notifications driven by claim_audit_log + family_members inserts. */
   enableRealtimeNotifications: true,
   /** Phone number + OTP sign-in / sign-up (WhatsApp / SMS).
@@ -47,6 +47,8 @@ export const FEATURE_FLAGS = {
   enablePhoneOtpAuth: false,
   /** Email + password authentication. Disable only if switching 100% to phone OTP. */
   enableEmailPasswordAuth: true,
+  /** Matrimony biodata generation & matching page (/biodata). Disabled until the matching pipeline is ready. */
+  enableBiodata: false,
   /** Hierarchical family tree view — screenshot-faithful layout (grandparents → parents → You → children).
    *  Includes ghost-slot onboarding guide for 2-minute family setup.
    *  Set to true to show the "Tree" tab in the dashboard view switcher. */
@@ -56,7 +58,7 @@ export const FEATURE_FLAGS = {
   enableGraphView: false,
   /** Generation-strip org chart view. Has generation label bug (gen=0 maps to Great Grandparents but is actually "You").
    *  Disabled — keeping code in case it's fixed and re-enabled later. */
-  enableOrgChartView: false,
+  enableOrgChartView: true,
   /** Events calendar page. Low value for MVP — re-enable once event RSVP + notifications are wired. */
   enableEvents: false,
 } as const

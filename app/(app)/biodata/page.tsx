@@ -1,5 +1,7 @@
 "use client"
 
+import { redirect } from "next/navigation"
+import { FEATURE_FLAGS } from "@/lib/feature-flags"
 import { useState, useMemo, useRef, useCallback } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -20,6 +22,8 @@ import type { FamilyMember } from "@/lib/types"
 const CURRENT_YEAR = new Date().getFullYear()
 
 export default function BiodataPage() {
+  if (!FEATURE_FLAGS.enableBiodata) redirect('/dashboard')
+
   const { user, profile, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading, updateMember } = useMembers(familyId)
   const { toast } = useToast()

@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { MapPin } from 'lucide-react'
+import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
 interface MemberCardProps {
   member: FamilyMember
@@ -156,7 +157,7 @@ export function MemberCard({ member, isSelected, onClick, compact = false, isSel
                 Unclaimed
               </Badge>
             )}
-            {member.isBiodataVisible && (
+            {FEATURE_FLAGS.enableBiodata && member.isBiodataVisible && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-pink-500/40 text-pink-400/80" title="Biodata visible for matrimony search">
                 ❤ Matrimony
               </Badge>
