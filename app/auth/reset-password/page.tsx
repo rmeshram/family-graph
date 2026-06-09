@@ -20,17 +20,30 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false)
   const [sessionReady, setSessionReady] = useState(false)
 
-  // The callback route (/auth/callback) exchanges the PKCE code and sets the
-  // session cookie before redirecting here. Verify the session is actually
-  // present before rendering the form — if it's missing, show a clear error.
+  // Supabase sends a PKCE reset link pointing here with ?code=xxx.
+  // Exchange the code for a session, then verify we have an authenticated user.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+
+    const init = async () => {
+      if (code) {
+        // Remove the code from the URL so it can't be replayed on refresh
+        window.history.replaceState({}, '', window.location.pathname)
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        if (exchangeError) {
+          setSessionError('This reset link has expired or has already been used. Please request a new one.')
+          return
+        }
+      }
+      const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setSessionReady(true)
       } else {
         setSessionError('This reset link has expired or has already been used. Please request a new one.')
       }
-    })
+    }
+    init()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

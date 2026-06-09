@@ -24,10 +24,11 @@ function ForgotPasswordForm() {
     setError('')
     setIsLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      // Route through /auth/callback so the PKCE code gets exchanged for a session
-      // before the user lands on the reset form. Without this, /auth/reset-password
-      // receives ?code=xxx but has no handler for it and updateUser() fails.
-      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+      // Point directly at the reset page. That page will exchange the PKCE code
+      // itself. Using /auth/callback as an intermediary requires that URL to be
+      // explicitly in Supabase's Redirect URLs allowlist; pointing at the reset
+      // page works as long as the Site URL wildcard covers it.
+      redirectTo: `${window.location.origin}/auth/reset-password`,
     })
     setIsLoading(false)
     // Always show success — never reveal whether the email is registered (prevents account enumeration)
