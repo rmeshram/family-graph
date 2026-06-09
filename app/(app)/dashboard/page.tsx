@@ -61,7 +61,7 @@ import {
   GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity, MessageCircle,
   Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
-  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target,
+  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target, Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
@@ -993,6 +993,40 @@ export default function FamilyGraphApp() {
     return { done: checks.filter(Boolean).length, total: checks.length }
   }, [selfMember, members, profile?.wizard_skipped, checklistHasStories, checklistHasOtherClaims])
 
+  // ── Family-First activation gates (high-ROI onboarding) ───────────────────
+  // Step 1: claim/add yourself
+  // Step 2: add at least one close-family anchor (father/mother/spouse)
+  // Step 3: get two other members claimed (network effect starts)
+  const familyFirstProgress = useMemo(() => {
+    const isClaimedLike = (m: FamilyMember) => m.isClaimed || !!m.claimedByUserId || m.claimStatus === 'claimed'
+    const step1 = !!selfMember
+    if (!selfMember) {
+      return { step1: false, step2: false, step3: false, joinedOthers: 0 }
+    }
+    const byId = new Map(members.map(m => [m.id, m]))
+    const parents = selfMember.parentIds.map(pid => byId.get(pid)).filter(Boolean) as FamilyMember[]
+    const hasFather = parents.some(p => p.gender === 'male')
+      || members.some(m => m.id !== selfMember.id && m.gender === 'male' && (m.relationship === 'father' || m.relationship === 'dad'))
+    const hasMother = parents.some(p => p.gender === 'female')
+      || members.some(m => m.id !== selfMember.id && m.gender === 'female' && (m.relationship === 'mother' || m.relationship === 'mom'))
+    const hasSpouse = (selfMember.spouseIds ?? []).some(sid => byId.has(sid))
+      || members.some(m => m.id !== selfMember.id && (m.relationship === 'spouse' || m.relationship === 'wife' || m.relationship === 'husband' || m.relationship === 'partner'))
+
+    const step2 = hasFather || hasMother || hasSpouse
+    const joinedOthers = members.filter(m => m.id !== selfMember.id && isClaimedLike(m)).length
+    const step3 = joinedOthers >= 2
+    return { step1, step2, step3, joinedOthers }
+  }, [selfMember, members])
+
+  const familyFirstCommunityUnlocked = isDemoMode || isViewer || (familyFirstProgress.step1 && familyFirstProgress.step2)
+
+  // If Universe was selected before lock conditions changed, force fallback.
+  useEffect(() => {
+    if (!familyFirstCommunityUnlocked && viewMode === 'universe') {
+      setViewMode('tree')
+    }
+  }, [familyFirstCommunityUnlocked, viewMode])
+
   // ── Mission drawer: auto-open once for new users ────────────────────────────
   // Fires when user is on tree view, has < 4 members, and hasn't seen it yet.
   useEffect(() => {
@@ -1464,12 +1498,18 @@ export default function FamilyGraphApp() {
     ].filter((x): x is { label: string; type: QuickRelType } => !!x)
   }, [viewMode, selectedMemberId, isDemoMode, isViewer, members])
 
-  const VIEW_MODES: { key: TreeViewMode; label: string; icon: React.ElementType }[] = [
+  const VIEW_MODES: { key: TreeViewMode; label: string; icon: React.ElementType; locked?: boolean; lockReason?: string }[] = [
     ...(FEATURE_FLAGS.enableHierarchicalTreeView ? [{ key: 'tree' as TreeViewMode, label: 'Tree', icon: TreePine }] : []),
     ...(FEATURE_FLAGS.enableGraphView ? [{ key: 'graph' as TreeViewMode, label: 'Graph', icon: Network }] : []),
     ...(FEATURE_FLAGS.enableOrgChartView ? [{ key: 'orgchart' as TreeViewMode, label: 'Org Chart', icon: GitBranch }] : []),
     { key: 'list', label: 'List', icon: List },
-    { key: 'universe', label: 'Universe', icon: Sparkles },
+    {
+      key: 'universe',
+      label: 'Universe',
+      icon: Sparkles,
+      locked: !familyFirstCommunityUnlocked,
+      lockReason: 'Complete steps 1-2 in Family First to unlock Universe',
+    },
   ]
 
   return (
@@ -1591,8 +1631,22 @@ export default function FamilyGraphApp() {
           {/* View mode switcher */}
           <div className="flex items-center rounded-lg border border-border/40 bg-muted/30 p-0.5 gap-0.5 lg:ml-3">
             {VIEW_MODES.map(v => (
-              <button key={v.key} onClick={() => setViewMode(v.key)}
+              <button key={v.key} onClick={() => {
+                if (v.locked) {
+                  toast({
+                    title: 'Finish Family First to unlock Universe',
+                    description: 'Step 1: claim/add yourself. Step 2: add a parent or spouse.',
+                  })
+                  setViewMode('tree')
+                  if (isMobile) setShowMissionDrawer(true)
+                  return
+                }
+                setViewMode(v.key)
+              }}
+                disabled={!!v.locked}
+                title={v.lockReason}
                 className={cn('flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                  v.locked && 'opacity-50 cursor-not-allowed',
                   viewMode === v.key
                     ? 'bg-card text-foreground shadow-sm border border-border/50'
                     : 'text-muted-foreground hover:text-foreground'
@@ -1600,20 +1654,34 @@ export default function FamilyGraphApp() {
               >
                 <v.icon className="h-3 w-3" />
                 <span className="hidden sm:inline">{v.label}</span>
+                {v.locked && <Lock className="h-2.5 w-2.5" />}
               </button>
             ))}
           </div>
 
           {/* Extended family toggle — shows linked-family count when active */}
           <button
-            onClick={() => setShowExtended(v => !v)}
+            onClick={() => {
+              if (!familyFirstCommunityUnlocked) {
+                toast({
+                  title: 'Extended network is locked',
+                  description: 'Complete Family First steps 1-2 to unlock community features.',
+                })
+                return
+              }
+              setShowExtended(v => !v)
+            }}
+            disabled={!familyFirstCommunityUnlocked}
             className={cn(
               'flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium border transition-colors shrink-0',
+              !familyFirstCommunityUnlocked && 'opacity-50 cursor-not-allowed',
               showExtended
                 ? 'bg-teal-500/10 border-teal-500/40 text-teal-400 hover:bg-teal-500/15'
                 : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
             )}
-            title={showExtended ? 'Hide extended family' : 'Show extended family'}
+            title={!familyFirstCommunityUnlocked
+              ? 'Complete Family First steps 1-2 to unlock Extended mode'
+              : showExtended ? 'Hide extended family' : 'Show extended family'}
           >
             <Users2 className="h-3 w-3" />
             <span className="hidden md:inline">Extended</span>
@@ -1720,6 +1788,35 @@ export default function FamilyGraphApp() {
             )}
           </div>
         </header>
+
+        {/* Family First onboarding strip — strict 3-step activation */}
+        {!isDemoMode && !isViewer && (
+          <div className="flex items-center gap-3 border-b border-primary/15 bg-primary/5 px-4 py-2 text-[11px]">
+            <span className="font-semibold text-foreground shrink-0">Family First</span>
+            <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+              <span className={cn('rounded-full px-2 py-0.5 border', familyFirstProgress.step1 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-border/40')}>
+                1. Add Yourself
+              </span>
+              <span className={cn('rounded-full px-2 py-0.5 border', familyFirstProgress.step2 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-border/40')}>
+                2. Add Parent/Spouse
+              </span>
+              <span className={cn('rounded-full px-2 py-0.5 border hidden sm:inline-flex', familyFirstProgress.step3 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-border/40')}>
+                3. 2 Relatives Join
+              </span>
+            </div>
+            {!familyFirstCommunityUnlocked ? (
+              <button
+                type="button"
+                onClick={() => { setViewMode('tree'); if (isMobile) setShowMissionDrawer(true) }}
+                className="ml-auto shrink-0 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20"
+              >
+                Continue setup →
+              </button>
+            ) : (
+              <span className="ml-auto shrink-0 text-emerald-300 font-medium">Community unlocked</span>
+            )}
+          </div>
+        )}
 
         {/* Profile completeness + FamilyLinkRequestsBanner removed — surfaced in sidebar Family Health widget instead */}
 
@@ -1850,9 +1947,9 @@ export default function FamilyGraphApp() {
                 {(identityState === 'unlinked' || !selfMember) ? (
                   <>
                     <div>
-                      <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Let's build your tree 🌱</h2>
+                      <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Start your branch of the community graph 🌱</h2>
                       <p className="text-muted-foreground text-sm max-w-xs">
-                        Your account is set up — now add yourself to see your family tree come alive.
+                        Your account is ready. Add yourself first, then grow your family branch and connect it to the wider community.
                       </p>
                     </div>
                     <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -1874,9 +1971,9 @@ export default function FamilyGraphApp() {
                 ) : (
                   <>
                     <div>
-                      <h2 className="text-xl font-bold text-foreground mb-2">Your tree starts here 🌱</h2>
+                      <h2 className="text-xl font-bold text-foreground mb-2">Your branch starts here 🌱</h2>
                       <p className="text-muted-foreground text-sm max-w-xs">
-                        Add your father or mother — two taps and your tree comes alive.
+                        Add your father or mother first. Once your close family is mapped, invite relatives to connect across families.
                       </p>
                     </div>
                     <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -1906,6 +2003,8 @@ export default function FamilyGraphApp() {
                   <span className="flex items-center gap-1"><span className="text-primary/60">②</span> Add parents</span>
                   <span>→</span>
                   <span className="flex items-center gap-1"><span className="text-violet-400/60">③</span> Invite relatives</span>
+                  <span>→</span>
+                  <span className="flex items-center gap-1"><span className="text-amber-400/70">④</span> Connect families</span>
                 </div>
               </div>
             )}
@@ -2701,7 +2800,16 @@ export default function FamilyGraphApp() {
       />
       <LinkFamilyDialog
         open={isLinkFamilyOpen}
-        onOpenChange={setIsLinkFamilyOpen}
+        onOpenChange={(open) => {
+          if (open && !familyFirstCommunityUnlocked) {
+            toast({
+              title: 'Family links are locked',
+              description: 'Complete Family First steps 1-2 to unlock family-to-family linking.',
+            })
+            return
+          }
+          setIsLinkFamilyOpen(open)
+        }}
         myFamilyName={(profile as any)?.family_name ?? 'My Family'}
         linkedFamilies={linkedFamilies}
         members={members.filter(m => m.networkGroup !== 'affiliated')}
