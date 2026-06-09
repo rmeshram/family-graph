@@ -632,8 +632,11 @@ export default function FamilyGraphApp() {
   // Desktop: mission panel collapses to a slim tab so the tree canvas gets full width.
   // Persisted in localStorage so preference survives page reloads.
   const [isMissionPanelCollapsed, setIsMissionPanelCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem('fg_mission_panel_collapsed') === '1'
+    if (typeof window === 'undefined') return true
+    // Default to collapsed (true) so the tree gets full canvas on first visit.
+    // Only expand if the user explicitly opened it before ('0' stored).
+    const stored = localStorage.getItem('fg_mission_panel_collapsed')
+    return stored === null ? true : stored === '1'
   })
   const [viewMode, setViewMode] = useState<TreeViewMode>(
     FEATURE_FLAGS.enableHierarchicalTreeView ? 'tree' : 'universe'
@@ -2414,7 +2417,7 @@ export default function FamilyGraphApp() {
             && !isMobile
             && !showAIWidget && !showInviteWidget && !selectedMember && (
               <div className="relative flex h-full shrink-0">
-                {/* Collapse/expand tab — pinned to left edge of the panel */}
+                {/* Vertical pill tab — always visible, shows progress when collapsed */}
                 <button
                   type="button"
                   onClick={() => {
@@ -2422,13 +2425,28 @@ export default function FamilyGraphApp() {
                     setIsMissionPanelCollapsed(next)
                     localStorage.setItem('fg_mission_panel_collapsed', next ? '1' : '0')
                   }}
-                  className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-card shadow-sm hover:bg-muted transition-colors"
-                  title={isMissionPanelCollapsed ? 'Show panel' : 'Hide panel'}
+                  className={cn(
+                    'absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full z-20 flex flex-col items-center justify-center gap-1 rounded-l-lg border border-r-0 border-border/60 bg-card/95 shadow-sm hover:bg-muted transition-colors',
+                    isMissionPanelCollapsed ? 'py-4 px-1.5 w-7' : 'py-2 px-1 w-6'
+                  )}
+                  title={isMissionPanelCollapsed ? 'Show mission panel' : 'Hide panel'}
                 >
-                  {isMissionPanelCollapsed
-                    ? <ChevronLeft className="h-3 w-3 text-muted-foreground" />
-                    : <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                  }
+                  {isMissionPanelCollapsed ? (
+                    <>
+                      <ChevronLeft className="h-3 w-3 text-muted-foreground" />
+                      <span className="[writing-mode:vertical-rl] rotate-180 text-[9px] font-semibold text-primary leading-none tracking-wide">
+                        {missionProgress.done}/{missionProgress.total}
+                      </span>
+                      <div className="w-1 rounded-full bg-muted-foreground/20 overflow-hidden" style={{ height: 40 }}>
+                        <div
+                          className="w-full rounded-full bg-primary transition-all"
+                          style={{ height: `${Math.round((missionProgress.done / missionProgress.total) * 100)}%` }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  )}
                 </button>
 
                 {/* Panel — slides in/out */}
