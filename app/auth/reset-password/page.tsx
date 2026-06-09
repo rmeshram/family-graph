@@ -15,26 +15,33 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [sessionError, setSessionError] = useState('')
+  const [formError, setFormError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [sessionReady, setSessionReady] = useState(false)
 
-  // Supabase passes the recovery token in the URL hash — the client library picks it up automatically
+  // The callback route (/auth/callback) exchanges the PKCE code and sets the
+  // session cookie before redirecting here. Verify the session is actually
+  // present before rendering the form — if it's missing, show a clear error.
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        // User has arrived via recovery link — page is ready
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setSessionReady(true)
+      } else {
+        setSessionError('This reset link has expired or has already been used. Please request a new one.')
       }
     })
-  }, [supabase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
+    setFormError('')
+    if (password.length < 6) { setFormError('Password must be at least 6 characters'); return }
     setIsLoading(true)
     const { error } = await supabase.auth.updateUser({ password })
     setIsLoading(false)
-    if (error) { setError(error.message); return }
+    if (error) { setFormError(error.message); return }
     setSuccess(true)
     setTimeout(() => { router.push('/dashboard'); router.refresh() }, 2000)
   }
@@ -54,11 +61,28 @@ export default function ResetPasswordPage() {
             <p className="text-green-500/80 mt-1">Redirecting to your dashboard...</p>
           </div>
         </div>
+      ) : !sessionReady ? (
+        <div className="space-y-4">
+          {sessionError ? (
+            <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+              <p className="font-medium">Link expired</p>
+              <p className="mt-1 text-destructive/80">{sessionError}</p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          <a href="/auth/forgot-password"
+            className="block w-full text-center rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors">
+            Request a new reset link
+          </a>
+        </div>
       ) : (
         <form onSubmit={handleUpdate} className="space-y-4">
-          {error && (
+          {formError && (
             <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-              {error}
+              {formError}
             </div>
           )}
           <div className="space-y-2">

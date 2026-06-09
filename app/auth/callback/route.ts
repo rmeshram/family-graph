@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  const type = searchParams.get('type')
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
   // Sanitise `next` — must be a relative path starting with a single `/` to prevent open-redirect.
@@ -20,6 +21,10 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
     if (!exchangeError) {
+      // Password recovery: always go straight to the reset form — never onboarding.
+      if (type === 'recovery' || next === '/auth/reset-password') {
+        return NextResponse.redirect(`${origin}/auth/reset-password`)
+      }
       // After OAuth (Google), detect new vs returning user
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
