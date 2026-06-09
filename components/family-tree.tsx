@@ -2101,11 +2101,11 @@ export function FamilyTree({ members, selfMemberId, selectedMemberId, onSelectMe
                     <button
                       onClick={e => { e.stopPropagation(); onFindRelationship?.(selectedMemberId!) }}
                       disabled={!onFindRelationship || isSelf}
-                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                      style={{ background: 'var(--muted)', border: '1px solid var(--universe-panel-border, rgba(255,255,255,0.08))', color: 'var(--muted-foreground)' }}
+                      className="flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-[9px] font-semibold transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.25), rgba(6,182,212,0.25))', border: '1px solid rgba(139,92,246,0.4)', color: 'rgb(167,139,250)' }}
                     >
                       <span style={{ fontSize: 13, lineHeight: 1 }}>⟷</span>
-                      <span style={{ color: 'var(--foreground)' }}>Find Rel</span>
+                      <span>Related?</span>
                     </button>
                   </div>
                   {/* View / Edit Profile — always visible, secondary to primary CTA */}

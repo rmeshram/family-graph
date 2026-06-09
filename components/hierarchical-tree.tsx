@@ -719,8 +719,8 @@ const TreeNodeCard = memo(function TreeNodeCard({
             )}
             {onFindRelationship && !isSelf && (
               <button type="button" onClick={() => onFindRelationship(member.id)}
-                className="text-[9px] font-semibold text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded-full hover:bg-muted transition-colors">
-                ⟷ Path
+                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full transition-colors bg-gradient-to-r from-violet-500/20 to-cyan-500/20 border border-violet-500/30 text-violet-400 hover:from-violet-500/30 hover:to-cyan-500/30 hover:text-violet-300">
+                ⟷ Related?
               </button>
             )}
             {canInvite && (

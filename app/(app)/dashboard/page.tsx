@@ -61,7 +61,7 @@ import {
   GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity, MessageCircle,
   Copy, Check, Send, Bot, ChevronLeft, ChevronRight, List, Network, Users2,
-  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target, Lock,
+  Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target, Lock, Waypoints,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
@@ -1747,6 +1747,25 @@ export default function FamilyGraphApp() {
               <span className="hidden sm:inline">Search</span>
               <kbd className="hidden rounded bg-muted px-1 text-[10px] sm:inline">⌘K</kbd>
             </Button>
+
+            <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
+
+            {/* ── Find Relationship — primary CTA ─────────────────────────── */}
+            {relationshipIntelligenceEnabled && (
+              <Button
+                size="sm"
+                onClick={() => handleOpenPathFinder()}
+                className={cn(
+                  'h-8 gap-1.5 text-xs font-semibold transition-all duration-200',
+                  pathFinderOpen
+                    ? 'bg-cyan-500 text-white hover:bg-cyan-600 shadow-md shadow-cyan-500/30'
+                    : 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:from-violet-600 hover:to-cyan-600 shadow-md shadow-violet-500/20 hover:shadow-violet-500/40'
+                )}
+              >
+                <Waypoints className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{pathFinderOpen ? 'Close' : 'How are we related?'}</span>
+              </Button>
+            )}
 
             <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
 
