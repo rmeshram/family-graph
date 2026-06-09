@@ -381,6 +381,19 @@ function resolveLabel(
     return male ? 'Uncle' : female ? 'Aunt' : 'Uncle/Aunt'
   }
 
+  // Niece / Nephew: SIBLING>CHILD or PARENT>CHILD>CHILD (up to parent, across to sibling, down to child).
+  // Must be resolved BEFORE the LCA path — the LCA can give wrong depths (e.g. grandparent
+  // instead of parent as LCA) when virtual sibling nodes are involved in the BFS path, producing
+  // "First Cousin, 1 time removed" instead of "Niece". These two normalized patterns
+  // unambiguously mean niece/nephew by definition, so bypass LCA entirely.
+  if (normalized === 'SIBLING>CHILD' || normalized === 'PARENT>CHILD>CHILD') {
+    return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
+  }
+  // Grand-niece/nephew: one more generation down
+  if (normalized === 'SIBLING>CHILD>CHILD' || normalized === 'PARENT>CHILD>CHILD>CHILD') {
+    return male ? 'Grand-nephew' : female ? 'Grand-niece' : 'Grand-nephew/niece'
+  }
+
   const hasSpouse = normalized.includes('SPOUSE')
   if (!hasSpouse && lca) {
     return classifyFromLCA(lca, male, female, memberMap, peoplePath)
