@@ -25,7 +25,6 @@ export interface RelationLabel {
   male?: string
   female?: string
 }
-
 export const RELATIONSHIP_MAP: Record<string, RelationLabel> = {
 
   // ── 1-step ─────────────────────────────────────────────────────────────────
@@ -35,62 +34,56 @@ export const RELATIONSHIP_MAP: Record<string, RelationLabel> = {
   'SIBLING': { neutral: 'Sibling', male: 'Brother', female: 'Sister' },
 
   // ── 2-step ─────────────────────────────────────────────────────────────────
-  'PARENT>PARENT': { neutral: 'Grandparent', male: 'Grandfather (Dada/Nana)', female: 'Grandmother (Dadi/Nani)' },
+  'PARENT>PARENT': { neutral: 'Grandparent', male: 'Grandfather', female: 'Grandmother' },
   'CHILD>CHILD': { neutral: 'Grandchild', male: 'Grandson', female: 'Granddaughter' },
   'PARENT>SIBLING': { neutral: 'Uncle/Aunt', male: 'Uncle', female: 'Aunt' },
-  'SIBLING>CHILD': { neutral: 'Nephew/Niece', male: 'Nephew (Bhatija/Bhanja)', female: 'Niece (Bhatiji/Bhanji)' },
+  'SIBLING>CHILD': { neutral: 'Nephew/Niece', male: 'Nephew', female: 'Niece' },
   'SPOUSE>PARENT': { neutral: 'Parent-in-law', male: 'Father-in-law', female: 'Mother-in-law' },
   'CHILD>SPOUSE': { neutral: 'Child-in-law', male: 'Son-in-law', female: 'Daughter-in-law' },
-  'SPOUSE>SIBLING': { neutral: 'Sibling-in-law', male: 'Brother-in-law (Saala/Devar)', female: 'Sister-in-law (Saali/Nanad)' },
-  'SIBLING>SPOUSE': { neutral: "Sibling's Spouse", male: 'Jija (Didi ka Pati)', female: 'Bhabhi (Bhai ki Patni)' },
-  'PARENT>SPOUSE': { neutral: 'Step-parent', male: 'Step-father', female: 'Step-mother' },
-  'SPOUSE>CHILD': { neutral: 'Step-child', male: 'Step-son', female: 'Step-daughter' },
-  'SPOUSE>SPOUSE': { neutral: 'Co-spouse (Sautan/Sauta)' },
-  // PARENT>CHILD = sibling when SIBLING edge absent (go up to parent, down to other child)
+  'SPOUSE>SIBLING': { neutral: 'Sibling-in-law', male: 'Brother-in-law', female: 'Sister-in-law' },
+  'SIBLING>SPOUSE': { neutral: 'Sibling-in-law', male: 'Brother-in-law', female: 'Sister-in-law' },
+  'PARENT>SPOUSE': { neutral: 'Step-parent', male: 'Stepfather', female: 'Stepmother' },
+  'SPOUSE>CHILD': { neutral: 'Step-child', male: 'Stepson', female: 'Stepdaughter' },
+  'SPOUSE>SPOUSE': { neutral: 'Co-spouse' }, // Note: Historically descriptive, relevant in specific legal/polygamous dynamics
   'PARENT>CHILD': { neutral: 'Sibling', male: 'Brother', female: 'Sister' },
-  // CHILD>PARENT = co-parent/spouse: go down to child, up to the child's other parent = my spouse
-  // NOTE: CHILD>PARENT is NOT the same as PARENT>CHILD. The reverse path means co-parent.
   'CHILD>PARENT': { neutral: 'Spouse', male: 'Husband', female: 'Wife' },
 
   // ── 3-step ─────────────────────────────────────────────────────────────────
   'PARENT>PARENT>PARENT': { neutral: 'Great-grandparent', male: 'Great-grandfather', female: 'Great-grandmother' },
   'CHILD>CHILD>CHILD': { neutral: 'Great-grandchild', male: 'Great-grandson', female: 'Great-granddaughter' },
-  'PARENT>SIBLING>CHILD': { neutral: 'First Cousin', male: 'First Cousin (Bhai)', female: 'First Cousin (Didi)' },
-  'SPOUSE>SIBLING>SPOUSE': { neutral: 'Co-sibling-in-law', male: 'Co-brother', female: 'Co-sister' },
-  'PARENT>SIBLING>SPOUSE': { neutral: "Uncle/Aunt's Spouse", male: 'Fua (Bua ka Pati)', female: 'Chachi/Mausi' },
-  'SIBLING>CHILD>CHILD': { neutral: 'Grand-nephew/niece', male: 'Grand-nephew', female: 'Grand-niece' },
-  'PARENT>PARENT>SIBLING': { neutral: 'Great-uncle/aunt', male: 'Great-uncle', female: 'Great-aunt' },
-  'SPOUSE>SIBLING>CHILD': { neutral: "Spouse's Nephew/Niece", male: "Spouse's Nephew", female: "Spouse's Niece" },
-  'SIBLING>CHILD>SPOUSE': { neutral: "Nephew/Niece's Spouse" },
-  'PARENT>SPOUSE>CHILD': { neutral: 'Step-sibling', male: 'Step-brother', female: 'Step-sister' },
+  'PARENT>SIBLING>CHILD': { neutral: 'Cousin', male: 'Cousin', female: 'Cousin' },
+  'SPOUSE>SIBLING>SPOUSE': { neutral: 'Co-sibling-in-law', male: 'Brother-in-law', female: 'Sister-in-law' },
+  'PARENT>SIBLING>SPOUSE': { neutral: 'Uncle/Aunt by Marriage', male: 'Uncle', female: 'Aunt' },
+  'SIBLING>CHILD>CHILD': { neutral: 'Grandnephew/Grandniece', male: 'Grandnephew', female: 'Grandniece' },
+  'PARENT>PARENT>SIBLING': { neutral: 'Great-uncle/Great-aunt', male: 'Great-uncle', female: 'Great-aunt' },
+  'SPOUSE>SIBLING>CHILD': { neutral: "Spouse's Nephew/Niece", male: "Nephew", female: "Niece" },
+  'SIBLING>CHILD>SPOUSE': { neutral: "Nephew/Niece-in-law", male: "Nephew-in-law", female: "Niece-in-law" },
+  'PARENT>SPOUSE>CHILD': { neutral: 'Step-sibling', male: 'Stepbrother', female: 'Stepsister' },
   'CHILD>CHILD>SPOUSE': { neutral: 'Grandchild-in-law', male: 'Grandson-in-law', female: 'Granddaughter-in-law' },
-  'CHILD>SPOUSE>PARENT': { neutral: "Child's In-law" },
-  // Legacy 3-step
+  'CHILD>SPOUSE>PARENT': { neutral: "Child's Parent-in-law" }, // Co-parents-in-law
   'PARENT>PARENT>CHILD': { neutral: 'Uncle/Aunt', male: 'Uncle', female: 'Aunt' },
-  'PARENT>CHILD>CHILD': { neutral: 'Nephew/Niece', male: 'Nephew (Bhatija/Bhanja)', female: 'Niece (Bhatiji/Bhanji)' },
-  'SPOUSE>PARENT>CHILD': { neutral: 'Sibling-in-law', male: 'Brother-in-law (Saala/Devar)', female: 'Sister-in-law (Saali/Nanad)' },
-  'PARENT>CHILD>SPOUSE': { neutral: "Sibling's Spouse", male: 'Jija', female: 'Bhabhi' },
-  'CHILD>CHILD>PARENT': { neutral: 'Nephew/Niece', male: 'Nephew', female: 'Niece' },
-  'PARENT>PARENT>SPOUSE': { neutral: 'Grandparent', male: 'Grandfather', female: 'Grandmother' },
-  'PARENT>SPOUSE>PARENT': { neutral: 'Grandparent (in-law)' },
-  'SPOUSE>CHILD>CHILD': { neutral: 'Step-grandchild', male: 'Grandson (step)', female: 'Granddaughter (step)' },
+  'PARENT>CHILD>CHILD': { neutral: 'Nephew/Niece', male: 'Nephew', female: 'Niece' },
+  'SPOUSE>PARENT>CHILD': { neutral: 'Sibling-in-law', male: 'Brother-in-law', female: 'Sister-in-law' },
+  'PARENT>CHILD>SPOUSE': { neutral: "Sibling-in-law", male: 'Brother-in-law', female: 'Sister-in-law' },
+  'CHILD>CHILD>PARENT': { neutral: 'Child', male: 'Son', female: 'Daughter' },
+  'PARENT>PARENT>SPOUSE': { neutral: 'Grandparent-in-law', male: 'Grandfather-in-law', female: 'Grandmother-in-law' },
+  'PARENT>SPOUSE>PARENT': { neutral: 'Step-grandparent', male: 'Step-grandfather', female: 'Step-grandmother' },
+  'SPOUSE>CHILD>CHILD': { neutral: 'Step-grandchild', male: 'Step-grandson', female: 'Step-granddaughter' },
 
   // ── 4-step ─────────────────────────────────────────────────────────────────
-  'PARENT>PARENT>SIBLING>CHILD': { neutral: 'Second Cousin' },
-  'PARENT>SIBLING>CHILD>CHILD': { neutral: "First Cousin's Child" },
-  'PARENT>SIBLING>CHILD>SPOUSE': { neutral: "First Cousin's Spouse" },
-  'PARENT>PARENT>SIBLING>SPOUSE': { neutral: 'Uncle/Aunt by marriage' },
-  'SIBLING>CHILD>CHILD>CHILD': { neutral: 'Great-grand-nephew/niece', male: 'Great-grand-nephew', female: 'Great-grand-niece' },
-  // Legacy 4-step
-  'PARENT>PARENT>CHILD>CHILD': { neutral: 'First Cousin', male: 'First Cousin (Bhai)', female: 'First Cousin (Behen)' },
-  'PARENT>PARENT>CHILD>SPOUSE': { neutral: 'Uncle/Aunt by marriage', male: 'Uncle (by marriage)', female: 'Aunt (by marriage)' },
-  'SPOUSE>PARENT>CHILD>CHILD': { neutral: "Spouse's Nephew/Niece", male: 'Nephew-in-law (Bhatija)', female: 'Niece-in-law (Bhatiji)' },
-  'PARENT>CHILD>CHILD>SPOUSE': { neutral: "Nephew/Niece's Spouse", male: 'Nephew-in-law', female: 'Niece-in-law' },
+  'PARENT>PARENT>SIBLING>CHILD': { neutral: 'Second Cousin', male: 'Second Cousin', female: 'Second Cousin' },
+  'PARENT>SIBLING>CHILD>CHILD': { neutral: "First Cousin Once Removed", male: "First Cousin's Son", female: "First Cousin's Daughter" },
+  'PARENT>SIBLING>CHILD>SPOUSE': { neutral: "Cousin-in-law", male: "Cousin's Husband", female: "Cousin's Wife" },
+  'PARENT>PARENT>SIBLING>SPOUSE': { neutral: 'Great-uncle/Aunt by Marriage', male: 'Great-uncle', female: 'Great-aunt' },
+  'SIBLING>CHILD>CHILD>CHILD': { neutral: 'Great-grandnephew/Niece', male: 'Great-grandnephew', female: 'Great-grandniece' },
+  'PARENT>PARENT>CHILD>CHILD': { neutral: 'First Cousin', male: 'Cousin', female: 'Cousin' },
+  'PARENT>PARENT>CHILD>SPOUSE': { neutral: 'Uncle/Aunt by Marriage', male: 'Uncle', female: 'Aunt' },
+  'SPOUSE>PARENT>CHILD>CHILD': { neutral: "Spouse's Nephew/Niece", male: "Nephew", female: "Niece" },
+  'PARENT>CHILD>CHILD>SPOUSE': { neutral: "Nephew/Niece-in-law", male: "Nephew-in-law", female: "Niece-in-law" },
 
   // ── 5-step ─────────────────────────────────────────────────────────────────
-  'PARENT>PARENT>SIBLING>CHILD>CHILD': { neutral: "Second Cousin's Child" },
-  'PARENT>SIBLING>CHILD>CHILD>CHILD': { neutral: "First Cousin's Grandchild" },
-  'PARENT>PARENT>PARENT>SIBLING>CHILD': { neutral: 'Third Cousin' },
-  'PARENT>PARENT>SIBLING>CHILD>SPOUSE': { neutral: "Second Cousin's Spouse" },
-
+  'PARENT>PARENT>SIBLING>CHILD>CHILD': { neutral: "Second Cousin Once Removed", male: "Second Cousin's Son", female: "Second Cousin's Daughter" },
+  'PARENT>SIBLING>CHILD>CHILD>CHILD': { neutral: "First Cousin Twice Removed", male: "First Cousin's Grandson", female: "First Cousin's Granddaughter" },
+  'PARENT>PARENT>PARENT>SIBLING>CHILD': { neutral: 'Third Cousin', male: 'Third Cousin', female: 'Third Cousin' },
+  'PARENT>PARENT>SIBLING>CHILD>SPOUSE': { neutral: "Second Cousin-in-law", male: "Second Cousin's Husband", female: "Second Cousin's Wife" },
 }
