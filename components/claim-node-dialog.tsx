@@ -337,9 +337,27 @@ export function ClaimNodeDialog({
                   )}
                   {claimError.code === 'ALREADY_CLAIMED' && <p>This profile has already been claimed.</p>}
                   {claimError.code === 'RATE_LIMITED' && <p>Too many requests — try again in an hour.</p>}
+                  {claimError.code === 'ALREADY_LINKED_ACCOUNT' && (
+                    <p>Your account is still linked to an older profile. You can switch safely to this profile now.</p>
+                  )}
                   {claimError.code === 'ALREADY_LINKED_IN_FAMILY' && <p>You already have a claimed profile in this family. Unlink it via Settings → Privacy first.</p>}
-                  {!['IDENTITY_MISMATCH', 'LOCKED_OUT', 'ALREADY_CLAIMED', 'RATE_LIMITED', 'ALREADY_LINKED_IN_FAMILY', 'SUGGEST_FAMILY_LINK'].includes(claimError.code) && (
+                  {!['IDENTITY_MISMATCH', 'LOCKED_OUT', 'ALREADY_CLAIMED', 'RATE_LIMITED', 'ALREADY_LINKED_ACCOUNT', 'ALREADY_LINKED_IN_FAMILY', 'SUGGEST_FAMILY_LINK'].includes(claimError.code) && (
                     <p>{claimError.message ?? 'Something went wrong. Please try again.'}</p>
+                  )}
+
+                  {claimError.code === 'ALREADY_LINKED_ACCOUNT' && (
+                    <div className="pt-1.5">
+                      <Button
+                        onClick={handleClaimDirect}
+                        disabled={claimingDirect || !submittedName.trim()}
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                        {claimingDirect ? 'Switching…' : 'Switch to this profile'}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
