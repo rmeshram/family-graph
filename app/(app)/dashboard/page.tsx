@@ -1311,8 +1311,27 @@ export default function FamilyGraphApp() {
     // Normalize stored name — collapses extra whitespace, preserves casing
     const storedName = normalizeStoredName(name)
 
+    // ── Spouse gender inference ────────────────────────────────────────────────
+    // If adding a spouse and the user didn't explicitly pick a gender, infer the
+    // opposite of the anchor's gender. Never overwrite an explicit selection.
+    // male anchor → spouse is female, female anchor → spouse is male.
+    let effectiveGender = gender
+    if (relType === 'spouse' && !effectiveGender) {
+      if (anchor.gender === 'male') effectiveGender = 'female'
+      else if (anchor.gender === 'female') effectiveGender = 'male'
+    }
+
+    // ── Child: auto-link to BOTH parents ──────────────────────────────────────
+    // If the anchor has a spouse, the child belongs to both parents.
+    // Without this, the child only appears under one parent in the tree and
+    // relationship labels are wrong from the other parent's perspective.
+    const anchorSpouseId = relType === 'child'
+      ? (anchor.spouseIds ?? []).find(sid => members.some(m => m.id === sid)) ?? null
+      : null
+
     // Derive parentIds / spouseIds for the new node
-    const parentIds: string[] = relType === 'child' ? [anchorId]
+    const parentIds: string[] = relType === 'child'
+      ? [...new Set([anchorId, ...(anchorSpouseId ? [anchorSpouseId] : [])])]
       : relType === 'sibling' ? [...(anchor.parentIds ?? [])]
         : [] // father / mother / spouse — no pre-set parents for the new node
 
@@ -1325,7 +1344,7 @@ export default function FamilyGraphApp() {
 
     const memberData: Omit<FamilyMember, 'id'> = {
       name: storedName,
-      gender: (gender || undefined) as FamilyMember['gender'],
+      gender: (effectiveGender || undefined) as FamilyMember['gender'],
       birthYear,
       parentIds,
       spouseIds,
@@ -1334,9 +1353,9 @@ export default function FamilyGraphApp() {
       relationship: (
         relType === 'father' ? 'father'
           : relType === 'mother' ? 'mother'
-            : relType === 'spouse' ? (gender === 'female' ? 'wife' : 'husband')
-              : relType === 'child' ? (gender === 'female' ? 'daughter' : 'son')
-                : (gender === 'female' ? 'sister' : 'brother')
+            : relType === 'spouse' ? (effectiveGender === 'female' ? 'wife' : 'husband')
+              : relType === 'child' ? (effectiveGender === 'female' ? 'daughter' : 'son')
+                : (effectiveGender === 'female' ? 'sister' : 'brother')
       ) as FamilyMember['relationship'],
     }
 
@@ -1354,6 +1373,12 @@ export default function FamilyGraphApp() {
       // the spouse appears as "Father" (or no label) from the anchor's perspective.
       const updated = [...new Set([...(anchor.spouseIds ?? []), newMember.id])]
       await dbUpdateMember(anchorId, { spouseIds: updated })
+    } else if (relType === 'child' && anchorSpouseId) {
+      // Child was given parentIds = [anchor, spouse]. The spouse node doesn't need
+      // updating — children are derived by scanning all members' parentIds for the
+      // spouse's ID. However, if the spouse's parentIds or spouseIds somehow don't
+      // include the anchor, we don't touch them (not our responsibility here).
+      // Nothing extra to patch — the child's parentIds already points to both.
     } else if (relType === 'sibling') {
       // New sibling via shared parent: ensure the new node also lists the shared parent
       // (it already has it via parentIds set above, but double-check for safety)
