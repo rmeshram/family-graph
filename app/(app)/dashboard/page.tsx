@@ -60,7 +60,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import {
   GitBranch, GitMerge, Sparkles, UserPlus, Search, Settings,
   X, Home, Activity, MessageCircle,
-  Copy, Check, Send, Bot, ChevronRight, List, Network, Users2,
+  Copy, Check, Send, Bot, ChevronLeft, ChevronRight, List, Network, Users2,
   Link2, TreePine, Eye, Crown, AlertTriangle, UserCheck, Shield, Target, Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -629,6 +629,12 @@ export default function FamilyGraphApp() {
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null)
   const [showFeed, setShowFeed] = useState(false)
   const [showMissionDrawer, setShowMissionDrawer] = useState(false)
+  // Desktop: mission panel collapses to a slim tab so the tree canvas gets full width.
+  // Persisted in localStorage so preference survives page reloads.
+  const [isMissionPanelCollapsed, setIsMissionPanelCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('fg_mission_panel_collapsed') === '1'
+  })
   const [viewMode, setViewMode] = useState<TreeViewMode>(
     FEATURE_FLAGS.enableHierarchicalTreeView ? 'tree' : 'universe'
   )
@@ -2402,26 +2408,51 @@ export default function FamilyGraphApp() {
             )
           )}
 
-          {/* Family Mission Panel — desktop aside */}
+          {/* Family Mission Panel — desktop aside (collapsible) */}
           {viewMode === 'tree' && !isDemoMode && !isViewer
             && (selfMember || identityState === 'unlinked')
             && !isMobile
             && !showAIWidget && !showInviteWidget && !selectedMember && (
-              <FamilyMissionPanel
-                selfMember={selfMember}
-                members={members}
-                isAdmin={isAdmin}
-                familyId={familyId}
-                onAddMember={() => setIsAddDialogOpen(true)}
-                onQuickAddMember={(relType, anchorId) => handleAddRelative(anchorId, relType)}
-                onAddStory={() => setIsStoryDialogOpen(true)}
-                onInviteMember={(m) => setInviteToClaimTarget(m)}
-                onEditSelf={() => selfMember ? setEditingMember(selfMember) : setIsRelOnboardingOpen(true)}
-                hasStories={checklistHasStories}
-                wizardSkipped={profile?.wizard_skipped ?? []}
-                onSkipStep={handleMissionSkip}
-                onClaimProfile={!selfMember ? () => setIsRelOnboardingOpen(true) : undefined}
-              />
+              <div className="relative flex h-full shrink-0">
+                {/* Collapse/expand tab — pinned to left edge of the panel */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isMissionPanelCollapsed
+                    setIsMissionPanelCollapsed(next)
+                    localStorage.setItem('fg_mission_panel_collapsed', next ? '1' : '0')
+                  }}
+                  className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-card shadow-sm hover:bg-muted transition-colors"
+                  title={isMissionPanelCollapsed ? 'Show panel' : 'Hide panel'}
+                >
+                  {isMissionPanelCollapsed
+                    ? <ChevronLeft className="h-3 w-3 text-muted-foreground" />
+                    : <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  }
+                </button>
+
+                {/* Panel — slides in/out */}
+                <div className={cn(
+                  'h-full overflow-hidden transition-all duration-200',
+                  isMissionPanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-80 xl:w-96 opacity-100'
+                )}>
+                  <FamilyMissionPanel
+                    selfMember={selfMember}
+                    members={members}
+                    isAdmin={isAdmin}
+                    familyId={familyId}
+                    onAddMember={() => setIsAddDialogOpen(true)}
+                    onQuickAddMember={(relType, anchorId) => handleAddRelative(anchorId, relType)}
+                    onAddStory={() => setIsStoryDialogOpen(true)}
+                    onInviteMember={(m) => setInviteToClaimTarget(m)}
+                    onEditSelf={() => selfMember ? setEditingMember(selfMember) : setIsRelOnboardingOpen(true)}
+                    hasStories={checklistHasStories}
+                    wizardSkipped={profile?.wizard_skipped ?? []}
+                    onSkipStep={handleMissionSkip}
+                    onClaimProfile={!selfMember ? () => setIsRelOnboardingOpen(true) : undefined}
+                  />
+                </div>
+              </div>
             )}
 
           {/* ── Mobile Mission Strip — sticky bottom, replaces silent icon button ── */}
