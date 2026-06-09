@@ -617,6 +617,7 @@ const TreeNodeCard = memo(function TreeNodeCard({
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isUnclaimed = !member.isClaimed && !isSelf
+  const isDeceased = member.isAlive === false || !!member.deathYear
   const canClaim = isUnclaimed && !!onClaimNode
   const canInvite = isUnclaimed && !!onInviteNode && !canClaim
   const displayName = (!isAdmin && member.showAsAnonymous) ? '? Member' : member.name
@@ -654,7 +655,9 @@ const TreeNodeCard = memo(function TreeNodeCard({
           'relative w-full h-full rounded-2xl border flex flex-col items-center justify-center gap-1.5 p-2 transition-all duration-200',
           isSelected
             ? 'border-primary/70 bg-primary/10 shadow-lg shadow-primary/20'
-            : 'border-border/40 bg-card hover:border-border/80 hover:shadow-md',
+            : isDeceased
+              ? 'border-border/30 bg-muted/20 opacity-70'
+              : 'border-border/40 bg-card hover:border-border/80 hover:shadow-md',
         )}
       >
         {isSelf && (
@@ -668,19 +671,28 @@ const TreeNodeCard = memo(function TreeNodeCard({
         {isUnclaimed && (
           <div className="absolute top-1.5 left-2 h-1.5 w-1.5 rounded-full bg-amber-400 opacity-80" />
         )}
-        <Avatar className="h-14 w-14 border-2" style={{ borderColor: color + '55' }}>
-          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={displayName} className="object-cover object-top" />}
-          <AvatarFallback className="text-sm font-bold text-white" style={{ background: color }}>
+        <Avatar className="h-14 w-14 border-2" style={{ borderColor: isDeceased ? '#9ca3af44' : color + '55' }}>
+          {member.photoUrl && <AvatarImage src={member.photoUrl} alt={displayName} className={cn("object-cover object-top", isDeceased && "grayscale")} />}
+          <AvatarFallback className="text-sm font-bold text-white" style={{ background: isDeceased ? '#6b7280' : color }}>
             {initials}
           </AvatarFallback>
         </Avatar>
+        {/* Deceased dagger badge */}
+        {isDeceased && (
+          <div className="absolute top-1.5 left-2 text-[10px] text-muted-foreground/60 font-serif leading-none select-none">†</div>
+        )}
         <div className="w-full px-1 text-center">
           <p className="text-[11px] font-semibold leading-tight truncate" title={displayName}>{displayName}</p>
-          {relationLabel && (
+          {/* Lifespan for deceased, relation label otherwise */}
+          {isDeceased && (member.birthYear || member.deathYear) ? (
+            <p className="text-[9px] leading-tight truncate mt-0.5 text-muted-foreground/60 font-mono">
+              {member.birthYear ?? '?'}–{member.deathYear ?? '?'}
+            </p>
+          ) : relationLabel ? (
             <p className={cn('text-[9px] leading-tight truncate mt-0.5', node.isInLaw ? 'text-rose-400/80 font-medium' : 'text-muted-foreground')}>
               {relationLabel}
             </p>
-          )}
+          ) : null}
         </div>
       </button>
 

@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight, AlertTriangle, UserCheck } from 'lucide-react'
+import { User, Calendar, MapPin, Briefcase, Heart, Users, ImageIcon, X, Instagram, Loader2, Phone, Mail, Hash, Lock, ArrowLeftRight, AlertTriangle, UserCheck, Flower2 } from 'lucide-react'
 import { scoreCandidate, normalizeStoredName, findExactNameMatch, type StructuralContext } from '@/lib/match-detection'
 import { getInverseRelationship } from '@/lib/relationship-engine'
 import { computeRelationLabel } from '@/lib/relation-engine'
@@ -895,17 +895,46 @@ export function AddMemberDialog({
                   />
                   {errors.birthYear && <p className="text-xs text-destructive">{errors.birthYear}</p>}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="deathYear">Death Year</Label>
-                  <Input
-                    id="deathYear"
-                    type="number"
-                    value={deathYear}
-                    onChange={(e) => { setDeathYear(e.target.value); if (errors.deathYear) setErrors(p => ({ ...p, deathYear: '' })) }}
-                    placeholder="Leave empty if living"
-                    className={`bg-muted/30 border-border/50 ${errors.deathYear ? 'border-destructive' : ''}`}
-                  />
-                  {errors.deathYear && <p className="text-xs text-destructive">{errors.deathYear}</p>}
+                {/* Deceased toggle — spans both columns when active */}
+                <div className="col-span-2 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => { if (deathYear) { setDeathYear(''); setErrors(p => ({ ...p, deathYear: '' })) } else { setDeathYear('') } }}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors',
+                      deathYear
+                        ? 'border-rose-500/40 bg-rose-500/[0.07] text-rose-400'
+                        : 'border-border/50 bg-muted/20 text-muted-foreground hover:bg-muted/40'
+                    )}
+                  >
+                    <Flower2 className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 text-left font-medium">
+                      {deathYear ? `Deceased — passed away in ${deathYear}` : 'Mark as deceased'}
+                    </span>
+                    {/* toggle dot */}
+                    <div className={cn(
+                      'h-4 w-7 rounded-full transition-colors relative',
+                      deathYear ? 'bg-rose-500/70' : 'bg-muted'
+                    )}>
+                      <div className={cn(
+                        'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all',
+                        deathYear ? 'left-3.5' : 'left-0.5'
+                      )} />
+                    </div>
+                  </button>
+                  {deathYear !== undefined && (
+                    <div className="relative">
+                      <Input
+                        id="deathYear"
+                        type="number"
+                        value={deathYear}
+                        onChange={(e) => { setDeathYear(e.target.value); if (errors.deathYear) setErrors(p => ({ ...p, deathYear: '' })) }}
+                        placeholder="Year they passed away (e.g. 1998)"
+                        className={`bg-muted/30 border-border/50 ${errors.deathYear ? 'border-destructive' : ''}`}
+                      />
+                      {errors.deathYear && <p className="text-xs text-destructive mt-1">{errors.deathYear}</p>}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="birthPlace" className="flex items-center gap-1">
