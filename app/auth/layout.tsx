@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { Users } from "lucide-react"
 
 export default function AuthLayout({
   children,
@@ -18,34 +17,40 @@ export default function AuthLayout({
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-              <Users className="w-6 h-6 text-white" />
+              <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-white" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="7" r="3" />
+                <circle cx="6" cy="17" r="2.5" />
+                <circle cx="18" cy="17" r="2.5" />
+                <path d="M12 10v3M8 14l-1.5 2M16 14l1.5 2" strokeLinecap="round" />
+              </svg>
             </div>
-            <span className="text-2xl font-bold text-foreground">Family Graph</span>
+            <span className="text-2xl font-bold text-foreground">Outverse</span>
           </Link>
 
           <div className="max-w-md">
             <h2 className="text-3xl font-bold text-foreground mb-4">
-              Preserve your family legacy for generations to come
+              Your family&apos;s history, all in one living tree.
             </h2>
-            <p className="text-muted-foreground text-lg">
-              Build interactive family trees, capture precious stories, and discover AI-powered insights about your ancestry.
+            <p className="text-muted-foreground text-lg leading-relaxed">
+              Start with your close family. Add parents, siblings, and relatives. Then discover connections across generations — built for Indian families.
             </p>
-          </div>
-
-          {/* <div className="flex items-center gap-4">
-            <div className="flex -space-x-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div 
-                  key={i} 
-                  className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/50 to-secondary/50 border-2 border-background"
-                />
+            <div className="mt-8 space-y-3">
+              {[
+                { icon: '🔒', text: 'Your data is private to your family by default' },
+                { icon: '🆓', text: 'Free forever for core features — no credit card' },
+                { icon: '🌳', text: 'Used by families across India and the diaspora' },
+              ].map(({ icon, text }) => (
+                <div key={text} className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <span>{icon}</span>
+                  <span>{text}</span>
+                </div>
               ))}
             </div>
-            <div className="text-sm">
-              <p className="font-medium text-foreground">10,000+ families</p>
-              <p className="text-muted-foreground">preserving their heritage</p>
-            </div>
-          </div> */}
+          </div>
+
+          <div className="text-xs text-muted-foreground/50">
+            © 2026 Outverse · Made with ❤️ for Indian families
+          </div>
         </div>
       </div>
 
@@ -56,9 +61,14 @@ export default function AuthLayout({
           <div className="lg:hidden mb-8 text-center">
             <Link href="/" className="inline-flex items-center gap-2">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                <Users className="w-6 h-6 text-white" />
+                <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-white" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="7" r="3" />
+                  <circle cx="6" cy="17" r="2.5" />
+                  <circle cx="18" cy="17" r="2.5" />
+                  <path d="M12 10v3M8 14l-1.5 2M16 14l1.5 2" strokeLinecap="round" />
+                </svg>
               </div>
-              <span className="text-2xl font-bold text-foreground">Family Graph</span>
+              <span className="text-2xl font-bold text-foreground">Outverse</span>
             </Link>
           </div>
 

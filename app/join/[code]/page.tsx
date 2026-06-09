@@ -715,10 +715,10 @@ export default function JoinPage() {
               </div>
               <div className="p-6 space-y-3">
                 <Button onClick={handleContinueToRelate} className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90">
-                  {isAuthed ? 'Join Family Tree' : 'Sign in & Join'}
+                  {isAuthed ? 'Join Family Tree' : 'Create free account & Join'}
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
-                {!isAuthed && <p className="text-center text-xs text-muted-foreground">Free account · No app download needed</p>}
+                {!isAuthed && <p className="text-center text-xs text-muted-foreground">Free forever · No app download · Takes 30 seconds</p>}
                 <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-green-400 transition-colors">
                   <Share2 className="h-3.5 w-3.5" /> Forward this invite
                 </a>
@@ -807,7 +807,7 @@ export default function JoinPage() {
               {/* Viral explainer */}
               {selectedRel && selectedRel !== 'skip' && (
                 <div className="rounded-xl bg-primary/5 border border-primary/20 p-3 text-xs text-muted-foreground">
-                  🌳 <strong className="text-foreground">Your node will be auto-linked.</strong> Anyone who joins through you will extend the tree further — creating a living, connected graph across families.
+                  🌳 <strong className="text-foreground">You’ll be placed in the right spot in the family tree.</strong> When you invite others, they extend your branch — growing your family’s living history together.
                 </div>
               )}
 

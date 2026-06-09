@@ -51,7 +51,7 @@ export function Header({
             </svg>
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground">Family Graph</h1>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">Outverse</h1>
             <p className="text-xs text-muted-foreground">The Living Family Intelligence Network</p>
           </div>
         </div>

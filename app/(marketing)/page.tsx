@@ -190,7 +190,7 @@ const HOW_IT_WORKS = [
   {
     step: "02",
     title: "Add immediate family",
-    description: "Parents, siblings, spouse. AI guides you through the connections.",
+    description: "Parents, siblings, spouse. Step-by-step guidance walks you through every connection.",
     icon: "👨‍👩‍👧‍👦",
   },
   {
@@ -296,13 +296,11 @@ export default function MarketingPage() {
           </Badge>
 
           <h1 className="text-5xl font-bold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
-            Your family has{" "}
-            <span className="bg-gradient-to-r from-primary via-secondary to-violet-400 bg-clip-text text-transparent">
-              hundreds
-            </span>{" "}
-            of members.
+            Your entire family.
             <br />
-            <span className="text-muted-foreground">Most are strangers to each other.</span>
+            <span className="bg-gradient-to-r from-primary via-secondary to-violet-400 bg-clip-text text-transparent">
+              One living tree.
+            </span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed sm:text-xl">
@@ -773,9 +771,9 @@ export default function MarketingPage() {
       <section className="py-20 px-4 sm:px-6">
         <div className="mx-auto max-w-3xl text-center">
           <div className="text-4xl mb-4">🌳</div>
-          <h2 className="text-3xl font-bold sm:text-4xl">Your family story is being written. Are you in it?</h2>
+          <h2 className="text-3xl font-bold sm:text-4xl">Start your family tree in 5 minutes.</h2>
           <p className="mt-4 text-muted-foreground leading-relaxed">
-            Start today. Invite one family member this weekend. By next month, your entire family&apos;s history will be alive, searchable, and growing.
+            Add yourself, your parents, your siblings. Invite your family via WhatsApp. Your tree builds itself, branch by branch — for every generation to come.
           </p>
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link href="/auth/signup">
@@ -786,6 +784,11 @@ export default function MarketingPage() {
             </Link>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">No credit card · No download · 5-minute setup</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">🔒 Your data is private by default</span>
+            <span className="flex items-center gap-1.5">🇮🇳 Built for Indian families</span>
+            <span className="flex items-center gap-1.5">🆓 Always free for core features</span>
+          </div>
         </div>
       </section>
 

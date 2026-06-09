@@ -270,13 +270,12 @@ export function QuickAddMemberDialog({
                     disabled={isBlocked}
                     title={isBlocked ? `${REL_PILL_LABELS[type]} already added` : undefined}
                     onClick={() => handleRelTypeChange(type)}
-                    className={`rounded-lg border py-2 text-xs font-medium transition-all ${
-                      isBlocked
+                    className={`rounded-lg border py-2 text-xs font-medium transition-all ${isBlocked
                         ? 'cursor-not-allowed border-border/20 bg-muted/10 text-muted-foreground/30 line-through'
                         : relType === type
                           ? 'border-primary bg-primary/15 text-primary'
                           : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-border/70 hover:text-foreground'
-                    }`}
+                      }`}
                   >
                     {REL_PILL_LABELS[type]}
                   </button>

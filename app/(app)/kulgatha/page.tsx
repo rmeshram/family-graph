@@ -347,7 +347,7 @@ export default function KulgathaPage() {
 
             {/* ── Footer ──────────────────────────────────────────── */}
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 text-center space-y-1">
-              <p className="text-sm font-semibold text-emerald-400">Preserved on Family Graph</p>
+              <p className="text-sm font-semibold text-emerald-400">Preserved on Outverse</p>
               <p className="text-xs text-muted-foreground">
                 This document was generated from your live family tree. Visit family-graph-app-phi.vercel.app to edit or grow it.
               </p>

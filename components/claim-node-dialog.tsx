@@ -279,7 +279,7 @@ export function ClaimNodeDialog({
         {member.isDeceased && !claimedByMe && (
           <div className="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/30 p-3 text-sm text-muted-foreground">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            <p>This profile is marked as deceased. Contact the tree owner to make changes.</p>
+            <p>This profile is for a deceased family member. Contact the family admin to make changes.</p>
           </div>
         )}
 
@@ -292,7 +292,7 @@ export function ClaimNodeDialog({
                 id="claim-name"
                 value={submittedName}
                 onChange={e => setSubmittedName(e.target.value)}
-                placeholder="As it appears on official documents"
+                placeholder="Enter your name as it appears in the tree"
                 className="h-9 text-sm"
               />
             </div>

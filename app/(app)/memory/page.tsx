@@ -783,7 +783,7 @@ function MemoryDetail({ memory, members, onBack }: { memory: MemoryItem; members
                   return
                 } catch { /* fall through */ }
               }
-              const text = `${memory.title} (${memory.year})\n\n${memory.description ?? ''}\n\nShared from Family Graph`
+              const text = `${memory.title} (${memory.year})\n\n${memory.description ?? ''}\n\nShared from Outverse`
               window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
             }}
           >

@@ -420,7 +420,7 @@ export function FamilyMissionPanel({
             )}
           </div>
           {waitingPeople.length > 0 ? (
-              <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-[10px] text-muted-foreground mt-0.5">
               {waitingPeople.length} {waitingPeople.length === 1 ? "person hasn't" : "people haven't"} joined yet
             </p>
           ) : completeness.totalCount > 1 ? (

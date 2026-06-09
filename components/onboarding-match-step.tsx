@@ -171,7 +171,7 @@ export function OnboardingMatchStep({
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
         <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
         <span>
-          Linking your profile lets family members know you&apos;re on Family Graph and connects your
+          Linking your profile lets family members know you&apos;re on Outverse and connects your
           stories, memories, and milestones to your node.
         </span>
       </div>
