@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Mail, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react"
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordForm() {
   const supabase = createClient()
   const searchParams = useSearchParams()
   const linkExpired = searchParams.get('expired') === '1'
@@ -113,5 +113,13 @@ export default function ForgotPasswordPage() {
         <ArrowLeft className="w-4 h-4" /> Back to sign in
       </Link>
     </div>
+  )
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense>
+      <ForgotPasswordForm />
+    </Suspense>
   )
 }
