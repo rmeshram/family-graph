@@ -292,7 +292,7 @@ export default function MarketingPage() {
         <div className="relative mx-auto max-w-5xl text-center">
           <Badge className="mb-6 border-primary/30 bg-primary/10 text-primary">
             <Sparkles className="mr-1.5 h-3 w-3" />
-            India&apos;s first AI-powered family intelligence platform
+            AI-powered family graph, built for India
           </Badge>
 
           <h1 className="text-5xl font-bold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
@@ -306,7 +306,7 @@ export default function MarketingPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed sm:text-xl">
-            Map your entire family network. Discover lost relatives. Check gotra before a rishta. Preserve elder stories before they&apos;re gone. All in one living, growing graph.
+            Start with your close family, then grow branch by branch. Discover lost relatives, check gotra before a rishta, and preserve elder stories before they&apos;re gone. Community connections come naturally as families link.
           </p>
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
@@ -434,9 +434,9 @@ export default function MarketingPage() {
         <div className="mx-auto max-w-5xl">
           <div className="text-center mb-12">
             <Badge className="mb-4 border-primary/30 bg-primary/10 text-primary">Why Families Use Outverse</Badge>
-            <h2 className="text-3xl font-bold sm:text-4xl">More than a family tree</h2>
+            <h2 className="text-3xl font-bold sm:text-4xl">Start with family, grow into community</h2>
             <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
-              Discovery, matrimony context, and legacy preservation — three problems no single app has solved together. Until now.
+              Build your family first, then unlock discovery, matrimony context, and legacy preservation across connected families.
             </p>
           </div>
 

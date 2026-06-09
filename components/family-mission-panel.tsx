@@ -320,8 +320,8 @@ export function FamilyMissionPanel({
       {/* ── Claim Your Profile ── */}
       {!selfMember && onClaimProfile && (
         <div className="shrink-0 mx-3 mt-3 rounded-xl border border-blue-500/30 bg-blue-500/[0.06] px-3 py-2.5">
-          <p className="text-[12px] font-semibold text-foreground mb-1">Find your place</p>
-          <p className="text-[10px] text-muted-foreground mb-2">You're in the family but haven't claimed your profile yet.</p>
+          <p className="text-[12px] font-semibold text-foreground mb-1">Find your place in your family</p>
+          <p className="text-[10px] text-muted-foreground mb-2">Claim your profile first. Then add your close family. Community links unlock after your family base is complete.</p>
           <button type="button" onClick={onClaimProfile}
             className="w-full rounded-lg border border-blue-500/40 bg-blue-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/25 transition-colors">
             Claim my spot →
@@ -335,7 +335,7 @@ export function FamilyMissionPanel({
           /* All done: slim celebration bar, no list */
           <div className="flex items-center gap-2 px-4 py-2.5">
             <span className="text-sm">🌳</span>
-            <span className="text-[11px] font-medium text-emerald-400">Tree foundation complete</span>
+            <span className="text-[11px] font-medium text-emerald-400">Family foundation complete</span>
             <span className="ml-auto text-[10px] text-muted-foreground/60">{completedCount}/{totalCount}</span>
           </div>
         ) : (
@@ -344,7 +344,7 @@ export function FamilyMissionPanel({
               className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors">
               <div className="flex items-center gap-2">
                 <Target className="h-3.5 w-3.5 text-primary" />
-                <span className="text-[12px] font-semibold text-foreground">Build your tree</span>
+                <span className="text-[12px] font-semibold text-foreground">Build your branch</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] tabular-nums text-muted-foreground">{completedCount}/{totalCount}</span>
@@ -390,6 +390,9 @@ export function FamilyMissionPanel({
                       <p className="text-[10px] text-muted-foreground/50">{completedCount} step{completedCount !== 1 ? 's' : ''} done</p>
                     </li>
                   )}
+                  <li className="px-2 pt-0.5">
+                    <p className="text-[10px] text-muted-foreground/55">Goal: complete your family branch first. Then connect with other branches.</p>
+                  </li>
                 </ul>
               </>
             )}
@@ -402,7 +405,7 @@ export function FamilyMissionPanel({
         {/* Header with score baked in */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border/40">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[12px] font-semibold text-foreground">Grow your tree</p>
+            <p className="text-[12px] font-semibold text-foreground">Grow your family</p>
             {completeness.totalCount > 1 && (
               <div className="flex items-center gap-1.5">
                 <div className="h-1 w-14 rounded-full bg-muted/50 overflow-hidden">
@@ -417,12 +420,13 @@ export function FamilyMissionPanel({
             )}
           </div>
           {waitingPeople.length > 0 ? (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+              <p className="text-[10px] text-muted-foreground mt-0.5">
               {waitingPeople.length} {waitingPeople.length === 1 ? "person hasn't" : "people haven't"} joined yet
             </p>
           ) : completeness.totalCount > 1 ? (
             <p className="text-[10px] text-emerald-400/80 mt-0.5">Everyone's in! 🎉</p>
           ) : null}
+          <p className="text-[10px] text-muted-foreground/60 mt-1">Each accepted invite strengthens your family graph. Community discovery unlocks after your family base is strong.</p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
