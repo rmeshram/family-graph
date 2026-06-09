@@ -43,6 +43,8 @@ export default function JoinPage() {
   const code = params.code as string
 
   const [status, setStatus] = useState<Status>('loading')
+  const statusRef = useRef<Status>('loading')
+  const setStatusTracked = (s: Status) => { statusRef.current = s; setStatus(s) }
   const [message, setMessage] = useState('')
   const [preview, setPreview] = useState<FamilyPreview | null>(null)
   const [isAuthed, setIsAuthed] = useState(false)
@@ -122,20 +124,20 @@ export default function JoinPage() {
         .eq('code', code.toUpperCase())
         .single()
 
-      if (!invite) { setStatus('error'); setMessage('Invalid or expired invite link.'); return }
+      if (!invite) { statusRef.current = 'error'; setStatus('error'); setMessage('Invalid or expired invite link.'); return }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const inv = invite as any
 
       // A4: validate expiry, consumption, and max_uses at initial load.
       if (inv.expires_at && new Date(inv.expires_at) < new Date()) {
-        setStatus('error'); setMessage('This invite link has expired. Ask the sender for a new one.'); return
+        statusRef.current = 'error'; setStatus('error'); setMessage('This invite link has expired. Ask the sender for a new one.'); return
       }
       if (inv.consumed_at) {
-        setStatus('error'); setMessage('This invite has already been used.'); return
+        statusRef.current = 'error'; setStatus('error'); setMessage('This invite has already been used.'); return
       }
       if (inv.max_uses && inv.used_count >= inv.max_uses) {
-        setStatus('error'); setMessage('This invite has reached its user limit.'); return
+        statusRef.current = 'error'; setStatus('error'); setMessage('This invite has reached its user limit.'); return
       }
 
       // B2: node_claim invites use a confirmation flow (no manual name entry).
@@ -164,6 +166,7 @@ export default function JoinPage() {
           parentNames,
         })
         setNcBirthYear(String(birthYear ?? birthYearHint ?? ''))
+        statusRef.current = 'node_claim'
         setStatus('node_claim')
         return
       }
@@ -199,6 +202,7 @@ export default function JoinPage() {
             parentNames,
           })
           setNcBirthYear(String(birthYear ?? birthYearHint ?? ''))
+          statusRef.current = 'node_claim'
           setStatus('node_claim')
           return
         }
@@ -245,15 +249,20 @@ export default function JoinPage() {
         : []
 
       setPreview({ name: familyName, memberCount, generationCount: generations.size, recentNames, inviterName, privacyMode: familyPrivacyMode })
+      statusRef.current = 'preview'
       setStatus('preview')
     }
     init()
 
-    // Re-run init when auth state changes (e.g. user completes signup in another tab
-    // and the token is injected via the Supabase auth listener). This ensures we
-    // re-validate invite expiry and update isAuthed without requiring a page reload.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) init()
+    // Re-run init ONLY when the page is still in its initial loading/preview state.
+    // DO NOT call init() once the user has progressed into the join flow — the
+    // TOKEN_REFRESHED event fires when joinWithCode calls refreshSession(), which
+    // would reset status back to 'preview', wiping mid-flow state and causing the
+    // "brief error + back to preview" bug.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user && event === 'SIGNED_IN' && (statusRef.current === 'loading' || statusRef.current === 'preview')) {
+        init()
+      }
     })
     return () => subscription.unsubscribe()
   }, [code, supabase])

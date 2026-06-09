@@ -78,7 +78,11 @@ interface EdgeDef {
   id: string
   x1: number; y1: number
   x2: number; y2: number
-  kind: 'blood' | 'spouse'
+  kind: 'blood' | 'spouse' | 'sibling_trunk'
+  /** sibling_trunk: Y of the horizontal rail between parent row and child row */
+  railY?: number
+  /** sibling_trunk: top-centre point of each child card */
+  drops?: Array<{ x: number; y: number }>
 }
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -329,6 +333,31 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       })
     }
 
+    // ── Branch-side detection ──────────────────────────────────────────────
+    // Classify each unplaced member as paternal (left side), maternal (right),
+    // or neutral (right, fallback). Propagation walks parentIds + spouseIds up to
+    // 4 passes to handle chains: uncle → uncle's child → uncle's grandchild.
+    const paternalAnchorIds = new Set<string>(
+      [father?.id, fatherFather?.id, fatherMother?.id].filter(Boolean) as string[]
+    )
+    const maternalAnchorIds = new Set<string>(
+      [mother?.id, motherFather?.id, motherMother?.id].filter(Boolean) as string[]
+    )
+    const sideMap = new Map<string, 'paternal' | 'maternal' | 'neutral'>()
+
+    for (let pass = 0; pass < 4; pass++) {
+      unplaced.forEach(m => {
+        if (sideMap.get(m.id) === 'paternal' || sideMap.get(m.id) === 'maternal') return
+        const connections = [...m.parentIds, ...(m.spouseIds ?? [])]
+        const hasPaternal = connections.some(id => paternalAnchorIds.has(id) || sideMap.get(id) === 'paternal')
+        const hasMaternal = connections.some(id => maternalAnchorIds.has(id) || sideMap.get(id) === 'maternal')
+        if (hasPaternal && !hasMaternal) sideMap.set(m.id, 'paternal')
+        else if (hasMaternal && !hasPaternal) sideMap.set(m.id, 'maternal')
+        // Both (cross-family marriage) or neither → stays unresolved → neutral
+      })
+    }
+    unplaced.forEach(m => { if (!sideMap.has(m.id)) sideMap.set(m.id, 'neutral') })
+
     // Build byRelGen from corrected row assignments
     const byRelGen = new Map<number, FamilyMember[]>()
     unplaced.forEach(m => {
@@ -337,50 +366,79 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       byRelGen.get(rg)!.push(m)
     })
 
-    // Find rightmost x for each existing row
+    // Find rightmost AND leftmost x for each existing core row
     const rowRightX = new Map<number, number>()
+    const rowLeftX = new Map<number, number>()
     nodes.forEach(n => {
-      const cur = rowRightX.get(n.row) ?? -NODE_W / 2
-      rowRightX.set(n.row, Math.max(cur, n.x + NODE_W / 2))
+      const curR = rowRightX.get(n.row) ?? -NODE_W / 2
+      rowRightX.set(n.row, Math.max(curR, n.x + NODE_W / 2))
+      const curL = rowLeftX.get(n.row) ?? NODE_W / 2
+      rowLeftX.set(n.row, Math.min(curL, n.x - NODE_W / 2))
     })
 
-    const SECTION_GAP = 96 // visual gap between core tree and extended family
+    const SECTION_GAP = 96 // visual gap between core tree and each extended branch
+
+    // Snapshot of core node IDs before any extended members are added
+    const coreNodeIds = new Set(nodes.map(n => n.id))
+
+    // Sort group: keep spouse pairs adjacent
+    const sortGroup = (input: FamilyMember[]): FamilyMember[] => {
+      const out: FamilyMember[] = []
+      const added = new Set<string>()
+      input.forEach(m => {
+        if (added.has(m.id)) return
+        out.push(m); added.add(m.id)
+        ;(m.spouseIds ?? []).forEach(sid => {
+          const sp = byId.get(sid)
+          if (sp && input.includes(sp) && !added.has(sid)) { out.push(sp); added.add(sid) }
+        })
+      })
+      return out
+    }
 
     // Process from oldest generation to newest for consistent ordering
     const sortedRelGens = [...byRelGen.keys()].sort((a, b) => a - b)
     sortedRelGens.forEach(rg => {
       const genMembers = byRelGen.get(rg)!
-
-      // Sort: keep spouse pairs adjacent
-      const sorted: FamilyMember[] = []
-      const added = new Set<string>()
-      genMembers.forEach(m => {
-        if (added.has(m.id)) return
-        sorted.push(m); added.add(m.id)
-          ; (m.spouseIds ?? []).forEach(sid => {
-            const sp = byId.get(sid)
-            if (sp && genMembers.includes(sp) && !added.has(sid)) {
-              sorted.push(sp); added.add(sid)
-            }
-          })
-      })
-
       const rowY = rg * ROW_H
-      const baseX = (rowRightX.get(rg) ?? NODE_W / 2) + SECTION_GAP + NODE_W / 2
 
-      // Collect IDs of core (non-'other') members already placed, so we can mark in-laws
-      const coreNodeIds = new Set(nodes.map(n => n.id))
-
-      sorted.forEach((m, i) => {
-        const x = baseX + i * (NODE_W + H_GAP)
-        // Mark as in-law if this extended member is a spouse of someone already in the core tree
-        const isInLaw = (m.spouseIds ?? []).some(sid => coreNodeIds.has(sid))
-        nodes.push({ id: m.id, member: m, row: rg, col: nodes.length, x, y: rowY, role: 'other', isInLaw })
-        placedIds.add(m.id)
+      // Split by side
+      const paternalGroup: FamilyMember[] = []
+      const rightGroup: FamilyMember[] = []  // maternal + neutral
+      genMembers.forEach(m => {
+        if (sideMap.get(m.id) === 'paternal') paternalGroup.push(m)
+        else rightGroup.push(m)
       })
 
-      const newRight = baseX + (sorted.length - 1) * (NODE_W + H_GAP) + NODE_W / 2
-      rowRightX.set(rg, Math.max(rowRightX.get(rg) ?? 0, newRight))
+      const sortedPaternal = sortGroup(paternalGroup)
+      const sortedRight = sortGroup(rightGroup)
+
+      // ── Paternal branch → LEFT of core tree ─────────────────────────────
+      if (sortedPaternal.length > 0) {
+        // Rightmost paternal member sits closest to core; members extend left
+        const leftEdge = (rowLeftX.get(rg) ?? -(NODE_W / 2)) - SECTION_GAP - NODE_W / 2
+        sortedPaternal.forEach((m, i) => {
+          const x = leftEdge - (sortedPaternal.length - 1 - i) * (NODE_W + H_GAP)
+          const isInLaw = (m.spouseIds ?? []).some(sid => coreNodeIds.has(sid))
+          nodes.push({ id: m.id, member: m, row: rg, col: nodes.length, x, y: rowY, role: 'other', isInLaw })
+          placedIds.add(m.id)
+        })
+        const newLeft = leftEdge - (sortedPaternal.length - 1) * (NODE_W + H_GAP) - NODE_W / 2
+        rowLeftX.set(rg, Math.min(rowLeftX.get(rg) ?? 0, newLeft))
+      }
+
+      // ── Maternal + neutral branch → RIGHT of core tree ───────────────────
+      if (sortedRight.length > 0) {
+        const baseX = (rowRightX.get(rg) ?? NODE_W / 2) + SECTION_GAP + NODE_W / 2
+        sortedRight.forEach((m, i) => {
+          const x = baseX + i * (NODE_W + H_GAP)
+          const isInLaw = (m.spouseIds ?? []).some(sid => coreNodeIds.has(sid))
+          nodes.push({ id: m.id, member: m, row: rg, col: nodes.length, x, y: rowY, role: 'other', isInLaw })
+          placedIds.add(m.id)
+        })
+        const newRight = baseX + (sortedRight.length - 1) * (NODE_W + H_GAP) + NODE_W / 2
+        rowRightX.set(rg, Math.max(rowRightX.get(rg) ?? 0, newRight))
+      }
     })
   }
 
@@ -409,8 +467,40 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
   const pos = new Map(dedupedNodes.map(n => [n.id, { x: n.x, y: n.y }]))
   const edgeSet = new Set<string>()
 
-  // Blood edges
+  // ── Sibling-group detection: shared trunk+rail for core nodes ─────────────
+  // When both parents of a set of siblings are visible, replace the individual
+  // bezier fan with a single trunk → horizontal rail → per-child drops.
+  // Only applies to core (non-'other') nodes to avoid cross-tree spanning lines.
+  const siblingGroups = new Map<string, {
+    pairKey: string
+    midX: number        // horizontal centre between the two parents
+    parentBotY: number  // bottom edge of the lower parent card
+    childIds: string[]
+  }>()
+  const handledByGroup = new Set<string>()
+
   dedupedNodes.forEach(n => {
+    if (n.role === 'other') return // extended members keep individual blood edges
+    const pids = n.member.parentIds.filter(pid => pos.has(pid))
+    if (pids.length < 2) return   // single-parent — keep individual edge
+    const sortedPids = [...pids].sort()
+    const pairKey = sortedPids.join('|')
+    if (!siblingGroups.has(pairKey)) {
+      const p1 = pos.get(sortedPids[0])!; const p2 = pos.get(sortedPids[1])!
+      siblingGroups.set(pairKey, {
+        pairKey,
+        midX: (p1.x + p2.x) / 2,
+        parentBotY: Math.max(p1.y, p2.y) + NODE_H / 2,
+        childIds: [],
+      })
+    }
+    siblingGroups.get(pairKey)!.childIds.push(n.id)
+    handledByGroup.add(n.id)
+  })
+
+  // Individual blood edges — single-parent cases and all extended ('other') nodes
+  dedupedNodes.forEach(n => {
+    if (handledByGroup.has(n.id)) return
     n.member.parentIds.forEach(pid => {
       const key = `b-${pid}-${n.id}`
       if (!edgeSet.has(key) && pos.has(pid)) {
@@ -418,6 +508,22 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
         const p = pos.get(pid)!
         edges.push({ id: key, x1: p.x, y1: p.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood' })
       }
+    })
+  })
+
+  // Shared-trunk edges — one per sibling group
+  siblingGroups.forEach(group => {
+    const childPositions = group.childIds.map(cid => pos.get(cid)).filter(Boolean) as Array<{ x: number; y: number }>
+    if (!childPositions.length) return
+    const childTopY = Math.min(...childPositions.map(cp => cp.y - NODE_H / 2))
+    const railY = (group.parentBotY + childTopY) / 2
+    edges.push({
+      id: `trunk-${group.pairKey}`,
+      x1: group.midX, y1: group.parentBotY,
+      x2: group.midX, y2: railY,
+      kind: 'sibling_trunk',
+      railY,
+      drops: childPositions.map(cp => ({ x: cp.x, y: cp.y - NODE_H / 2 })),
     })
   })
 
@@ -440,6 +546,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
 // ─── SVG edge layer ──────────────────────────────────────────────────────────
 function EdgeLayer({ edges }: { edges: EdgeDef[] }) {
   if (!edges.length) return null
+  const bloodStroke = 'rgba(148,163,184,0.38)'
   return (
     <svg style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 0 }} width={1} height={1}>
       {edges.map(e => {
@@ -452,11 +559,28 @@ function EdgeLayer({ edges }: { edges: EdgeDef[] }) {
             </g>
           )
         }
+        if (e.kind === 'sibling_trunk' && e.railY !== undefined && e.drops) {
+          const xs = e.drops.map(d => d.x)
+          const leftX = Math.min(...xs); const rightX = Math.max(...xs)
+          return (
+            <g key={e.id}>
+              {/* Vertical trunk: couple midpoint → horizontal rail */}
+              <line x1={e.x1} y1={e.y1} x2={e.x1} y2={e.railY} stroke={bloodStroke} strokeWidth={1.5} />
+              {/* Horizontal rail spanning all siblings */}
+              {xs.length > 1 && <line x1={leftX} y1={e.railY} x2={rightX} y2={e.railY} stroke={bloodStroke} strokeWidth={1.5} />}
+              {/* Vertical drop to each child */}
+              {e.drops.map((d, i) => (
+                <line key={i} x1={d.x} y1={e.railY!} x2={d.x} y2={d.y} stroke={bloodStroke} strokeWidth={1.5} />
+              ))}
+            </g>
+          )
+        }
+        // Individual blood edge (single-parent or extended member)
         const midY = (e.y1 + e.y2) / 2
         return (
           <path key={e.id}
             d={`M ${e.x1} ${e.y1} C ${e.x1} ${midY}, ${e.x2} ${midY}, ${e.x2} ${e.y2}`}
-            fill="none" stroke="rgba(148,163,184,0.35)" strokeWidth={1.5}
+            fill="none" stroke={bloodStroke} strokeWidth={1.5}
           />
         )
       })}
