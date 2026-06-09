@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -208,8 +209,22 @@ const HOW_IT_WORKS = [
 ]
 
 export default function MarketingPage() {
+  const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [activeUseCase, setActiveUseCase] = useState(0)
+
+  // Supabase redirects auth errors to the Site URL (this page) when the
+  // callback URL isn't in the allowlist, or when the OTP is expired/invalid.
+  // Detect those and forward the user to a page that explains what happened.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const errorCode = params.get('error_code') || hash.get('error_code')
+    const errorParam = params.get('error') || hash.get('error')
+    if (errorParam === 'access_denied' && errorCode === 'otp_expired') {
+      router.replace('/auth/forgot-password?expired=1')
+    }
+  }, [])
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">

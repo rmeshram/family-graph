@@ -1,15 +1,18 @@
 "use client"
 
 import { useState } from "react"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Mail, Loader2, ArrowLeft, CheckCircle } from "lucide-react"
+import { Mail, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react"
 
 export default function ForgotPasswordPage() {
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  const linkExpired = searchParams.get('expired') === '1'
 
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -42,6 +45,16 @@ export default function ForgotPasswordPage() {
           {sent ? 'Check your email for the reset link' : "We'll send you a link to reset it"}
         </p>
       </div>
+
+      {linkExpired && !sent && (
+        <div className="mb-4 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-sm flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">That link has expired</p>
+            <p className="mt-1 opacity-80">Password reset links are valid for 1 hour. Enter your email below to get a fresh one.</p>
+          </div>
+        </div>
+      )}
 
       {sent ? (
         <div className="space-y-4">
