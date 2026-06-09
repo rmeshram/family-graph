@@ -283,6 +283,22 @@ function classifyFromLCA(
     return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
   }
 
+  // Indian cultural convention: first cousin's child → Niece/Nephew
+  // (Western term would be "First Cousin Once Removed")
+  if (depthA === 2 && depthB === 3) {
+    return male ? 'Nephew' : female ? 'Niece' : 'Nephew/Niece'
+  }
+  // Indian cultural convention: parent's first cousin → Uncle/Aunt
+  // (Western term would be "First Cousin Once Removed")
+  if (depthA === 3 && depthB === 2) {
+    const pp = pathwayParent()
+    const pig = pp ? inferGender(pp) : null
+    const pM = pig === 'male', pF = pig === 'female'
+    if (male) return pM ? 'Paternal Uncle (Chacha/Tau)' : pF ? 'Maternal Uncle (Mama)' : 'Uncle'
+    if (female) return pM ? 'Paternal Aunt (Bua)' : pF ? 'Maternal Aunt (Mausi/Mami)' : 'Aunt'
+    return 'Uncle/Aunt'
+  }
+
   // Great-uncle / Great-aunt
   if (depthA === 3 && depthB === 1) {
     return male ? 'Great-uncle' : female ? 'Great-aunt' : 'Great-uncle/aunt'
