@@ -443,12 +443,13 @@ export async function POST(
       // Check if the stale link is still actively claimed by this user.
       const { data: staleMemberNode } = await admin
         .from('family_members')
-        .select('is_claimed, claimed_by_user_id')
+        .select('is_claimed, claimed_by_user_id, claim_status')
         .eq('id', profileMemberId)
         .maybeSingle()
       const isStale = !staleMemberNode ||
         !(staleMemberNode as any).is_claimed ||
-        (staleMemberNode as any).claimed_by_user_id !== user.id
+        (staleMemberNode as any).claimed_by_user_id !== user.id ||
+        (staleMemberNode as any).claim_status === 'revoked'
       if (isStale) {
         // Auto-heal: clear the stale member_id so the claim can proceed.
         await admin.from('profiles').update({ member_id: null } as any).eq('id', user.id)
@@ -487,16 +488,17 @@ export async function POST(
       // Check if the stale link is still actively claimed by this user.
       const { data: staleLinkedNode } = await admin
         .from('family_members')
-        .select('id, name, family_id, is_claimed, claimed_by_user_id')
+        .select('id, name, family_id, is_claimed, claimed_by_user_id, claim_status')
         .eq('id', (existingLink as any).node_id)
         .maybeSingle()
       const isStale = !staleLinkedNode ||
         !(staleLinkedNode as any).is_claimed ||
-        (staleLinkedNode as any).claimed_by_user_id !== user.id
+        (staleLinkedNode as any).claimed_by_user_id !== user.id ||
+        (staleLinkedNode as any).claim_status === 'revoked'
       if (isStale) {
         // Auto-heal: remove the stale link so the claim can proceed.
         await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
-      } else if (skipFamilyLink) {
+      } else if (skipFamilyLink || (effectiveConfirmCrossFamily && isCrossFamily)) {
         // Option B: user is consciously switching families — remove the old link.
         await admin.from('user_node_links').delete().eq('user_id', user.id).eq('node_id', (existingLink as any).node_id)
       } else {
