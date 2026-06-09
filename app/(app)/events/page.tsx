@@ -363,7 +363,7 @@ export default function EventsPage() {
           const invited = allMembers.filter(m => event.invitedMemberIds.includes(m.id))
           const isOwner = isDemoMode ? event.organizer === allMembers[0]?.id : event.organizer === user?.id
           const whatsappText = encodeURIComponent(
-            `📅 *${event.title}*\n🗓️ ${formatDate(event.date)}${event.time ? ` · ${event.time}` : ""}\n📍 ${event.location}${event.description ? `\n\n${event.description}` : ""}\n\nRSVP on Family Graph: ${typeof window !== "undefined" ? window.location.origin : ""}/events`
+            `📅 *${event.title}*\n🗓️ ${formatDate(event.date)}${event.time ? ` · ${event.time}` : ""}\n📍 ${event.location}${event.description ? `\n\n${event.description}` : ""}\n\nRSVP on Outverse: ${typeof window !== "undefined" ? window.location.origin : ""}/events`
           )
 
           return (
@@ -512,7 +512,7 @@ export default function EventsPage() {
             <div className="grid grid-cols-2 gap-2">
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(
-                  `📅 *${createdEventShare.title}*\n🗓️ ${formatDate(createdEventShare.date)}${createdEventShare.time ? ` · ${createdEventShare.time}` : ''}\n📍 ${createdEventShare.location}${createdEventShare.description ? `\n\n${createdEventShare.description}` : ''}\n\nRSVP on Family Graph: ${typeof window !== 'undefined' ? window.location.origin : ''}/events`
+                  `📅 *${createdEventShare.title}*\n🗓️ ${formatDate(createdEventShare.date)}${createdEventShare.time ? ` · ${createdEventShare.time}` : ''}\n📍 ${createdEventShare.location}${createdEventShare.description ? `\n\n${createdEventShare.description}` : ''}\n\nRSVP on Outverse: ${typeof window !== 'undefined' ? window.location.origin : ''}/events`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"

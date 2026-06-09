@@ -732,17 +732,17 @@ export function AddMemberDialog({
                           )}
                         <SelectGroup>
                           <SelectLabel>Grandparents</SelectLabel>
-                          <SelectItem value="paternal-grandfather">Paternal Grandfather</SelectItem>
-                          <SelectItem value="paternal-grandmother">Paternal Grandmother</SelectItem>
-                          <SelectItem value="maternal-grandfather">Maternal Grandfather</SelectItem>
-                          <SelectItem value="maternal-grandmother">Maternal Grandmother</SelectItem>
-                          <SelectItem value="great-grandfather">Great Grandfather</SelectItem>
-                          <SelectItem value="great-grandmother">Great Grandmother</SelectItem>
+                          <SelectItem value="paternal-grandfather">Paternal Grandfather (Dada)</SelectItem>
+                          <SelectItem value="paternal-grandmother">Paternal Grandmother (Dadi)</SelectItem>
+                          <SelectItem value="maternal-grandfather">Maternal Grandfather (Nana)</SelectItem>
+                          <SelectItem value="maternal-grandmother">Maternal Grandmother (Nani)</SelectItem>
+                          <SelectItem value="great-grandfather">Great Grandfather (Pardada / Parnana)</SelectItem>
+                          <SelectItem value="great-grandmother">Great Grandmother (Pardadi / Parnani)</SelectItem>
                         </SelectGroup>
                         <SelectGroup>
                           <SelectLabel>Parents</SelectLabel>
-                          <SelectItem value="father">Father</SelectItem>
-                          <SelectItem value="mother">Mother</SelectItem>
+                          <SelectItem value="father">Father (Papa / Pitaji)</SelectItem>
+                          <SelectItem value="mother">Mother (Maa / Amma)</SelectItem>
                           <SelectItem value="stepfather">Stepfather</SelectItem>
                           <SelectItem value="stepmother">Stepmother</SelectItem>
                           <SelectItem value="foster-father">Foster Father</SelectItem>
@@ -783,12 +783,12 @@ export function AddMemberDialog({
                         </SelectGroup>
                         <SelectGroup>
                           <SelectLabel>Aunts &amp; Uncles</SelectLabel>
-                          <SelectItem value="paternal-uncle">Paternal Uncle (Father&apos;s Brother)</SelectItem>
-                          <SelectItem value="paternal-aunt">Paternal Aunt (Father&apos;s Sister)</SelectItem>
-                          <SelectItem value="maternal-uncle">Maternal Uncle (Mother&apos;s Brother)</SelectItem>
-                          <SelectItem value="maternal-aunt">Maternal Aunt (Mother&apos;s Sister)</SelectItem>
-                          <SelectItem value="uncle-in-law">Uncle-in-law</SelectItem>
-                          <SelectItem value="aunt-in-law">Aunt-in-law</SelectItem>
+                          <SelectItem value="paternal-uncle">Paternal Uncle — Chacha / Tau (Father&apos;s Brother)</SelectItem>
+                          <SelectItem value="paternal-aunt">Paternal Aunt — Bua / Chachi (Father&apos;s Sister)</SelectItem>
+                          <SelectItem value="maternal-uncle">Maternal Uncle — Mama (Mother&apos;s Brother)</SelectItem>
+                          <SelectItem value="maternal-aunt">Maternal Aunt — Mausi (Mother&apos;s Sister)</SelectItem>
+                          <SelectItem value="uncle-in-law">Uncle-in-law (Fufa / Mausa)</SelectItem>
+                          <SelectItem value="aunt-in-law">Aunt-in-law (Mami / Chachi by marriage)</SelectItem>
                           <SelectItem value="great-uncle">Great Uncle</SelectItem>
                           <SelectItem value="great-aunt">Great Aunt</SelectItem>
                         </SelectGroup>

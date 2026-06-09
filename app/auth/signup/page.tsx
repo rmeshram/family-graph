@@ -307,8 +307,16 @@ function SignUpContent() {
   return (
     <div>
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold text-foreground mb-1">Create your account</h1>
-        <p className="text-muted-foreground text-sm">Start building your family tree today</p>
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary/70 mb-3 shadow-lg shadow-primary/20">
+          <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-white" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="7" r="3" />
+            <circle cx="6" cy="17" r="2.5" />
+            <circle cx="18" cy="17" r="2.5" />
+            <path d="M12 10v3M8 14l-1.5 2M16 14l1.5 2" strokeLinecap="round" />
+          </svg>
+        </div>
+        <h1 className="text-2xl font-bold text-foreground mb-1">Build your family tree</h1>
+        <p className="text-muted-foreground text-sm">Your family&apos;s history, all in one place — free forever</p>
       </div>
 
       {/* Google — primary, most prominent CTA */}

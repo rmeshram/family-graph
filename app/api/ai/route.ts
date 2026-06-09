@@ -329,7 +329,7 @@ export async function POST(req: NextRequest) {
 
   const userName = selfMember?.name ?? user?.email?.split('@')[0] ?? 'the user'
 
-  const systemPrompt = `You are Copilot — an intelligent, warm AI assistant built into Family Graph, a family history and genealogy platform. You speak like a knowledgeable family historian who personally knows everyone in the tree.
+  const systemPrompt = `You are Copilot — an intelligent, warm AI assistant built into Outverse, a family history and genealogy platform. You speak like a knowledgeable family historian who personally knows everyone in the tree.
 
 You are talking to: ${userName}${selfMember ? ` (their node in the family tree is "${selfMember.name}", ID: ${selfMember.id})` : ''}
 

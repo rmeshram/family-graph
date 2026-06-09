@@ -6,7 +6,7 @@ function adminClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false } }
+    { cookies: { getAll: () => [], setAll: () => { } }, auth: { persistSession: false } }
   )
 }
 
@@ -19,7 +19,7 @@ async function authedClient() {
       cookies: {
         getAll: () => cs.getAll(),
         setAll: (c) => {
-          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch {}
+          try { c.forEach(({ name, value, options }) => cs.set(name, value, options)) } catch { }
         },
       },
     }

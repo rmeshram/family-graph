@@ -115,7 +115,7 @@ export async function generateMetadata({ params }: PageProps) {
     .eq('invite_code', code)
     .single()
   return {
-    title: family?.name ? `${family.name} — Family Graph` : 'Family Graph',
-    description: 'Join our family tree on Family Graph.',
+    title: family?.name ? `${family.name} — Outverse` : 'Outverse',
+    description: 'Join our family tree on Outverse.',
   }
 }

@@ -75,7 +75,7 @@ function buildGroupShareMessage(
   historicalEvents: ReturnType<typeof getHistoricalEvents>,
   today: Date,
 ): string {
-  const lines: string[] = ['🌅 Good morning from Family Graph!\n']
+  const lines: string[] = ['🌅 Good morning from Outverse!\n']
   birthdays.slice(0, 3).forEach(({ member, age, daysUntil }) => {
     const ageLine = age != null ? ` (turning ${age + (daysUntil > 0 ? 1 : 0)})` : ''
     if (daysUntil === 0) lines.push(`🎂 Today is ${member.name}'s birthday!${ageLine}`)
@@ -184,7 +184,7 @@ export default function TodayPage() {
                     <Button
                       size="sm" variant="outline" className="h-7 text-xs gap-1"
                       onClick={() => {
-                        const msg = encodeURIComponent(`🎂 Happy Birthday ${member.name}! Wishing you a wonderful ${age != null ? `${age + (daysUntil > 0 ? 1 : 0)}th ` : ''}birthday! 🌸 — Family Graph`)
+                        const msg = encodeURIComponent(`🎂 Happy Birthday ${member.name}! Wishing you a wonderful ${age != null ? `${age + (daysUntil > 0 ? 1 : 0)}th ` : ''}birthday! 🌸 — Outverse`)
                         window.open(`https://wa.me/?text=${msg}`, '_blank')
                       }}
                     >

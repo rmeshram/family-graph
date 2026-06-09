@@ -249,8 +249,8 @@ function OnboardingContent() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/70 mb-4 shadow-lg shadow-primary/20">
             <TreePine className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">What's your name?</h1>
-          <p className="text-sm text-muted-foreground mt-1">We'll create your family tree in seconds.</p>
+          <h1 className="text-2xl font-bold text-foreground">Let&apos;s build your family tree</h1>
+          <p className="text-sm text-muted-foreground mt-1">Start with yourself &mdash; add parents &amp; relatives right after.</p>
         </div>
 
         {/* Card */}

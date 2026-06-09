@@ -1508,7 +1508,7 @@ export default function FamilyGraphApp() {
       label: 'Universe',
       icon: Sparkles,
       locked: !familyFirstCommunityUnlocked,
-      lockReason: 'Complete steps 1-2 in Family First to unlock Universe',
+      lockReason: 'Add a parent or spouse + get 2 relatives to join — then Universe unlocks',
     },
   ]
 
@@ -1664,8 +1664,8 @@ export default function FamilyGraphApp() {
             onClick={() => {
               if (!familyFirstCommunityUnlocked) {
                 toast({
-                  title: 'Extended network is locked',
-                  description: 'Complete Family First steps 1-2 to unlock community features.',
+                  title: 'Complete your close family first',
+                  description: 'Add a parent or spouse (step 2), then get 2 relatives to join (step 3) to unlock community features.',
                 })
                 return
               }
@@ -1947,9 +1947,9 @@ export default function FamilyGraphApp() {
                 {(identityState === 'unlinked' || !selfMember) ? (
                   <>
                     <div>
-                      <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Start your branch of the community graph 🌱</h2>
+                      <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Your family tree starts here 🌱</h2>
                       <p className="text-muted-foreground text-sm max-w-xs">
-                        Your account is ready. Add yourself first, then grow your family branch and connect it to the wider community.
+                        Add yourself first, then your parents and siblings. Once your close family is mapped, connect with relatives across families.
                       </p>
                     </div>
                     <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -2803,8 +2803,8 @@ export default function FamilyGraphApp() {
         onOpenChange={(open) => {
           if (open && !familyFirstCommunityUnlocked) {
             toast({
-              title: 'Family links are locked',
-              description: 'Complete Family First steps 1-2 to unlock family-to-family linking.',
+              title: 'Map your close family first',
+              description: 'Add your parent or spouse, then get 2 relatives to join. Family-to-family linking unlocks once your branch is established.',
             })
             return
           }

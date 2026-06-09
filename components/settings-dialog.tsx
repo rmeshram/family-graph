@@ -353,7 +353,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
       })
       if (error) throw new Error(error.message)
       const link = `${window.location.origin}/join/${code}`
-      const waText = `🌳 You've been invited to join your family tree on Family Graph!\n\nJoin here: ${link}`
+      const waText = `🌳 You've been invited to join your family tree on Outverse!\n\nJoin here: ${link}`
       setPhoneInviteResult({ waLink: whatsappUrl(e164, waText), code })
       setPhoneInviteInput('')
       toast.success('Invite created!')
@@ -590,7 +590,7 @@ export function SettingsDialog({ open, onOpenChange, onExport, onImport, onDownl
     <>
       <DialogHeader className={isMobile ? 'px-4 pt-2 pb-0 text-left' : ''}>
         <DialogTitle>Settings</DialogTitle>
-        <DialogDescription>Manage your Family Graph preferences and team</DialogDescription>
+        <DialogDescription>Manage your Outverse preferences and family settings</DialogDescription>
       </DialogHeader>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
