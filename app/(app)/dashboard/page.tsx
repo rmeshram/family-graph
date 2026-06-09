@@ -2451,7 +2451,7 @@ export default function FamilyGraphApp() {
 
                 {/* Panel — slides in/out */}
                 <div className={cn(
-                  'h-full overflow-hidden transition-all duration-200',
+                  'overflow-y-auto transition-all duration-200',
                   isMissionPanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-80 xl:w-96 opacity-100'
                 )}>
                   <FamilyMissionPanel

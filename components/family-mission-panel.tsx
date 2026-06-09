@@ -284,7 +284,7 @@ export function FamilyMissionPanel({
   const pendingSteps = steps.filter(s => !s.done)
 
   return (
-    <div className={cn("flex h-full flex-col border-l border-border/40 shrink-0 overflow-hidden", className ?? "w-64 lg:w-72")}
+    <div className={cn("flex flex-col border-l border-border/40 shrink-0", className ?? "w-64 lg:w-72")}
       style={{ background: 'var(--surface-header, hsl(var(--card)))' }}>
 
       {/* ── Complete Your Profile ── */}
@@ -401,7 +401,7 @@ export function FamilyMissionPanel({
       </div>
 
       {/* ── Grow Your Tree — invite section with participation score ── */}
-      <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex flex-col">
         {/* Header with score baked in */}
         <div className="shrink-0 px-4 py-2.5 border-b border-border/40">
           <div className="flex items-center justify-between gap-2">
@@ -429,7 +429,7 @@ export function FamilyMissionPanel({
           <p className="text-[10px] text-muted-foreground/60 mt-1">Each accepted invite strengthens your family graph. Community discovery unlocks after your family base is strong.</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div>
           {waitingPeople.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center px-5">
               <p className="text-2xl mb-2">🎉</p>
