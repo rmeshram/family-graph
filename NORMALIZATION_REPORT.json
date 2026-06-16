@@ -1,0 +1,87 @@
+{
+  "meta": {
+    "generatedAt": "2026-06-16T17:16:15.878Z",
+    "totalMembers": 110,
+    "issuesFound": 5,
+    "fixesApplied": 1,
+    "suggestions": 1
+  },
+  "issues_found": [
+    {
+      "id": "NRM-001",
+      "severity": "error",
+      "type": "unidirectional_spouse",
+      "affectedIds": [
+        "aff-meh-3",
+        "aff-rao-3"
+      ],
+      "description": "Riya Mehta (aff-meh-3) lists Nitin Rao (aff-rao-3) as spouse, but the link is not reciprocated."
+    },
+    {
+      "id": "NRM-002",
+      "severity": "warning",
+      "type": "duplicate_identity",
+      "affectedIds": [
+        "g1-1",
+        "ext-4"
+      ],
+      "description": "Potential duplicate: \"Suresh Kumar Sharma\" (g1-1) and \"Dinesh Kumar Sharma\" (ext-4). Match reasons: name similarity 84%; shared parent(s). Confidence: 62%. Manual review required before merging."
+    },
+    {
+      "id": "NRM-003",
+      "severity": "warning",
+      "type": "duplicate_identity",
+      "affectedIds": [
+        "g3-2",
+        "ext-8"
+      ],
+      "description": "Potential duplicate: \"Sneha Sharma\" (g3-2) and \"Sneha Sharma\" (ext-8). Match reasons: name similarity 100%; birth years within 2 (2003 vs 2005). Confidence: 60%. Manual review required before merging."
+    },
+    {
+      "id": "NRM-004",
+      "severity": "warning",
+      "type": "duplicate_identity",
+      "affectedIds": [
+        "ext-5",
+        "ext-17"
+      ],
+      "description": "Potential duplicate: \"Kamla Sharma\" (ext-5) and \"Vimla Sharma\" (ext-17). Match reasons: name similarity 83%; birth years within 2 (1955 vs 1953). Confidence: 52%. Manual review required before merging."
+    },
+    {
+      "id": "NRM-005",
+      "severity": "error",
+      "type": "conflicting_parentage",
+      "affectedIds": [
+        "g2-2",
+        "aff-rao-1",
+        "aff-rao-2",
+        "g1-3",
+        "g1-4",
+        "aff-rao-3"
+      ],
+      "description": "CONFLICTING PARENTAGE — Priya Sharma (g2-2) has two incompatible parent sets: (A) Core tree: parentIds = [g1-3 Ramdas Mishra, g1-4 Pushpa Devi Mishra], with Ashok Mishra (g2-5) as her brother. (B) Affiliated Rao family narrative: aff-rao-1 (Shyam Rao) and aff-rao-2 (Usha Rao) are described as her parents, with Nitin Rao (aff-rao-3) as her brother. A person cannot have two biological parent pairs. Resolution options: (1) If Priya is indeed Priya Rao, update her parentIds to [aff-rao-1, aff-rao-2] and remove the sibling relationship with Ashok Mishra. (2) If Priya is Priya Mishra, re-label the Rao family affiliation as Vikram Sharma's in-law family (not Priya's natal family). This requires manual user decision — not auto-fixed."
+    }
+  ],
+  "fixes_applied": [
+    {
+      "memberId": "aff-rao-3",
+      "memberName": "Nitin Rao",
+      "issue": "unidirectional_spouse — added missing back-reference",
+      "old_value": [],
+      "new_value": [
+        "aff-meh-3"
+      ],
+      "confidence_score": 98
+    }
+  ],
+  "suggestions": [
+    {
+      "type": "missing_second_parent_and_spouse",
+      "affectedIds": [
+        "ext-38",
+        "ext-3"
+      ],
+      "description": "Rahul Mishra (ext-38) has only one recorded parent: Shivdas Mishra (ext-3), who has no recorded spouse. Consider adding Shivdas Mishra's spouse to complete the family record."
+    }
+  ]
+}

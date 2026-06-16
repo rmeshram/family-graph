@@ -44,7 +44,7 @@ export default function ResetPasswordPage() {
       }
     }
     init()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleUpdate = async (e: React.FormEvent) => {

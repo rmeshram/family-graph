@@ -28,7 +28,7 @@ export const FEATURE_FLAGS = {
   enableFullGraphPdfExport: true,
   /** Asks "how are you related to the inviter?" during the /join flow. */
   /** Per DECISION 1 (claim = join) this step is removed; relationship is set during node creation. */
-  enableInviteRelationshipStep: true,  // HIGH-08: was true, conflicts with DECISION 1 comment
+  enableInviteRelationshipStep: false,  // DECISION 1: step removed for MVP. Flip to true to restore.
   /** Admin review queue for low-confidence claims. ON — already shipped in settings dialog. */
   enableClaimReviewQueue: true,
   /** Moderator role: dedicated claim review + conflict resolution UI (/admin/moderation). */
@@ -36,7 +36,7 @@ export const FEATURE_FLAGS = {
   /** Graph conflict detection panel in settings — shows pending_conflicts from DB. */
   enableConflictPanel: true,
   /** Relationship step wizard during invite join — requires enableInviteRelationshipStep to also be true. */
-  enableStructuralMappingWizard: true,
+  enableStructuralMappingWizard: false,  // Off: depends on enableInviteRelationshipStep which is false per DECISION 1.
   /** branch_admin role: scoped edit permissions on a subtree. */
   enableBranchAdmin: true,
   /** Realtime notifications driven by claim_audit_log + family_members inserts. */
@@ -44,7 +44,7 @@ export const FEATURE_FLAGS = {
   /** Phone number + OTP sign-in / sign-up (WhatsApp / SMS).
    *  Requires Supabase Phone provider + an SMS/WhatsApp gateway configured in the Dashboard.
    *  Keep false until the gateway is ready — email auth continues to work independently. */
-  enablePhoneOtpAuth: false,
+  enablePhoneOtpAuth: true,
   /** Email + password authentication. Disable only if switching 100% to phone OTP. */
   enableEmailPasswordAuth: true,
   /** Matrimony biodata generation & matching page (/biodata). Disabled until the matching pipeline is ready. */
@@ -58,7 +58,7 @@ export const FEATURE_FLAGS = {
   enableGraphView: false,
   /** Generation-strip org chart view. Has generation label bug (gen=0 maps to Great Grandparents but is actually "You").
    *  Disabled — keeping code in case it's fixed and re-enabled later. */
-  enableOrgChartView: true,
+  enableOrgChartView: false,
   /** Events calendar page. Low value for MVP — re-enable once event RSVP + notifications are wired. */
   enableEvents: false,
 } as const

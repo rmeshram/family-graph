@@ -20,7 +20,9 @@
 -- DO NOTHING (via the upsert in the route) prevents duplicates once this
 -- constraint is in place.
 ALTER TABLE family_link_notifications
-  ADD CONSTRAINT IF NOT EXISTS uniq_link_notification
+  DROP CONSTRAINT IF EXISTS uniq_link_notification;
+ALTER TABLE family_link_notifications
+  ADD CONSTRAINT uniq_link_notification
   UNIQUE (link_id, event_type, recipient_family_id);
 
 -- ── Audit log: add 'link_revoked' action value ───────────────────────────────

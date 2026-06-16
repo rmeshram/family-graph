@@ -24,6 +24,7 @@ export interface FamilyLinkRequest {
 interface UseLinkedFamiliesResult {
   linkedMembers: FamilyMember[]
   linkedFamilies: LinkedFamily[]
+  edgeSupplements: Array<{ nodeId: string; addParentIds: string[]; addSpouseIds: string[] }>
   newMemberAlert: { member: FamilyMember; familyName: string } | null
   clearNewMemberAlert: () => void
   loading: boolean
@@ -35,6 +36,7 @@ interface UseLinkedFamiliesResult {
 export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesResult {
   const [linkedMembers, setLinkedMembers] = useState<FamilyMember[]>([])
   const [linkedFamilies, setLinkedFamilies] = useState<LinkedFamily[]>([])
+  const [edgeSupplements, setEdgeSupplements] = useState<Array<{ nodeId: string; addParentIds: string[]; addSpouseIds: string[] }>>([])
   const [newMemberAlert, setNewMemberAlert] = useState<{ member: FamilyMember; familyName: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +56,7 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
       const data = await res.json()
       setLinkedMembers(data.linkedMembers ?? [])
       setLinkedFamilies(data.linkedFamilies ?? [])
+      setEdgeSupplements(data.edgeSupplements ?? [])
       const ids = (data.linkedFamilies ?? []).map((f: LinkedFamily) => f.id)
       linkedFamilyIdsRef.current = ids
       linkedMembersRef.current = data.linkedMembers ?? []
@@ -157,6 +160,7 @@ export function useLinkedFamilies(familyId: string | null): UseLinkedFamiliesRes
   return {
     linkedMembers,
     linkedFamilies,
+    edgeSupplements,
     newMemberAlert,
     clearNewMemberAlert: () => setNewMemberAlert(null),
     loading,

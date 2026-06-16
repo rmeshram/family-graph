@@ -110,12 +110,23 @@ export async function POST(
     )
   }
 
-  // EC-06: Warn loudly if NEXT_PUBLIC_APP_URL is not set. In production, using
-  // req.nextUrl.origin behind a proxy may resolve to http://localhost:3000,
-  // causing the internal fetch to ECONNREFUSED and returning an unhandled 500.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin
-  if (!process.env.NEXT_PUBLIC_APP_URL) {
-    console.warn('[invites/claim] NEXT_PUBLIC_APP_URL is not set; falling back to', appUrl, '- set this env var in production to prevent routing failures')
+  // EC-06: NEXT_PUBLIC_APP_URL must be set in production.
+  // req.nextUrl.origin behind a reverse proxy (Vercel, Fly.io, etc.) resolves to
+  // http://localhost:3000 → the internal fetch fails with ECONNREFUSED and the
+  // caller receives an opaque 500.  Fail fast with a clear message instead.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    console.error('[invites/claim] NEXT_PUBLIC_APP_URL is not set. Cannot perform internal claim fetch. Set this env var to the public URL of the deployment (e.g. https://your-app.vercel.app).')
+    // Roll back the invite consumption so the user can retry after the env var is fixed.
+    await adminClient()
+      .from('invite_links')
+      .update({ consumed_at: null, consumed_by: null } as any)
+      .eq('id', (invite as any).id)
+      .eq('consumed_at', consumedAt)
+    return NextResponse.json(
+      { error: 'SERVER_MISCONFIGURATION', message: 'The server is not configured correctly. Please contact support.' },
+      { status: 500 }
+    )
   }
   const claimRes = await fetch(`${appUrl}/api/nodes/${node.id}/claim`, {
     method: 'POST',

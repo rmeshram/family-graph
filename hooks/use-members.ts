@@ -196,7 +196,16 @@ export function useMembers(familyId: string | null) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
         (payload) => {
-          const updated = dbToMember(payload.new as any)
+          const row = payload.new as any
+          // Soft-delete: deleted_at was just set — mirror the RLS `deleted_at IS NULL`
+          // filter immediately so stale-closure addMember checks don't find the
+          // archived member and reject same-name re-adds.
+          if (row.deleted_at != null) {
+            setMembers(prev => prev.filter(m => m.id !== row.id))
+            setTotalCount(c => Math.max(0, c - 1))
+            return
+          }
+          const updated = dbToMember(row)
           setMembers(prev => prev.map(m => m.id === updated.id ? updated : m))
         }
       )
@@ -243,7 +252,7 @@ export function useMembers(familyId: string | null) {
 
     // 1. Exact-same name + relationship already exists in this family
     if (rel) {
-      const dupByNameRel = members.find(m =>
+      const dupByNameRel = membersRef.current.find(m =>
         m.name.toLowerCase().replace(/\s+/g, ' ') === normName &&
         (m.relationship ?? '').toLowerCase().trim() === rel
       )
@@ -261,12 +270,12 @@ export function useMembers(familyId: string | null) {
     //    "already has a spouse" error (the reported bug: Ratnamala's deleted husband).
     if ((memberData.spouseIds?.length ?? 0) > 0) {
       for (const anchorId of memberData.spouseIds!) {
-        const anchor = members.find(m => m.id === anchorId)
+        const anchor = membersRef.current.find(m => m.id === anchorId)
         if (anchor) {
           // Only count spouse IDs that resolve to a currently live member
-          const liveSpouseIds = anchor.spouseIds.filter(sid => members.some(m => m.id === sid))
+          const liveSpouseIds = anchor.spouseIds.filter(sid => membersRef.current.some(m => m.id === sid))
           if (liveSpouseIds.length > 0) {
-            const liveSpousseName = members.find(m => m.id === liveSpouseIds[0])?.name ?? 'another member'
+            const liveSpousseName = membersRef.current.find(m => m.id === liveSpouseIds[0])?.name ?? 'another member'
             throw new Error(
               `${anchor.name} already has a spouse (${liveSpousseName}). Remove the existing spouse link before adding a new one.`
             )
@@ -280,7 +289,7 @@ export function useMembers(familyId: string | null) {
     if ((memberData.parentIds?.length ?? 0) > 0) {
       // GAP-3: reject parentIds pointing to unknown/soft-deleted nodes
       const unknownParents = (memberData.parentIds ?? []).filter(
-        pid => !members.some(m => m.id === pid)
+        pid => !membersRef.current.some(m => m.id === pid)
       )
       if (unknownParents.length > 0) {
         throw new Error(
@@ -288,7 +297,7 @@ export function useMembers(familyId: string | null) {
         )
       }
       for (const pid of memberData.parentIds!) {
-        const siblings = members.filter(m => m.parentIds.includes(pid))
+        const siblings = membersRef.current.filter(m => m.parentIds.includes(pid))
         const dupSibling = siblings.find(s =>
           s.name.toLowerCase().replace(/\s+/g, ' ') === normName
         )
