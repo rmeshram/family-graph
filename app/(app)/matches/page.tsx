@@ -642,7 +642,7 @@ function ProfileCard({
         )}
 
         {/* Trust / profile-strength badge — SPEC §5.3 */}
-        {(() => {
+        {FEATURE_FLAGS.enableTrustScore && (() => {
           const filled = [
             profile.biodata_photo_url,
             profile.gotra,

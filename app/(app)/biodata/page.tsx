@@ -14,7 +14,7 @@ import { sampleFamilyMembers } from "@/lib/sample-data"
 import { useAuth } from "@/hooks/use-auth"
 import { useMembers } from "@/hooks/use-members"
 import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, Download, Share2, Printer, Check, MessageCircle, Heart, MapPin, Briefcase, Users, Sparkles } from "lucide-react"
+import { ArrowLeft, Download, Share2, Printer, Check, MessageCircle, Heart, MapPin, Briefcase, Users, Sparkles, Pencil } from "lucide-react"
 import { cn, copyToClipboard } from "@/lib/utils"
 import { DemoBanner } from "@/components/demo-banner"
 import { buildBiodataWhatsAppUrl } from "@/lib/whatsapp-share"
@@ -399,6 +399,12 @@ export default function BiodataPage() {
 
                   {/* Action buttons */}
                   <div className="flex flex-wrap gap-2">
+                    <Link href="/biodata/setup">
+                      <Button variant="outline" size="sm" className="gap-1.5">
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </Button>
+                    </Link>
                     <Button
                       variant="outline"
                       size="sm"

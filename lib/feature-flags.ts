@@ -76,11 +76,11 @@ export const FEATURE_FLAGS = {
   /** Community matrimony pools. */
   enableCommunityPools: false,
   /** Show matrimony matches outside the user's own family. */
-  enableCrossFamilyMatching: false,
+  enableCrossFamilyMatching: true,
   /** WhatsApp Business API (Meta) notifications. Requires WhatsApp Business API credentials. */
   enableWhatsAppNotifications: false,
   /** Trust score computation + display on profiles/match cards (SPEC §5.3). */
-  enableTrustScore: false,
+  enableTrustScore: true,
   /** Kundli PDF via AstroSage API. Requires ASTROSAGE_API_KEY. V3 — post-traction only. */
   enableKundliIntegration: false,
   /** Matrimony-first 3-screen onboarding (SPEC §4.3). */
