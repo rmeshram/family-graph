@@ -110,14 +110,21 @@ export async function POST(
 
   const newStatus = action === 'accept' ? 'accepted' : 'rejected'
 
+  // Only overwrite junction_member_b when the responder explicitly supplies one.
+  // Otherwise preserve the value set at link creation (e.g. by cross-claim) —
+  // blanking it to null would sever the bridge member of an accepted link.
+  const updatePayload: Record<string, unknown> = {
+    status: newStatus,
+    accepted_by: action === 'accept' ? user.id : null,
+    updated_at: new Date().toISOString(),
+  }
+  if (junctionMemberBId) {
+    updatePayload.junction_member_b = junctionMemberBId
+  }
+
   const { data: updated, error } = await admin
     .from('family_links')
-    .update({
-      status: newStatus,
-      accepted_by: action === 'accept' ? user.id : null,
-      junction_member_b: junctionMemberBId ?? null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', linkId)
     .eq('status', 'pending')
     .select('id')

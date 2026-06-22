@@ -130,11 +130,15 @@ export function useInvites(familyId: string | null) {
 
     // Write audit log so notification bell shows "Invite sent for <name>"
     // to family admins watching the Realtime claim_audit_log subscription.
+    // The claim_audit_log columns are actor_id/metadata/family_id (migration 009);
+    // the previous performed_by/meta names did not exist so this insert silently
+    // failed and the "invite sent" notification was never recorded.
     await (supabase as any).from('claim_audit_log').insert({
       node_id: nodeId,
+      family_id: familyId,
+      actor_id: userId,
       action: 'invite_sent',
-      performed_by: userId,
-      meta: { code, identity_hint: nodeName },
+      metadata: { code, identity_hint: nodeName },
     }).then(() => {/* fire-and-forget — audit failure must not block the invite flow */ })
 
     return { ...data, link: `${getOrigin()}/join/${(data as any).code}` }

@@ -1333,6 +1333,14 @@ export default function FamilyGraphApp() {
     // Normalize stored name — collapses extra whitespace, preserves casing
     const storedName = normalizeStoredName(name)
 
+    // Hard guard: exact-name duplicate check (same protection as AddMemberDialog).
+    // The SpeedWizard calls onQuickAdd directly without its own duplicate check,
+    // so this is the only safety net for wizard-submitted names.
+    const exactDup = findExactNameMatch(members, storedName)
+    if (exactDup) {
+      throw new Error(`"${storedName}" is already in your family tree. To add someone with this name, use the full Add Member form for more options.`)
+    }
+
     // ── Spouse gender inference ────────────────────────────────────────────────
     // If adding a spouse and the user didn't explicitly pick a gender, infer the
     // opposite of the anchor's gender. Never overwrite an explicit selection.

@@ -76,6 +76,10 @@ export async function GET(
     .select('id, name, relationship, generation, birth_year, gender')
     .eq('family_id', invite.family_id)
     .eq('is_claimed', false)
+    // Exclude soft-deleted nodes — the admin client bypasses RLS, so without this
+    // archived nodes would surface as claimable candidates and the claim would
+    // then fail with NODE_ARCHIVED.
+    .is('deleted_at', null)
     .order('generation', { ascending: true })
     .limit(30)
 
@@ -122,7 +126,8 @@ async function fetchNodePreview(
     .from('family_members')
     .select('id, name, birth_year, relationship, gender, parent_ids')
     .eq('id', nodeId)
-    .single()
+    .is('deleted_at', null)
+    .maybeSingle()
   if (!node) {
     console.warn('[unclaimed] nodePreview: node not found for nodeId:', nodeId, '— invite may reference a deleted node')
     return null

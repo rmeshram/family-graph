@@ -27,11 +27,15 @@ export type ConflictType =
   | 'too_many_parents'
   | 'cycle_detected'
   | 'birth_year_gap'
+  | 'birth_year_impossible'
   | 'self_parent'
   | 'self_spouse'
   | 'unidirectional_spouse'
   | 'duplicate_identity'
   | 'generation_mismatch'
+  | 'child_as_spouse'
+  | 'spouse_generation_mismatch'
+  | 'conflicting_parentage'
 
 export interface PendingConflict {
   id: string
@@ -154,7 +158,7 @@ export interface FamilyMember {
   complexion?: 'fair' | 'wheatish' | 'dusky' | 'dark'
   bloodGroup?: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-'
   disability?: string  // Full disclosure for matrimony
-  maritalStatus?: 'never_married' | 'divorced' | 'widowed' | 'separated'
+  maritalStatus?: 'never_married' | 'married' | 'divorced' | 'widowed' | 'separated'
 
   // Astrological (User enters manually - no API integration)
   timeOfBirth?: string  // HH:mm format

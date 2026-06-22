@@ -3,12 +3,25 @@
  *
  * Detects and fixes relationship inconsistencies across the family graph.
  * Rules implemented:
- *  1. Duplicate detection (name similarity, shared parents/spouse, birth year proximity)
- *  2. Spouse validation (bidirectional, no duplicates, marital-status coherence)
- *  3. Parent validation (generation ordering, sibling-parent conflict, spouse-child conflict)
- *  4. Generation recalculation (BFS from roots)
- *  5. Family integrity checks (circular refs, self-parent, self-spouse, duplicate IDs)
- *  6. Missing relationship suggestions (single-parent with known spouse)
+ *  1.  Duplicate member-ID check
+ *  2.  Self-parent / self-spouse / duplicate IDs in arrays
+ *  2b. Too-many-parents (> 2 biological parents)
+ *  3.  Dangling references (parentId / spouseId → deleted/missing node)
+ *  4.  Spouse bidirectionality
+ *  5.  Spouse-as-parent (P is both parent and spouse of same person)
+ *  5b. Child-as-spouse (A listed as spouse of B, but B lists A as a parent)
+ *  6.  maritalStatus coherence
+ *  6b. Spouse generation mismatch (> 2 generations apart)
+ *  7.  Parent → generation ordering (parent gen < child gen)
+ *  7b. Birth year validity (parent born before child, min/max age gap)
+ *  8.  Sibling-as-parent conflict
+ *  9.  Circular reference detection (DFS)
+ *  10. Generation recalculation (BFS from roots)
+ *  11. Duplicate member detection (name + structural signals)
+ *  12. Missing second parent / spouse suggestions
+ *  13. In-law-as-child structural type confusion
+ *  13b. Cross-cluster conflicting parentage (generic)
+ *  14. Orphan node detection (no parents, no spouses, no children)
  */
 
 import { FamilyMember } from './types'
@@ -90,6 +103,15 @@ function intersect<T>(a: T[], b: T[]): T[] {
 function dedup<T>(arr: T[]): T[] {
   return [...new Set(arr)]
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/** Minimum years between parent's birth and child's birth */
+const MIN_PARENT_CHILD_YEARS = 12
+/** Years gap > this triggers a birth_year_gap warning (not hard error) */
+const MAX_PARENT_CHILD_YEARS = 80
+/** Spouse generation difference > this is flagged as suspicious */
+const SPOUSE_GEN_TOLERANCE = 2
 
 // ── Main engine ───────────────────────────────────────────────────────────────
 
@@ -216,6 +238,36 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
     }
   }
 
+  // ── 2b. Too many parents (> 2) ───────────────────────────────────────────
+  // A person can have at most 2 biological parents. More than 2 is a data error
+  // (often caused by accidentally adding a step-parent or in-law as a parent).
+  // Auto-fix: trim to first 2 parents (low confidence — user must verify).
+
+  for (const m of cleaned) {
+    if (m.parentIds.length > 2) {
+      issues.push({
+        id: issId(),
+        severity: 'error',
+        type: 'too_many_parents',
+        affectedIds: [m.id, ...m.parentIds],
+        description:
+          `${m.name} (${m.id}) has ${m.parentIds.length} parents listed. ` +
+          `A person can have at most 2 biological parents. ` +
+          `Additional parents may be step-parents or in-laws that should be connected via a different relationship type.`,
+      })
+      const old = [...m.parentIds]
+      m.parentIds = m.parentIds.slice(0, 2)
+      fixes.push({
+        memberId: m.id,
+        memberName: m.name,
+        issue: 'too_many_parents — trimmed to first 2 (verify step-parents separately)',
+        old_value: old,
+        new_value: m.parentIds,
+        confidence_score: 60,
+      })
+    }
+  }
+
   // ── 3. Dangling references (parentId / spouseId points to non-existent ID) ─
 
   for (const m of cleaned) {
@@ -296,15 +348,8 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
   // ── 5. Spouse-as-parent check ────────────────────────────────────────────
   // If A.spouseIds contains P AND A.parentIds also contains P, P is both a
   // parent AND a spouse — an impossible structural contradiction.
-  // Most common cause: data entry error where someone's parent ID was
-  // accidentally added to spouseIds (e.g. the family-tree creator clicked the
-  // wrong member when wiring the spouse relationship).
-  //
   // Auto-fix: remove P from spouseIds. The parentIds entry is more likely
-  // correct because parents are typically added before spouses. If the user
-  // actually meant to wire a cross-family affinity (step-parent who remarried
-  // etc.) they can re-add via explicit action — but this edge case is
-  // astronomically rarer than a simple click error.
+  // correct because parents are typically added before spouses.
 
   for (const m of cleaned) {
     for (const sid of m.spouseIds) {
@@ -333,11 +378,45 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
     }
   }
 
+  // ── 5b. Child-as-spouse check ────────────────────────────────────────────
+  // If A.spouseIds includes B AND B.parentIds includes A:
+  // A is listed as a spouse of B, but B treats A as a parent — structurally impossible.
+  // This is the inverse of rule 5: caught when iterating from the spouse's perspective.
+  // Fix: remove A from B.parentIds (the spouse link is the correct relationship).
+
+  for (const m of cleaned) {
+    for (const sid of m.spouseIds) {
+      const spouse = byId.get(sid)
+      if (!spouse) continue
+      if (spouse.parentIds.includes(m.id)) {
+        issues.push({
+          id: issId(),
+          severity: 'error',
+          type: 'child_as_spouse',
+          affectedIds: [m.id, sid],
+          description:
+            `${m.name} (${m.id}) is listed as a spouse of ${spouse.name} (${sid}), ` +
+            `but ${spouse.name} also lists ${m.name} as a parent — a parent cannot also be a spouse. ` +
+            `Removing ${m.name} from ${spouse.name}'s parentIds.`,
+        })
+        const old = [...spouse.parentIds]
+        spouse.parentIds = spouse.parentIds.filter(pid => pid !== m.id)
+        fixes.push({
+          memberId: spouse.id,
+          memberName: spouse.name,
+          issue: 'child_as_spouse — removed spouse from parentIds',
+          old_value: old,
+          new_value: spouse.parentIds,
+          confidence_score: 95,
+        })
+      }
+    }
+  }
+
   // ── 6. maritalStatus coherence ───────────────────────────────────────────
-  // Note: the TypeScript type does NOT include 'married' as a valid value.
-  // Valid values are: 'never_married' | 'divorced' | 'widowed' | 'separated'
-  // If a member has spouseIds and maritalStatus is explicitly 'never_married',
-  // that is a contradiction. We clear the invalid value.
+  // If a member has spouseIds and maritalStatus is 'never_married', correct it
+  // to 'married' — the DB constraint (migration 044) blocks 'never_married' with
+  // active spouse links.
 
   for (const m of cleaned) {
     if (m.spouseIds.length > 0 && m.maritalStatus === 'never_married') {
@@ -346,18 +425,51 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
         severity: 'warning',
         type: 'marital_status_contradiction',
         affectedIds: [m.id],
-        description: `${m.name} (${m.id}) has spouseIds but maritalStatus is 'never_married'. Status cleared to undefined.`,
+        description: `${m.name} (${m.id}) has spouseIds but maritalStatus is 'never_married'. Corrected to 'married'.`,
       })
       const old = m.maritalStatus
-      m.maritalStatus = undefined
+      m.maritalStatus = 'married'
       fixes.push({
         memberId: m.id,
         memberName: m.name,
         issue: 'marital_status_contradiction',
         old_value: old,
-        new_value: undefined,
+        new_value: 'married',
         confidence_score: 95,
       })
+    }
+  }
+
+  // ── 6b. Spouse generation mismatch ──────────────────────────────────────
+  // Two spouses more than SPOUSE_GEN_TOLERANCE generations apart is structurally
+  // implausible and usually indicates a parent/child edge that was accidentally
+  // entered as a spouse edge. Flagged as warning (rare legitimate cases: very
+  // large age gaps in historical records). Only emit once per pair.
+
+  const spouseGenPairsChecked = new Set<string>()
+
+  for (const m of cleaned) {
+    for (const sid of m.spouseIds) {
+      const spouse = byId.get(sid)
+      if (!spouse) continue
+      const pairKey = [m.id, sid].sort().join('|')
+      if (spouseGenPairsChecked.has(pairKey)) continue
+      spouseGenPairsChecked.add(pairKey)
+
+      const genDiff = Math.abs(m.generation - spouse.generation)
+      if (genDiff > SPOUSE_GEN_TOLERANCE) {
+        issues.push({
+          id: issId(),
+          severity: 'warning',
+          type: 'spouse_generation_mismatch',
+          affectedIds: [m.id, sid],
+          description:
+            `${m.name} (gen ${m.generation}) and ${spouse.name} (gen ${spouse.generation}) ` +
+            `are listed as spouses but are ${genDiff} generation(s) apart. ` +
+            `This may indicate a data-entry error where a parent/child edge was recorded as a spouse. ` +
+            `Please verify this is correct before dismissing.`,
+        })
+      }
     }
   }
 
@@ -377,6 +489,54 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
           description: `${m.name} (gen ${m.generation}) has parent ${parent.name} (gen ${parent.generation}). A parent must be in a lower generation than the child.`,
         })
         // Flag only — generation recalculation pass below will handle this
+      }
+    }
+  }
+
+  // ── 7b. Birth year validity — parent-child order ─────────────────────────
+  // Validates the biological plausibility of parent-child birth years:
+  //   • Parent born AFTER child: impossible
+  //   • Age gap < MIN_PARENT_CHILD_YEARS: biologically impossible
+  //   • Age gap > MAX_PARENT_CHILD_YEARS: warning (unusual but possible in history)
+
+  for (const m of cleaned) {
+    for (const pid of m.parentIds) {
+      const parent = byId.get(pid)
+      if (!parent?.birthYear || !m.birthYear) continue
+      const ageDiff = m.birthYear - parent.birthYear
+      if (ageDiff < 0) {
+        issues.push({
+          id: issId(),
+          severity: 'error',
+          type: 'birth_year_impossible',
+          affectedIds: [m.id, pid],
+          description:
+            `${parent.name} (b.${parent.birthYear}) is listed as a parent of ` +
+            `${m.name} (b.${m.birthYear}), but was born AFTER the child — impossible. ` +
+            `Verify whether this is a parent-child edge or the birth years are swapped.`,
+        })
+      } else if (ageDiff < MIN_PARENT_CHILD_YEARS) {
+        issues.push({
+          id: issId(),
+          severity: 'error',
+          type: 'birth_year_impossible',
+          affectedIds: [m.id, pid],
+          description:
+            `${parent.name} (b.${parent.birthYear}) is listed as a parent of ` +
+            `${m.name} (b.${m.birthYear}), only ${ageDiff} year(s) older — biologically impossible (minimum ${MIN_PARENT_CHILD_YEARS} years required). ` +
+            `Check whether these should be siblings instead.`,
+        })
+      } else if (ageDiff > MAX_PARENT_CHILD_YEARS) {
+        issues.push({
+          id: issId(),
+          severity: 'warning',
+          type: 'birth_year_gap',
+          affectedIds: [m.id, pid],
+          description:
+            `${parent.name} (b.${parent.birthYear}) is listed as a parent of ` +
+            `${m.name} (b.${m.birthYear}), ${ageDiff} years older — unusually large age gap. ` +
+            `Verify this relationship is correct (possible grandparent-as-parent data entry error).`,
+        })
       }
     }
   }
@@ -465,6 +625,9 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
     computedGen.set(r.id, r.generation)
   }
 
+  // visitedBfs prevents re-queuing nodes with two parents (diamond graphs) from causing O(V+E²) work.
+  const visitedBfs = new Set<string>(roots.map(r => r.id))
+
   while (queue.length > 0) {
     const { id, gen } = queue.shift()!
     for (const cid of children.get(id) ?? []) {
@@ -472,13 +635,18 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
       const expected = gen + 1
       if (existing === undefined) {
         computedGen.set(cid, expected)
-        queue.push({ id: cid, gen: expected })
+        if (!visitedBfs.has(cid)) {
+          visitedBfs.add(cid)
+          queue.push({ id: cid, gen: expected })
+        }
       } else if (existing !== expected) {
-        // Conflict — keep the max (deepest possible)
         const resolved = Math.max(existing, expected)
         if (resolved !== existing) {
           computedGen.set(cid, resolved)
-          queue.push({ id: cid, gen: resolved })
+          if (!visitedBfs.has(cid)) {
+            visitedBfs.add(cid)
+            queue.push({ id: cid, gen: resolved })
+          }
         }
       }
     }
@@ -618,19 +786,10 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
   // The most common cause: someone adds a brother-in-law (or sister-in-law) by
   // filling in the in-law's parents rather than wiring a spouse edge.
   //
-  // Real-world example that triggered this rule:
-  //   Shubham.parentIds = [PL Mishram, Pushpa Mishram]
-  //   Shubham.spouseIds = [Sushita Mishram]
-  //   Sushita.parentIds = [PL Mishram, Pushpa Mishram]
-  // → Shubham appears as PL+Pushpa's child AND as Sushita's sibling AND husband.
-  //
   // Auto-fix (100 % confidence) when ALL of A's parentIds overlap with the
   // spouse's parentIds — i.e. A has NO OTHER parents outside the in-law set.
   // Flag-only (no auto-fix) when the overlap is partial (unusual adoption / step
   // parent scenario that needs human review).
-  //
-  // After removing the bad parentIds we also ensure the spouse link is
-  // bidirectional (same as rule 4).
 
   for (const m of cleaned) {
     if (m.parentIds.length === 0 || m.spouseIds.length === 0) continue
@@ -711,36 +870,78 @@ export function normalizeFamilyTree(members: FamilyMember[]): NormalizationResul
     }
   }
 
-  // ── 13b. Conflicting parentage flag (narrative vs structural) ────────────
-  // Specific to this dataset: Priya Sharma (g2-2) is listed as a Mishra by parentIds
-  // but the affiliated Rao family narrative claims she was "Priya Rao".
-  // This creates two incompatible biological parent sets.
+  // ── 13b. Cross-cluster conflicting parentage (generic) ───────────────────
+  // Detects when a member's parentIds span multiple affiliated family clusters.
+  // A person can only have one biological family of origin: if Parent P1 belongs
+  // to affiliated cluster "Rao" and Parent P2 belongs to the core tree, the child
+  // is biologically impossible — they cannot have parents from two unrelated families.
+  //
+  // This generalises the hardcoded Priya/Rao scenario: any cross-cluster
+  // parentage conflict is caught, regardless of which families are involved.
+  //
+  // Flag-only (no auto-fix): requires manual resolution because only the family
+  // admin knows which parent set is correct (natal vs. in-law misclassification).
 
-  const priya = byId.get('g2-2')
-  const nitinRao = byId.get('aff-rao-3')
-  const ashokMishra = byId.get('g2-5')
+  for (const m of cleaned) {
+    if (m.parentIds.length < 2) continue
 
-  if (priya && nitinRao && ashokMishra) {
-    const nitinClaimsToBeShyamsChild = nitinRao.parentIds.includes('aff-rao-1')
-    const priyaHasMishraParents =
-      priya.parentIds.includes('g1-3') && priya.parentIds.includes('g1-4')
-    const nitinBioClaimsToBePrivasBrother =
-      (nitinRao.bio ?? '').toLowerCase().includes("priya's brother")
+    const clusterMap = new Map<string, string[]>()
+    for (const pid of m.parentIds) {
+      const parent = byId.get(pid)
+      if (!parent) continue
+      const cluster = parent.affiliatedFamilyId ?? '__core__'
+      if (!clusterMap.has(cluster)) clusterMap.set(cluster, [])
+      clusterMap.get(cluster)!.push(pid)
+    }
 
-    if (nitinClaimsToBeShyamsChild && priyaHasMishraParents && nitinBioClaimsToBePrivasBrother) {
+    if (clusterMap.size > 1) {
+      const clusterDesc = [...clusterMap.entries()]
+        .map(([cluster, ids]) => {
+          const names = ids.map(pid => byId.get(pid)?.name ?? pid).join(', ')
+          const clusterLabel =
+            cluster === '__core__'
+              ? 'core family'
+              : `affiliated family "${byId.get(ids[0])?.affiliatedFamilyName ?? cluster}"`
+          return `${clusterLabel}: [${names}]`
+        })
+        .join(' vs ')
+
       issues.push({
         id: issId(),
         severity: 'error',
         type: 'conflicting_parentage',
-        affectedIds: ['g2-2', 'aff-rao-1', 'aff-rao-2', 'g1-3', 'g1-4', 'aff-rao-3'],
+        affectedIds: [m.id, ...m.parentIds],
         description:
-          'CONFLICTING PARENTAGE — Priya Sharma (g2-2) has two incompatible parent sets: ' +
-          '(A) Core tree: parentIds = [g1-3 Ramdas Mishra, g1-4 Pushpa Devi Mishra], with Ashok Mishra (g2-5) as her brother. ' +
-          '(B) Affiliated Rao family narrative: aff-rao-1 (Shyam Rao) and aff-rao-2 (Usha Rao) are described as her parents, with Nitin Rao (aff-rao-3) as her brother. ' +
-          'A person cannot have two biological parent pairs. ' +
-          'Resolution options: (1) If Priya is indeed Priya Rao, update her parentIds to [aff-rao-1, aff-rao-2] and remove the sibling relationship with Ashok Mishra. ' +
-          '(2) If Priya is Priya Mishra, re-label the Rao family affiliation as Vikram Sharma\'s in-law family (not Priya\'s natal family). ' +
-          'This requires manual user decision — not auto-fixed.',
+          `${m.name} (${m.id}) has parents from different family clusters — contradictory biological origin. ` +
+          `${clusterDesc}. ` +
+          `A person can only have one biological family of origin. ` +
+          `Resolution options: (1) If the affiliated-family parents are correct, remove the core-family parents and update the sibling relationships accordingly. ` +
+          `(2) If the core-family parents are correct, reclassify the affiliated family connection as an in-law relationship (not a natal parent). ` +
+          `This requires manual admin decision and cannot be auto-fixed.`,
+      })
+    }
+  }
+
+  // ── 14. Orphan node detection ────────────────────────────────────────────
+  // A node with no parents, no spouses, and no children (no one references it
+  // as a parent) is completely disconnected from the family graph.
+  // Emitted as a suggestion (not error) because standalone nodes may be
+  // intentionally added before relationships are wired.
+
+  const isParent = new Set<string>()
+  for (const m of cleaned) {
+    for (const pid of m.parentIds) isParent.add(pid)
+  }
+
+  for (const m of cleaned) {
+    if (m.parentIds.length === 0 && m.spouseIds.length === 0 && !isParent.has(m.id)) {
+      suggestions.push({
+        type: 'orphan_node',
+        affectedIds: [m.id],
+        description:
+          `${m.name} (${m.id}) has no parents, no spouses, and no children. ` +
+          `This node is completely disconnected from the family graph. ` +
+          `Connect them to the tree by adding at least one relationship (parent, spouse, or child).`,
       })
     }
   }

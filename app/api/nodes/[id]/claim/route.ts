@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { ClaimStatus } from '@/lib/claim-state-machine'
 import { levenshtein } from '@/lib/utils'
+import { unionMemberIds, remapMemberIds } from '@/lib/graph-merge'
 
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
@@ -164,7 +165,10 @@ export async function POST(
     // The admin client bypasses RLS, so we must enforce this explicitly.
     const { data: node, error: nodeErr } = await admin
       .from('family_members')
-      .select('id, name, birth_year, claim_status, is_deceased, family_id, deleted_at')
+      // parent_ids/spouse_ids are required by the post-claim orphan check below —
+      // without them the check read `undefined` and flagged every claimed node as
+      // an orphan, surfacing a spurious "add a relative" prompt.
+      .select('id, name, birth_year, claim_status, is_deceased, family_id, deleted_at, parent_ids, spouse_ids')
       .eq('id', nodeId)
       .single()
 
@@ -934,17 +938,34 @@ export async function POST(
           ])
 
           if (oldNodeEdges && newNodeEdges) {
-            const mergedParents = [...new Set([
-              ...((newNodeEdges as any).parent_ids ?? [] as string[]),
-              ...((oldNodeEdges as any).parent_ids ?? [] as string[]),
-            ])].filter((id: string) => id !== nodeId && id !== profileMemberId)
+            const mergedParents = unionMemberIds(
+              (newNodeEdges as any).parent_ids,
+              (oldNodeEdges as any).parent_ids,
+              [nodeId, profileMemberId],
+            )
 
-            const mergedSpouses = [...new Set([
-              ...((newNodeEdges as any).spouse_ids ?? [] as string[]),
-              ...((oldNodeEdges as any).spouse_ids ?? [] as string[]),
-            ])].filter((id: string) => id !== nodeId && id !== profileMemberId)
+            const mergedSpouses = unionMemberIds(
+              (newNodeEdges as any).spouse_ids,
+              (oldNodeEdges as any).spouse_ids,
+              [nodeId, profileMemberId],
+            )
 
-            const mergedGeneration: number = (newNodeEdges as any).generation ?? (oldNodeEdges as any).generation
+            // Recompute generation from merged parents — copying as-is would preserve
+            // a stale value if the two nodes had different generations set before the claim.
+            let mergedGeneration: number = Math.max(
+              (newNodeEdges as any).generation ?? 0,
+              (oldNodeEdges as any).generation ?? 0,
+            )
+            if (mergedParents.length > 0) {
+              const { data: parentRecs } = await admin
+                .from('family_members')
+                .select('generation')
+                .in('id', mergedParents)
+              const parentGens = (parentRecs as any[])
+                ?.map((p: any) => p.generation)
+                .filter((g: any) => g !== null && g !== undefined) ?? []
+              if (parentGens.length > 0) mergedGeneration = Math.max(...parentGens) + 1
+            }
 
             await admin.from('family_members')
               .update({ parent_ids: mergedParents, spouse_ids: mergedSpouses, generation: mergedGeneration } as any)
@@ -961,11 +982,13 @@ export async function POST(
             for (const m of (membersToRemap ?? []) as any[]) {
               const pids: string[] = m.parent_ids ?? []
               const sids: string[] = m.spouse_ids ?? []
-              const newPids = pids.map((id: string) => id === profileMemberId ? nodeId : id)
-              const newSids = sids.map((id: string) => id === profileMemberId ? nodeId : id)
+              const newPids = remapMemberIds(pids, profileMemberId, nodeId)
+              const newSids = remapMemberIds(sids, profileMemberId, nodeId)
+              // Use JSON.stringify for correct change detection — the array length may
+              // differ after remapMemberIds deduplicates (e.g. [primary, dup] → [primary]).
               if (
-                newPids.some((id: string, i: number) => id !== pids[i]) ||
-                newSids.some((id: string, i: number) => id !== sids[i])
+                JSON.stringify(newPids) !== JSON.stringify(pids) ||
+                JSON.stringify(newSids) !== JSON.stringify(sids)
               ) {
                 await admin.from('family_members')
                   .update({ parent_ids: newPids, spouse_ids: newSids } as any)
@@ -973,8 +996,12 @@ export async function POST(
               }
             }
 
-            // Delete the old duplicate self-node
-            await admin.from('family_members').delete().eq('id', profileMemberId)
+            // Soft-delete the old duplicate self-node (consistent with merge route RF-02).
+            // Hard DELETE would cascade-destroy audit logs and any cached references.
+            // Soft-delete keeps it archived, invisible via RLS, and reversible by an admin.
+            await admin.from('family_members')
+              .update({ deleted_at: new Date().toISOString(), deleted_by: user.id } as any)
+              .eq('id', profileMemberId)
 
             // Update any profiles still pointing to the old node → new node
             await admin.from('profiles')

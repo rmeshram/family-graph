@@ -136,6 +136,9 @@ export async function POST(
       claimed_by_user_id: null,
       claim_status: 'unclaimed',
       claimed_at: null,
+      // Clear any guardian binding too — otherwise a guardian-claimed minor node
+      // would keep guardian_user_id pointing at the account that just unclaimed it.
+      guardian_user_id: null,
     } as any)
     .eq('id', nodeId)
 
