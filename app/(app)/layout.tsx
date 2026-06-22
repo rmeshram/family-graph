@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { MobileBottomNav } from '@/components/mobile-bottom-nav'
 import { useAuth } from '@/hooks/use-auth'
 import { DEMO_SESSION_KEY } from '@/hooks/use-demo-mode'
 
@@ -191,11 +192,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {!focusMode && <AppSidebar />}
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0 pb-14 lg:pb-0">
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
       </div>
+      {!focusMode && <MobileBottomNav />}
     </div>
   )
 }

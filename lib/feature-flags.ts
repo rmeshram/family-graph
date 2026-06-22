@@ -49,6 +49,8 @@ export const FEATURE_FLAGS = {
   enableEmailPasswordAuth: true,
   /** Matrimony biodata generation & matching page (/biodata). Disabled until the matching pipeline is ready. */
   enableBiodata: false,
+  /** Cross-family matrimony match discovery feed (/matches). Requires matrimony_interests migration 046. */
+  enableMatrimonyFeed: true,
   /** Hierarchical family tree view — screenshot-faithful layout (grandparents → parents → You → children).
    *  Includes ghost-slot onboarding guide for 2-minute family setup.
    *  Set to true to show the "Tree" tab in the dashboard view switcher. */
@@ -61,6 +63,66 @@ export const FEATURE_FLAGS = {
   enableOrgChartView: false,
   /** Events calendar page. Low value for MVP — re-enable once event RSVP + notifications are wired. */
   enableEvents: false,
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SPEC §2.1 — MVP flags to add (per docs/SPEC.md). Default OFF until built.
+  // ─────────────────────────────────────────────────────────────────────────
+  /** Payment processing via Stripe. Requires STRIPE_SECRET_KEY + webhook. Revenue — V2. */
+  enableStripePayments: false,
+  /** Premium matrimony paywall. Free at launch for traction — flip with enableStripePayments. */
+  enableMatrimonyPremium: false,
+  /** "Share on WhatsApp" button on biodata page. Uses wa.me deep link — no Business API needed. */
+  enableBiodataWhatsappShare: false,
+  /** Community matrimony pools. */
+  enableCommunityPools: false,
+  /** Show matrimony matches outside the user's own family. */
+  enableCrossFamilyMatching: false,
+  /** WhatsApp Business API (Meta) notifications. Requires WhatsApp Business API credentials. */
+  enableWhatsAppNotifications: false,
+  /** Trust score computation + display on profiles/match cards (SPEC §5.3). */
+  enableTrustScore: false,
+  /** Kundli PDF via AstroSage API. Requires ASTROSAGE_API_KEY. V3 — post-traction only. */
+  enableKundliIntegration: false,
+  /** Matrimony-first 3-screen onboarding (SPEC §4.3). */
+  enableMatrimonyFirstOnboarding: false,
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SPEC §2.2 — V2 flags (Days 31–90). Default OFF.
+  // ─────────────────────────────────────────────────────────────────────────
+  /** Human matchmaker concierge tier. */
+  enableAssistedMatchmaking: false,
+  /** B2B white-label community OS (Sabha OS). */
+  enableSabhaB2B: false,
+  /** Conversational AI tree builder during onboarding. */
+  enableAiOnboarding: false,
+  /** AI-generated match compatibility narrative text. */
+  enableAiCompatibilityNarrative: false,
+  /** "How you're connected" human-readable relationship path narrative. */
+  enableRelationshipPathNarrative: false,
+  /** Hindi UI and AI responses. */
+  enableHindiLanguage: false,
+  /** Tamil, Telugu, Bengali, Marathi UI. */
+  enableRegionalLanguages: false,
+  /** AI nudges to improve biodata completeness. */
+  enableBiodataQualityCoach: false,
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SPEC §2.3 — V3 flags (Month 4+). Default OFF.
+  // ─────────────────────────────────────────────────────────────────────────
+  /** Voice notes, stories, photo memories vault. */
+  enableMemoryVault: false,
+  /** Family milestone timeline (migration 017 exists). */
+  enableTimeline: false,
+  /** Property/inheritance tracking layer. */
+  enableEstatePlanning: false,
+  /** Pakistan, Bangladesh, Sri Lanka market expansion. */
+  enableDiasporaExpansion: false,
+  /** Health history on graph nodes. */
+  enableFamilyHealthRecords: false,
+  /** Native iOS/Android app (vs PWA). */
+  enableNativeApp: false,
+  /** Aadhaar / identity verification (SPEC §23 Phase 4). */
+  enableIdentityVerification: false,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS

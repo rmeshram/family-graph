@@ -13,3 +13,6 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+# Auto-generated normalization/backfill diagnostic reports — no ROI, never commit
+BACKFILL_NORMALIZE_REPORT_*.json
+CORRECTED_FAMILY_MEMBERS_*.json
