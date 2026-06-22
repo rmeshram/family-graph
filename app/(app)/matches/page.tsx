@@ -12,6 +12,7 @@ import {
   ArrowLeft, Heart, X, MessageCircle, Sparkles,
   MapPin, Briefcase, GraduationCap, Users, CheckCircle2,
   Send, ChevronLeft, ChevronRight, RefreshCw, Loader2, Inbox,
+  Search, SlidersHorizontal,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -154,6 +155,19 @@ export default function MatchesPage() {
   const [myGender, setMyGender] = useState<string | null>(null)
   const [inboxCount, setInboxCount] = useState(0)
 
+  /* ── search ── */
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchGotra, setSearchGotra] = useState("")
+  const [searchCity, setSearchCity] = useState("")
+  const [searchAgeMin, setSearchAgeMin] = useState("")
+  const [searchAgeMax, setSearchAgeMax] = useState("")
+  const [searchResults, setSearchResults] = useState<BiodataProfile[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+
+  const hasFilter = searchQuery.length >= 2 || !!searchGotra || !!searchCity || !!searchAgeMin || !!searchAgeMax
+  const isSearchActive = searchOpen && hasFilter
+
   const isDemoMode = forceDemo || (!authLoading && !user)
 
   /* load profiles */
@@ -248,6 +262,54 @@ export default function MatchesPage() {
   useEffect(() => {
     if (isDemoMode || !authLoading) load()
   }, [authLoading, isDemoMode, load])
+
+  /* ── search logic ── */
+  const doSearch = useCallback(async () => {
+    if (!hasFilter) { setSearchResults([]); return }
+    if (isDemoMode) {
+      const q = searchQuery.toLowerCase()
+      const filtered = (sampleMatrimonyProfiles as unknown as BiodataProfile[]).filter(p =>
+        (!searchQuery || p.name.toLowerCase().includes(q)) &&
+        (!searchGotra || p.gotra?.toLowerCase().includes(searchGotra.toLowerCase())) &&
+        (!searchCity || p.current_place?.toLowerCase().includes(searchCity.toLowerCase()))
+      )
+      setSearchResults(filtered)
+      return
+    }
+    if (!familyId) return
+    setSearchLoading(true)
+    try {
+      let q = (supabase.from("family_members") as any)
+        .select(`id, name, gender, birth_year, current_place, gotra, religion, caste,
+                 occupation, occupation_category, education_level, education_field,
+                 annual_income_range, height_cm, marital_status, family_type, manglik,
+                 biodata_photo_url, residency_status, current_country, partner_expectations,
+                 family_id`)
+        .eq("is_biodata_visible", true)
+        .eq("is_alive", true)
+        .neq("family_id", familyId)
+        .limit(40)
+      if (searchQuery.trim().length >= 2) q = q.ilike("name", `%${searchQuery.trim()}%`)
+      if (searchGotra.trim()) q = q.ilike("gotra", `%${searchGotra.trim()}%`)
+      if (searchCity.trim()) q = q.ilike("current_place", `%${searchCity.trim()}%`)
+      if (searchAgeMin) q = q.lte("birth_year", CURRENT_YEAR - parseInt(searchAgeMin))
+      if (searchAgeMax) q = q.gte("birth_year", CURRENT_YEAR - parseInt(searchAgeMax))
+      const { data, error: searchErr } = await q
+      if (searchErr) throw searchErr
+      setSearchResults((data ?? []) as BiodataProfile[])
+    } catch (e) {
+      console.warn("[search] failed:", e)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }, [supabase, familyId, isDemoMode, hasFilter, searchQuery, searchGotra, searchCity, searchAgeMin, searchAgeMax])
+
+  useEffect(() => {
+    if (!searchOpen) return
+    const t = setTimeout(doSearch, 350)
+    return () => clearTimeout(t)
+  }, [searchOpen, doSearch])
 
   /* dismiss toast */
   useEffect(() => {
@@ -401,6 +463,13 @@ export default function MatchesPage() {
             </Button>
           </div>
         )}
+        {/* search toggle */}
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8"
+          onClick={() => { setSearchOpen(o => !o); if (searchOpen) { setSearchQuery(""); setSearchGotra(""); setSearchCity(""); setSearchAgeMin(""); setSearchAgeMax("") } }}
+        >
+          {searchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+        </Button>
         {/* inbox link */}
         <Link href="/matches/inbox">
           <Button variant="ghost" size="icon" className="h-8 w-8 relative">
@@ -417,7 +486,99 @@ export default function MatchesPage() {
         </Link>
       </header>
 
-      {/* card area */}
+      {/* search panel */}
+      <AnimatePresence>
+        {searchOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="overflow-hidden border-b border-gray-100 bg-white shrink-0"
+          >
+            <div className="px-4 sm:px-6 py-3 space-y-2.5">
+              {/* name */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by name…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-[14px] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {/* row 2 — gotra + city */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Gotra (e.g. Kashyap)"
+                  value={searchGotra}
+                  onChange={e => setSearchGotra(e.target.value)}
+                  className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[13px] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="City / place"
+                  value={searchCity}
+                  onChange={e => setSearchCity(e.target.value)}
+                  className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[13px] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {/* row 3 — age range */}
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <span className="text-[12px] text-gray-500 shrink-0">Age:</span>
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={searchAgeMin}
+                  onChange={e => setSearchAgeMin(e.target.value)}
+                  className="w-16 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[13px] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-[12px] text-gray-400">–</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={searchAgeMax}
+                  onChange={e => setSearchAgeMax(e.target.value)}
+                  className="w-16 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[13px] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* search results */}
+      {isSearchActive && (
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 space-y-2">
+          {searchLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <Search className="h-8 w-8 text-gray-300" />
+              <p className="text-sm text-gray-500">No profiles found. Try different filters.</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-[11px] text-gray-400 font-medium pb-1">{searchResults.length} result{searchResults.length !== 1 ? "s" : ""}</p>
+              {searchResults.map(p => (
+                <SearchResultRow
+                  key={p.id}
+                  profile={p}
+                  actioned={actioned.has(p.id)}
+                  onConnect={() => setConnectTarget(p)}
+                  onLike={async () => { await recordAction(p.id, "like"); setToast({ msg: "Liked!", type: "like" }) }}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+      {!isSearchActive && (
       <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
         <AnimatePresence mode="wait" custom={dir}>
           {current ? (
@@ -476,6 +637,7 @@ export default function MatchesPage() {
           )}
         </AnimatePresence>
       </div>
+      )}
 
       {/* toast */}
       <AnimatePresence>
@@ -719,6 +881,66 @@ function Chip({ icon, label }: { icon: React.ReactNode; label: string }) {
     >
       <span style={{ color: "#B45309" }}>{icon}</span>
       <span className="truncate">{label}</span>
+    </div>
+  )
+}
+
+/* ── search result row ── */
+function SearchResultRow({
+  profile,
+  actioned,
+  onConnect,
+  onLike,
+}: {
+  profile: BiodataProfile
+  actioned: boolean
+  onConnect: () => void
+  onLike: () => void
+}) {
+  const age = profile.birth_year ? CURRENT_YEAR - profile.birth_year : null
+  const initials = profile.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+  return (
+    <div className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 px-4 py-3 shadow-sm">
+      {/* avatar */}
+      <div
+        className="h-12 w-12 shrink-0 rounded-xl flex items-center justify-center text-base font-bold"
+        style={{ background: "#EFF6FF", color: "#1D4ED8" }}
+      >
+        {profile.biodata_photo_url ? (
+          <img src={profile.biodata_photo_url} alt={profile.name} className="h-12 w-12 rounded-xl object-cover" />
+        ) : initials}
+      </div>
+      {/* info */}
+      <div className="flex-1 min-w-0">
+        <p className="text-[14px] font-semibold text-slate-900 truncate">
+          {profile.name}{age ? `, ${age}` : ""}
+        </p>
+        <p className="text-[12px] text-slate-500 truncate">
+          {[profile.gotra && `${profile.gotra} gotra`, profile.current_place, profile.occupation].filter(Boolean).join(" · ")}
+        </p>
+        {profile.education_level && (
+          <p className="text-[11px] text-slate-400 truncate">{fmtEdu(profile.education_level)}</p>
+        )}
+      </div>
+      {/* actions */}
+      {actioned ? (
+        <span className="text-[11px] font-medium text-gray-400 shrink-0">Sent</span>
+      ) : (
+        <div className="flex gap-1.5 shrink-0">
+          <button
+            onClick={onLike}
+            className="h-8 w-8 rounded-xl flex items-center justify-center border border-pink-200 hover:bg-pink-50 transition-colors"
+          >
+            <Heart className="h-3.5 w-3.5 text-pink-500" />
+          </button>
+          <button
+            onClick={onConnect}
+            className="h-8 w-8 rounded-xl flex items-center justify-center border border-blue-200 hover:bg-blue-50 transition-colors"
+          >
+            <MessageCircle className="h-3.5 w-3.5 text-blue-600" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
