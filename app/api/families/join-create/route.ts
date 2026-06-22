@@ -299,8 +299,7 @@ export async function POST(req: NextRequest) {
     .insert({
       family_id: familyId,
       name: displayName.trim(),
-      relationship: relationship ?? 'member',
-      generation: generation ?? 3,
+      generation: parentIds?.length ? (generation ?? 3) : (generation ?? 0),
       is_alive: true,
       parent_ids: parentIds ?? [],
       spouse_ids: spouseIds ?? [],

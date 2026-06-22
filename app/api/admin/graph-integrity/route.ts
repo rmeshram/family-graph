@@ -137,31 +137,62 @@ export async function POST() {
   //    Fetch all live node IDs in this family, then null out references to any not in that set.
   const { data: liveNodes } = await admin
     .from('family_members')
-    .select('id, parent_ids, spouse_ids')
+    .select('id, generation, parent_ids, spouse_ids')
     .eq('family_id', familyId)
     .is('deleted_at', null)
 
   const liveIdSet = new Set((liveNodes ?? []).map((n: any) => n.id as string))
   let danglingParentFixes = 0
   let danglingSpouseFixes = 0
+  let duplicateArrayFixes = 0
+  let selfRefFixes = 0
+  let generationFixes = 0
 
   for (const node of (liveNodes ?? []) as any[]) {
-    const cleanParents = (node.parent_ids ?? []).filter((pid: string) => liveIdSet.has(pid))
-    const cleanSpouses = (node.spouse_ids ?? []).filter((sid: string) => liveIdSet.has(sid))
+    const rawParents: string[] = node.parent_ids ?? []
+    const rawSpouses: string[] = node.spouse_ids ?? []
+    const uniqParents = [...new Set(rawParents)]
+    const uniqSpouses = [...new Set(rawSpouses)]
+    const cleanParents = uniqParents.filter((pid: string) => pid !== node.id && liveIdSet.has(pid))
+    const cleanSpouses = uniqSpouses.filter((sid: string) => sid !== node.id && liveIdSet.has(sid))
 
-    const parentChanged = cleanParents.length !== (node.parent_ids ?? []).length
-    const spouseChanged = cleanSpouses.length !== (node.spouse_ids ?? []).length
+    const parentChanged = cleanParents.length !== rawParents.length
+    const spouseChanged = cleanSpouses.length !== rawSpouses.length
+    const duplicateArraysChanged = uniqParents.length !== rawParents.length || uniqSpouses.length !== rawSpouses.length
+    const selfRefChanged = rawParents.includes(node.id) || rawSpouses.includes(node.id)
 
     if (parentChanged || spouseChanged) {
       const patch: Record<string, unknown> = {}
       if (parentChanged) { patch.parent_ids = cleanParents; danglingParentFixes++ }
       if (spouseChanged) { patch.spouse_ids = cleanSpouses; danglingSpouseFixes++ }
+
+      // Recompute generation from cleaned parent IDs when parents exist.
+      if (cleanParents.length > 0) {
+        const parentRows = (liveNodes ?? []).filter((n: any) => cleanParents.includes(n.id))
+        const parentGenerations = parentRows
+          .map((p: any) => p.generation)
+          .filter((g: unknown): g is number => typeof g === 'number')
+        if (parentGenerations.length > 0) {
+          const nextGen = Math.max(...parentGenerations) + 1
+          if (node.generation !== nextGen) {
+            patch.generation = nextGen
+            generationFixes++
+          }
+        }
+      }
+
       await admin.from('family_members').update(patch as any).eq('id', node.id)
     }
+
+    if (duplicateArraysChanged) duplicateArrayFixes++
+    if (selfRefChanged) selfRefFixes++
   }
 
   repairs.dangling_parent_refs_removed = danglingParentFixes
   repairs.dangling_spouse_refs_removed = danglingSpouseFixes
+  repairs.duplicate_array_entries_fixed = duplicateArrayFixes
+  repairs.self_references_removed = selfRefFixes
+  repairs.generation_recomputed = generationFixes
 
   // 3. Fix one-way spouse links within this family
   //    Re-read after dangling removal so we work with clean data.

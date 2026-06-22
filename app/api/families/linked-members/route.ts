@@ -57,17 +57,20 @@ export async function GET() {
     return NextResponse.json({ linkedMembers: [], linkedFamilies: [] })
   }
 
-  // Collect the other family IDs + junction info
+  // Collect the other family IDs + junction info (both sides of each link)
   const linkedFamilyIds: string[] = []
-  const junctionByFamily: Record<string, string | null> = {}
+  const junctionByFamily: Record<string, string | null> = {}       // MY side (core family junction)
+  const linkedJunctionByFamily: Record<string, string | null> = {} // OTHER side (linked family junction)
 
   for (const link of links) {
     const l = link as any
     const isA = l.family_a_id === myFamilyId
     const otherFamilyId = isA ? l.family_b_id : l.family_a_id
-    const junctionMemberId = isA ? l.junction_member_a : l.junction_member_b
+    const myJunction = isA ? l.junction_member_a : l.junction_member_b
+    const otherJunction = isA ? l.junction_member_b : l.junction_member_a
     linkedFamilyIds.push(otherFamilyId)
-    junctionByFamily[otherFamilyId] = junctionMemberId
+    junctionByFamily[otherFamilyId] = myJunction
+    linkedJunctionByFamily[otherFamilyId] = otherJunction
   }
 
   // Fetch family names and linked members using the service-role client so that
@@ -87,7 +90,8 @@ export async function GET() {
     familyNameMap[(f as any).id] = (f as any).name
   }
 
-  // Fetch all members from linked families (admin client bypasses RLS)
+  // Fetch all members from linked families (admin client bypasses RLS).
+  // Exclude soft-deleted nodes so archived members don't pollute the merged tree.
   const { data: memberRows, error: memberErr } = await admin
     .from('family_members')
     .select(`
@@ -97,7 +101,59 @@ export async function GET() {
       is_deceased, added_at, claimed_by_user_id
     `)
     .in('family_id', linkedFamilyIds)
+    .is('deleted_at', null)
     .order('generation', { ascending: true })
+
+  // Fetch linked-side junction nodes WITHOUT the deleted_at filter so we can
+  // still read their parentIds/spouseIds even when soft-archived.  This lets
+  // us bridge the parent edges onto the core junction node (e.g. Rahul's node
+  // in Shikha's family inherits Sukhdeo/Ratnamala from the Meshram Rahul node
+  // even after the Meshram node was soft-deleted).
+  const linkedJunctionIds = Object.values(linkedJunctionByFamily).filter(Boolean) as string[]
+  const linkedJunctionGenMap: Record<string, number> = {}
+  const linkedJunctionParentIdsMap: Record<string, string[]> = {}
+  const linkedJunctionSpouseIdsMap: Record<string, string[]> = {}
+  if (linkedJunctionIds.length > 0) {
+    const { data: junctionRows } = await admin
+      .from('family_members')
+      .select('id, generation, parent_ids, spouse_ids')
+      .in('id', linkedJunctionIds)
+    for (const r of junctionRows ?? []) {
+      const row = r as any
+      linkedJunctionGenMap[row.id] = row.generation ?? 0
+      linkedJunctionParentIdsMap[row.id] = row.parent_ids ?? []
+      linkedJunctionSpouseIdsMap[row.id] = row.spouse_ids ?? []
+    }
+  }
+
+  // Fetch generation of core (MY) junction nodes for generation-offset computation
+  const myJunctionIds = Object.values(junctionByFamily).filter(Boolean) as string[]
+  const myJunctionGenMap: Record<string, number> = {}
+  if (myJunctionIds.length > 0) {
+    const { data: myJunctionRows } = await admin
+      .from('family_members')
+      .select('id, generation')
+      .in('id', myJunctionIds)
+    for (const r of myJunctionRows ?? []) {
+      myJunctionGenMap[(r as any).id] = (r as any).generation ?? 0
+    }
+  }
+
+  // Compute per-linked-family generation offset.
+  // offset = coreJunctionGen - linkedJunctionGen
+  // Applied to every member from that linked family so their generation values
+  // align with the core family's generation scale (fixes cross-family layout
+  // disorder where e.g. Shuchita appears at grandparent row instead of self row).
+  const genOffsetByFamily: Record<string, number> = {}
+  for (const [otherFamilyId, myJunctionId] of Object.entries(junctionByFamily)) {
+    const linkedJunctionId = linkedJunctionByFamily[otherFamilyId]
+    if (!myJunctionId || !linkedJunctionId) continue
+    const myGen = myJunctionGenMap[myJunctionId]
+    const linkedGen = linkedJunctionGenMap[linkedJunctionId]
+    if (myGen !== undefined && linkedGen !== undefined) {
+      genOffsetByFamily[otherFamilyId] = myGen - linkedGen
+    }
+  }
 
   if (memberErr) {
     console.error('[linked-members] family_members query failed:', memberErr.message)
@@ -115,7 +171,9 @@ export async function GET() {
     relationship: row.relationship ?? undefined,
     occupation: row.occupation ?? undefined,
     gender: row.gender ?? undefined,
-    generation: row.generation ?? 3,
+    // Apply generation offset so linked family members appear at the correct
+    // row relative to the core family's generation scale.
+    generation: (row.generation ?? 3) + (genOffsetByFamily[row.family_id] ?? 0),
     parentIds: row.parent_ids ?? [],
     spouseIds: row.spouse_ids ?? [],
     isAlive: row.is_alive ?? true,
@@ -191,5 +249,33 @@ export async function GET() {
     junctionMemberId: junctionByFamily[fid] ?? null,
   }))
 
-  return NextResponse.json({ linkedMembers, linkedFamilies })
+  // ── Edge supplements ─────────────────────────────────────────────────────────
+  // The linked-side junction node (e.g. Meshram Rahul) may be soft-deleted and
+  // therefore invisible to the core family tree. But it carries parent/spouse
+  // edges that the corresponding core-side junction (e.g. Shikha-family Rahul)
+  // should inherit so the tree can draw those edges correctly.
+  //
+  // We return supplements as { nodeId: coreJunctionId, addParentIds, addSpouseIds }
+  // for the dashboard to apply on top of the core member's own edges.
+  const linkedMemberIds = new Set(linkedMembers.map(m => m.id))
+  const edgeSupplements: Array<{ nodeId: string; addParentIds: string[]; addSpouseIds: string[] }> = []
+
+  for (const [otherFamilyId, myJunctionId] of Object.entries(junctionByFamily)) {
+    if (!myJunctionId) continue
+    const linkedJunctionId = linkedJunctionByFamily[otherFamilyId]
+    if (!linkedJunctionId) continue
+
+    const rawParentIds = linkedJunctionParentIdsMap[linkedJunctionId] ?? []
+    const rawSpouseIds = linkedJunctionSpouseIdsMap[linkedJunctionId] ?? []
+
+    // Only include IDs that actually appear as visible (non-deleted) linked members
+    const validParentIds = rawParentIds.filter(pid => linkedMemberIds.has(pid))
+    const validSpouseIds = rawSpouseIds.filter(sid => linkedMemberIds.has(sid))
+
+    if (validParentIds.length > 0 || validSpouseIds.length > 0) {
+      edgeSupplements.push({ nodeId: myJunctionId, addParentIds: validParentIds, addSpouseIds: validSpouseIds })
+    }
+  }
+
+  return NextResponse.json({ linkedMembers, linkedFamilies, edgeSupplements })
 }

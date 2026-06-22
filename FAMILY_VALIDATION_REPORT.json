@@ -1,0 +1,465 @@
+{
+  "meta": {
+    "generatedAt": "2026-06-16T17:42:07.721Z",
+    "membersProcessed": 110,
+    "membersAfterIdentityResolution": 110,
+    "pipelineStatus": "success"
+  },
+  "phase1": {
+    "fixes": [
+      {
+        "memberId": "aff-rao-3",
+        "memberName": "Nitin Rao",
+        "issue": "unidirectional_spouse — added missing back-reference",
+        "old_value": [],
+        "new_value": [
+          "aff-meh-3"
+        ],
+        "confidence_score": 98
+      }
+    ],
+    "errors": [
+      {
+        "id": "NRM-001",
+        "severity": "error",
+        "type": "unidirectional_spouse",
+        "affectedIds": [
+          "aff-meh-3",
+          "aff-rao-3"
+        ],
+        "description": "Riya Mehta (aff-meh-3) lists Nitin Rao (aff-rao-3) as spouse, but the link is not reciprocated."
+      },
+      {
+        "id": "NRM-005",
+        "severity": "error",
+        "type": "conflicting_parentage",
+        "affectedIds": [
+          "g2-2",
+          "aff-rao-1",
+          "aff-rao-2",
+          "g1-3",
+          "g1-4",
+          "aff-rao-3"
+        ],
+        "description": "CONFLICTING PARENTAGE — Priya Sharma (g2-2) has two incompatible parent sets: (A) Core tree: parentIds = [g1-3 Ramdas Mishra, g1-4 Pushpa Devi Mishra], with Ashok Mishra (g2-5) as her brother. (B) Affiliated Rao family narrative: aff-rao-1 (Shyam Rao) and aff-rao-2 (Usha Rao) are described as her parents, with Nitin Rao (aff-rao-3) as her brother. A person cannot have two biological parent pairs. Resolution options: (1) If Priya is indeed Priya Rao, update her parentIds to [aff-rao-1, aff-rao-2] and remove the sibling relationship with Ashok Mishra. (2) If Priya is Priya Mishra, re-label the Rao family affiliation as Vikram Sharma's in-law family (not Priya's natal family). This requires manual user decision — not auto-fixed."
+      }
+    ],
+    "warnings": [
+      {
+        "id": "NRM-002",
+        "severity": "warning",
+        "type": "duplicate_identity",
+        "affectedIds": [
+          "g1-1",
+          "ext-4"
+        ],
+        "description": "Potential duplicate: \"Suresh Kumar Sharma\" (g1-1) and \"Dinesh Kumar Sharma\" (ext-4). Match reasons: name similarity 84%; shared parent(s). Confidence: 62%. Manual review required before merging."
+      },
+      {
+        "id": "NRM-003",
+        "severity": "warning",
+        "type": "duplicate_identity",
+        "affectedIds": [
+          "g3-2",
+          "ext-8"
+        ],
+        "description": "Potential duplicate: \"Sneha Sharma\" (g3-2) and \"Sneha Sharma\" (ext-8). Match reasons: name similarity 100%; birth years within 2 (2003 vs 2005). Confidence: 60%. Manual review required before merging."
+      },
+      {
+        "id": "NRM-004",
+        "severity": "warning",
+        "type": "duplicate_identity",
+        "affectedIds": [
+          "ext-5",
+          "ext-17"
+        ],
+        "description": "Potential duplicate: \"Kamla Sharma\" (ext-5) and \"Vimla Sharma\" (ext-17). Match reasons: name similarity 83%; birth years within 2 (1955 vs 1953). Confidence: 52%. Manual review required before merging."
+      }
+    ],
+    "info": []
+  },
+  "phase2": {
+    "resolvedIdentities": [],
+    "potentialDuplicates": [
+      {
+        "idA": "g0-1",
+        "nameA": "Ramchandra Sharma",
+        "idB": "ext-16",
+        "nameB": "Harishchandra Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g0-4",
+        "nameA": "Kamla Devi Mishra",
+        "idB": "g1-4",
+        "nameB": "Pushpa Devi Mishra",
+        "confidence": 36,
+        "matchReasons": [
+          "name similarity 72%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g1-1",
+        "nameA": "Suresh Kumar Sharma",
+        "idB": "ext-4",
+        "nameB": "Dinesh Kumar Sharma",
+        "confidence": 62,
+        "matchReasons": [
+          "name similarity 84%",
+          "shared parent(s)"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-1",
+        "nameA": "Vikram Sharma",
+        "idB": "ext-17",
+        "nameB": "Vimla Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 77%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-3",
+        "nameA": "Deepak Sharma",
+        "idB": "ext-7",
+        "nameB": "Meena Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 77%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-4",
+        "nameA": "Sunita Sharma",
+        "idB": "g3-2",
+        "nameB": "Sneha Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 77%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-4",
+        "nameA": "Sunita Sharma",
+        "idB": "ext-2",
+        "nameB": "Sudha Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 77%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-4",
+        "nameA": "Sunita Sharma",
+        "idB": "ext-8",
+        "nameB": "Sneha Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 77%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-4",
+        "nameA": "Sunita Sharma",
+        "idB": "ext-10",
+        "nameB": "Sunita Sharma",
+        "confidence": 50,
+        "matchReasons": [
+          "near-identical name (100%)"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-6",
+        "nameA": "Kavitha Mishra",
+        "idB": "ext-24",
+        "nameB": "Savita Mishra",
+        "confidence": 43,
+        "matchReasons": [
+          "name similarity 86%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g2-6",
+        "nameA": "Kavitha Mishra",
+        "idB": "ext-32",
+        "nameB": "Aditya Mishra",
+        "confidence": 39,
+        "matchReasons": [
+          "name similarity 79%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g3-2",
+        "nameA": "Sneha Sharma",
+        "idB": "ext-2",
+        "nameB": "Sudha Sharma",
+        "confidence": 42,
+        "matchReasons": [
+          "name similarity 83%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g3-2",
+        "nameA": "Sneha Sharma",
+        "idB": "ext-7",
+        "nameB": "Meena Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g3-2",
+        "nameA": "Sneha Sharma",
+        "idB": "ext-8",
+        "nameB": "Sneha Sharma",
+        "confidence": 55,
+        "matchReasons": [
+          "near-identical name (100%)",
+          "birth years within 2 (2003 vs 2005)"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "g3-4",
+        "nameA": "Riya Sharma",
+        "idB": "ext-17",
+        "nameB": "Vimla Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "ext-2",
+        "nameA": "Sudha Sharma",
+        "idB": "ext-8",
+        "nameB": "Sneha Sharma",
+        "confidence": 42,
+        "matchReasons": [
+          "name similarity 83%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "ext-2",
+        "nameA": "Sudha Sharma",
+        "idB": "ext-10",
+        "nameB": "Sunita Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 77%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-rao-2",
+        "nameA": "Usha Rao",
+        "idB": "aff-rao-6",
+        "nameB": "Sudha Rao",
+        "confidence": 39,
+        "matchReasons": [
+          "name similarity 78%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "ext-5",
+        "nameA": "Kamla Sharma",
+        "idB": "ext-17",
+        "nameB": "Vimla Sharma",
+        "confidence": 47,
+        "matchReasons": [
+          "name similarity 83%",
+          "birth years within 2 (1955 vs 1953)"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "ext-7",
+        "nameA": "Meena Sharma",
+        "idB": "ext-8",
+        "nameB": "Sneha Sharma",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "ext-34",
+        "nameA": "Rekha Mishra",
+        "idB": "ext-39",
+        "nameB": "Seema Mishra",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "ext-35",
+        "nameA": "Vijay Kulkarni",
+        "idB": "ext-37",
+        "nameB": "Diya Kulkarni",
+        "confidence": 39,
+        "matchReasons": [
+          "name similarity 79%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-kap-4",
+        "nameA": "Divya Kapoor",
+        "idB": "aff-kap-7",
+        "nameB": "Priya Kapoor",
+        "confidence": 43,
+        "matchReasons": [
+          "name similarity 75%",
+          "birth years within 2 (1980 vs 1982)"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-kap-4",
+        "nameA": "Divya Kapoor",
+        "idB": "aff-kap-11",
+        "nameB": "Nisha Kapoor",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-kap-4",
+        "nameA": "Divya Kapoor",
+        "idB": "aff-kap-12",
+        "nameB": "Dev Kapoor",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-kap-6",
+        "nameA": "Zara Kapoor",
+        "idB": "aff-kap-10",
+        "nameB": "Aryan Kapoor",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-kap-7",
+        "nameA": "Priya Kapoor",
+        "idB": "aff-kap-10",
+        "nameB": "Aryan Kapoor",
+        "confidence": 38,
+        "matchReasons": [
+          "name similarity 75%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-kap-12",
+        "nameA": "Dev Kapoor",
+        "idB": "aff-kap-13",
+        "nameB": "Renu Kapoor",
+        "confidence": 36,
+        "matchReasons": [
+          "name similarity 73%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-meh-2",
+        "nameA": "Hansa Mehta",
+        "idB": "aff-meh-6",
+        "nameB": "Harsh Mehta",
+        "confidence": 41,
+        "matchReasons": [
+          "name similarity 82%"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      },
+      {
+        "idA": "aff-meh-4",
+        "nameA": "Vivaan Mehta-Rao",
+        "idB": "aff-meh-5",
+        "nameB": "Kiara Mehta-Rao",
+        "confidence": 58,
+        "matchReasons": [
+          "name similarity 75%",
+          "shared parent(s)"
+        ],
+        "autoMerged": false,
+        "canonicalId": null
+      }
+    ]
+  },
+  "phase5": {
+    "passed": true,
+    "violations": []
+  },
+  "phase3": {
+    "nodeCount": 147,
+    "edgeCount": 171,
+    "coupleCount": 36,
+    "ancestorCount": 46,
+    "directParentChildEdges": 0
+  },
+  "phase4": {
+    "positionedNodes": 186
+  }
+}

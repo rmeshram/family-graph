@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { unionMemberIds, remapMemberIds } from '@/lib/graph-merge'
 
 function adminClient() {
   return createServerClient(
@@ -44,11 +45,82 @@ async function authedClient() {
   )
 }
 
+// After a merge the primary node's generation may have changed. Children whose
+// parent_ids already pointed to primaryId (not to the now-archived duplicate)
+// won't have their parent_ids touched in step 4, so the DB trigger
+// (migration 043) won't fire for them and their generation stays stale.
+// This BFS corrects direct children and continues down the subtree.
+//
+// We pre-fetch all member generations for the family in one query so that:
+//   (a) parents outside the current BFS frontier are not silently ignored, and
+//   (b) we avoid N sequential round-trips (one per BFS level).
+async function cascadeDescendantGenerations(
+  admin: ReturnType<typeof adminClient>,
+  familyId: string,
+  rootId: string,
+  rootGeneration: number,
+): Promise<void> {
+  // Single fetch: id, parent_ids, current generation for all live members.
+  const { data: allRows } = await admin
+    .from('family_members')
+    .select('id, parent_ids, generation')
+    .eq('family_id', familyId)
+    .is('deleted_at', null)
+
+  if (!allRows?.length) return
+
+  // Seed the generation map with the post-merge root value then fill from DB.
+  const genMap = new Map<string, number>((allRows as any[]).map((r: any) => [r.id, r.generation as number]))
+  genMap.set(rootId, rootGeneration)
+
+  // Build parent→children adjacency
+  const children = new Map<string, string[]>()
+  for (const r of allRows as any[]) children.set(r.id as string, [])
+  for (const r of allRows as any[]) {
+    for (const pid of (r.parent_ids ?? []) as string[]) {
+      if (!children.has(pid)) children.set(pid, [])
+      children.get(pid)!.push(r.id as string)
+    }
+  }
+
+  const visited = new Set<string>([rootId])
+  const queue: string[] = [rootId]
+  const MAX_NODES = 500
+
+  while (queue.length > 0 && visited.size < MAX_NODES) {
+    const id = queue.shift()!
+    const parentGen = genMap.get(id)!
+
+    for (const childId of children.get(id) ?? []) {
+      if (visited.has(childId)) continue
+      visited.add(childId)
+
+      // Compute max(parent_generation)+1 across ALL parents, using current genMap
+      // so parents outside the merge subtree are not ignored.
+      const parentGens = ((allRows as any[]).find((r: any) => r.id === childId)?.parent_ids ?? [] as string[])
+        .map((pid: string) => genMap.get(pid))
+        .filter((g: number | undefined): g is number => g !== undefined)
+
+      const correctGen = parentGens.length > 0 ? Math.max(...parentGens) + 1 : parentGen + 1
+      genMap.set(childId, correctGen)
+
+      const current = (allRows as any[]).find((r: any) => r.id === childId)?.generation
+      if (current !== correctGen) {
+        await admin
+          .from('family_members')
+          .update({ generation: correctGen } as any)
+          .eq('id', childId)
+      }
+      queue.push(childId)
+    }
+  }
+}
+
 // Fields that can be merged (primary wins if non-null, fills from duplicate if null)
 const MERGEABLE_SCALAR_FIELDS = [
   'birth_year', 'birth_month', 'birth_day', 'death_year',
   'birth_place', 'current_place', 'photo_url', 'bio',
-  'occupation', 'relationship', 'gender', 'generation',
+  'occupation', 'relationship', 'gender',
   'gotra', 'caste', 'hometown', 'native_language', 'religion',
   'phone', 'email', 'instagram_handle', 'is_alive', 'is_deceased',
   'date_of_birth',
@@ -142,8 +214,29 @@ export async function POST(
   const pSpouses: string[] = (primary as any).spouse_ids ?? []
   const dSpouses: string[] = (duplicate as any).spouse_ids ?? []
 
-  const mergedParents = [...new Set([...pParents, ...dParents])].filter(id => id !== primaryId && id !== targetId)
-  const mergedSpouses = [...new Set([...pSpouses, ...dSpouses])].filter(id => id !== primaryId && id !== targetId)
+  const mergedParents = unionMemberIds(pParents, dParents, [primaryId, targetId])
+  const mergedSpouses = unionMemberIds(pSpouses, dSpouses, [primaryId, targetId])
+
+  // Recalculate generation based on merged parents (generation = max(parent_generation) + 1).
+  // Root nodes (no parents): preserve the higher of the two nodes' existing generations so
+  // a grandparent pair at gen=2 don't silently collapse to gen=0.
+  let mergedGeneration: number = Math.max(
+    (primary as any).generation ?? 0,
+    (duplicate as any).generation ?? 0,
+  )
+  if (mergedParents.length > 0) {
+    const { data: parentRecords } = await admin
+      .from('family_members')
+      .select('generation')
+      .in('id', mergedParents)
+    const parentGenerations = (parentRecords as any[])
+      ?.map((p: any) => p.generation)
+      .filter((g: any) => g !== null && g !== undefined) ?? []
+    if (parentGenerations.length > 0) {
+      mergedGeneration = Math.max(...parentGenerations) + 1
+    }
+  }
+  merged.generation = mergedGeneration
 
   // Merge tags
   const pTags: string[] = (primary as any).tags ?? []
@@ -161,12 +254,10 @@ export async function POST(
   const refUpdates: Promise<unknown>[] = []
   for (const member of (affectedMembers ?? [])) {
     const memberAny = member as any
-    const newParents: string[] = (memberAny.parent_ids ?? []).map((pid: string) =>
-      pid === targetId ? primaryId : pid
-    )
-    const newSpouses: string[] = (memberAny.spouse_ids ?? []).map((sid: string) =>
-      sid === targetId ? primaryId : sid
-    )
+    // remapMemberIds also deduplicates — a member referencing BOTH the duplicate
+    // and the primary would otherwise end up with a repeated edge after the remap.
+    const newParents: string[] = remapMemberIds(memberAny.parent_ids, targetId, primaryId)
+    const newSpouses: string[] = remapMemberIds(memberAny.spouse_ids, targetId, primaryId)
     const parentChanged = JSON.stringify(newParents) !== JSON.stringify(memberAny.parent_ids ?? [])
     const spouseChanged = JSON.stringify(newSpouses) !== JSON.stringify(memberAny.spouse_ids ?? [])
 
@@ -356,6 +447,13 @@ export async function POST(
     .update({ deleted_at: new Date().toISOString(), deleted_by: user.id } as any)
     .eq('id', targetId)
   if (deleteErr) return NextResponse.json({ error: `Merge applied but could not archive duplicate: ${deleteErr.message}` }, { status: 500 })
+
+  // Post-merge generation cascade: the primary's generation may have changed when
+  // the duplicate's parents were merged in. Children whose parent_ids already pointed
+  // to primaryId (not targetId) won't be touched in step 4's reference-remap above,
+  // so the DB trigger won't fire for them. Cascade the correct generation downward.
+  cascadeDescendantGenerations(admin, (primary as any).family_id, primaryId, mergedGeneration)
+    .catch(err => console.warn('[merge] generation cascade failed (non-fatal):', err))
 
   // Bug G: Invalidate any open node_claim invites that still point to the archived
   // duplicate. Users following a stale link get a graceful NODE_ARCHIVED error

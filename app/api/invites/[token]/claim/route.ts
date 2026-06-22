@@ -92,31 +92,28 @@ export async function POST(
   let body: { submittedName?: string; submittedBirthYear?: number }
   try { body = await req.json() } catch { body = {} }
 
-  // RF-05: Atomically mark invite consumed BEFORE calling the node claim route.
-  // Using WHERE consumed_at IS NULL prevents two simultaneous requests from both
-  // succeeding — the second request finds 0 rows updated and returns INVITE_CONSUMED.
-  const consumedAt = new Date().toISOString()
-  const { data: consumeResult, error: consumeErr } = await admin
-    .from('invite_links')
-    .update({ consumed_at: consumedAt, consumed_by: user.id } as any)
-    .eq('id', (invite as any).id)
-    .is('consumed_at', null)
-    .select('id')
-
-  if (consumeErr || !(consumeResult as any[])?.length) {
+  // EC-06: NEXT_PUBLIC_APP_URL must be set in production.
+  // req.nextUrl.origin behind a reverse proxy (Vercel, Fly.io, etc.) resolves to
+  // http://localhost:3000 → the internal fetch fails with ECONNREFUSED and the
+  // caller receives an opaque 500.  Fail fast with a clear message instead.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    console.error('[invites/claim] NEXT_PUBLIC_APP_URL is not set. Cannot perform internal claim fetch. Set this env var to the public URL of the deployment (e.g. https://your-app.vercel.app).')
     return NextResponse.json(
-      { error: 'INVITE_CONSUMED', message: 'This invite has already been used. Ask the family admin for a fresh invite.' },
-      { status: 409 }
+      { error: 'SERVER_MISCONFIGURATION', message: 'The server is not configured correctly. Please contact support.' },
+      { status: 500 }
     )
   }
 
-  // EC-06: Warn loudly if NEXT_PUBLIC_APP_URL is not set. In production, using
-  // req.nextUrl.origin behind a proxy may resolve to http://localhost:3000,
-  // causing the internal fetch to ECONNREFUSED and returning an unhandled 500.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin
-  if (!process.env.NEXT_PUBLIC_APP_URL) {
-    console.warn('[invites/claim] NEXT_PUBLIC_APP_URL is not set; falling back to', appUrl, '- set this env var in production to prevent routing failures')
-  }
+  // Delegate to the node-claim route, which performs identity verification AND
+  // atomically consumes the invite (WHERE consumed_at IS NULL) on success.
+  //
+  // BUGFIX: This handler previously marked the invite consumed BEFORE this call.
+  // The node-claim route authorizes a cross-family claim by looking up an
+  // *unconsumed* node_claim invite — so pre-consuming it caused the inner route to
+  // reject every request with INVITE_ALREADY_USED. We now let the inner route own
+  // consumption, which is itself race-safe via its optimistic is_claimed lock and
+  // the WHERE consumed_at IS NULL guard on the consume update.
   const claimRes = await fetch(`${appUrl}/api/nodes/${node.id}/claim`, {
     method: 'POST',
     headers: {
@@ -131,22 +128,7 @@ export async function POST(
   })
   const claimData = await claimRes.json()
 
-  if (claimRes.ok) {
-    // Update used_count — consumed_at was already set atomically above.
-    await admin.from('invite_links').update({
-      used_count: ((invite as any).used_count ?? 0) + 1,
-    } as any).eq('id', (invite as any).id)
-    // HIGH-11: Do NOT insert a second claim_audit_log row here.
-    // The node claim route already inserts action='claim_completed' for every
-    // successful claim. Inserting again here produces a duplicate record for
-    // the same operation, polluting the audit trail.
-  } else {
-    // RF-05: Rollback — restore the invite so the user can retry or the admin can re-send.
-    await admin.from('invite_links')
-      .update({ consumed_at: null, consumed_by: null } as any)
-      .eq('id', (invite as any).id)
-      .eq('consumed_at', consumedAt) // guard: only roll back our own lock, not a concurrent update
-  }
-
+  // No audit row written here — the node-claim route already inserts
+  // action='claim_completed' for every successful claim (avoids duplicate records).
   return NextResponse.json(claimData, { status: claimRes.status })
 }

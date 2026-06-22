@@ -44,11 +44,11 @@ import { ZoomIn, ZoomOut, Maximize2, Crown, Home, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Layout constants ────────────────────────────────────────────────────────
-const NODE_W = 148
-const NODE_H = 92
-const H_GAP = 32
-const ROW_H = 220
-const SPOUSE_GAP = 20
+const NODE_W = 164
+const NODE_H = 104
+const H_GAP = 36
+const ROW_H = 248
+const SPOUSE_GAP = 24
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface LayoutNode {
@@ -83,6 +83,8 @@ interface EdgeDef {
   railY?: number
   /** sibling_trunk: top-centre point of each child card */
   drops?: Array<{ x: number; y: number }>
+  /** All node IDs this edge connects — used for highlight/fade on selection */
+  relatedNodeIds: string[]
 }
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -187,16 +189,16 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
     const edges: EdgeDef[] = []
     nodes.forEach(n => {
       const m = n.member
-        ; (m.parentIds ?? []).forEach(pid => {
+        ; [...new Set(m.parentIds ?? [])].forEach(pid => {
           const ppos = pos.get(pid)
           if (!ppos) return
-          edges.push({ id: `e-${pid}-${m.id}`, x1: ppos.x, y1: ppos.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood' })
+          edges.push({ id: `e-${pid}-${m.id}`, x1: ppos.x, y1: ppos.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood', relatedNodeIds: [pid, m.id] })
         })
-        ; (m.spouseIds ?? []).forEach(sid => {
+        ; [...new Set(m.spouseIds ?? [])].forEach(sid => {
           if (sid > m.id) return // draw once per pair
           const spos = pos.get(sid)
           if (!spos) return
-          edges.push({ id: `e-sp-${m.id}-${sid}`, x1: n.x + NODE_W / 2, y1: n.y, x2: spos.x - NODE_W / 2, y2: spos.y, kind: 'spouse' })
+          edges.push({ id: `e-sp-${m.id}-${sid}`, x1: n.x + NODE_W / 2, y1: n.y, x2: spos.x - NODE_W / 2, y2: spos.y, kind: 'spouse', relatedNodeIds: [m.id, sid] })
         })
     })
 
@@ -305,12 +307,54 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       memberRg.set(m.id, (m.generation ?? selfGen) - selfGen)
     })
 
+    // ── Parent-in-core coercion ──────────────────────────────────────────────
+    // If an unplaced member has a parent already placed in the CORE layout
+    // (e.g. Shuchita whose parent PL is at row -1 as father), override their
+    // generation-derived row to parentRow + 1.  This fixes siblings-in-law and
+    // other relatives whose `generation` DB value doesn't align with the core
+    // family's generation scale (common after cross-family merges or data entry
+    // where the extended member was given an older generation value).
+    // Two passes handle chained cases where a coerced parent is also unplaced.
+    const coreRowByNodeId = new Map<string, number>(nodes.map(n => [n.id, n.row]))
+    for (let pass = 0; pass < 2; pass++) {
+      unplaced.forEach(m => {
+        for (const pid of m.parentIds) {
+          const parentRow = coreRowByNodeId.get(pid)
+          if (parentRow !== undefined) {
+            memberRg.set(m.id, parentRow + 1)
+            coreRowByNodeId.set(m.id, parentRow + 1) // propagate for pass 2
+            break
+          }
+        }
+      })
+    }
+
+    // ── Reverse parent-in-core coercion ─────────────────────────────────────
+    // If an unplaced member IS LISTED AS A PARENT of a core node, they must be
+    // placed one row above that core node (coreNode.row − 1).
+    // This covers in-law parents whose raw generation value doesn't align with
+    // the core family scale — e.g. Sukhdeo/Ratnamala are parents of core Rahul
+    // (row 0 spouse) so they belong at row −1, not row +1.
+    nodes.forEach(coreNode => {
+      coreNode.member.parentIds.forEach(pid => {
+        if (memberRg.has(pid)) {
+          // pid is an unplaced member that is a known parent of this core node
+          const expectedRg = coreNode.row - 1
+          memberRg.set(pid, expectedRg)
+          coreRowByNodeId.set(pid, expectedRg)
+        }
+      })
+    })
+
     // ── Spouse row-coercion pass ─────────────────────────────────────────────
     // In-laws (e.g. a cousin's wife) are sometimes stored with the wrong
     // generation value (e.g. at the parent-gen level instead of cousin-gen).
     // Fix: for any spouse pair both in the unplaced set whose rg values differ,
     // move the in-law (the member with NO blood relatives in the family) to the
     // blood-relative's row.  Two passes cover sibling-chained cases.
+    // Tie-break (neither has blood, both rows differ): align to whichever spouse
+    // is closer to row 0 — this handles cross-family sisters-in-law like Shuchita
+    // whose parentIds reference a different family's IDs.
     const unplacedIds = new Set(unplaced.map(m => m.id))
     for (let pass = 0; pass < 2; pass++) {
       unplaced.forEach(m => {
@@ -320,15 +364,31 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
           const sRg = memberRg.get(sid)!
           if (mRg === sRg) return // already aligned
           const sp = byId.get(sid)!
-          // "has blood" = has at least one parent present in the family
-          const mHasBlood = m.parentIds.some(pid => byId.has(pid))
-          const sHasBlood = sp.parentIds.some(pid => byId.has(pid))
+          // "has blood in the CORE family" = has a parent that is a PLACED core member
+          // (NOT just any member in byId, which would include cross-family linked members
+          // that happen to share parentIds with extended relatives).
+          // Using `!unplacedIds.has(pid) && byId.has(pid)` ensures we only count parents
+          // that are real core nodes, not other extended/linked members.
+          const mHasBlood = m.parentIds.some(pid => byId.has(pid) && !unplacedIds.has(pid))
+          const sHasBlood = sp.parentIds.some(pid => byId.has(pid) && !unplacedIds.has(pid))
           if (!mHasBlood && sHasBlood) {
             memberRg.set(m.id, sRg) // m is the in-law → follow spouse
+            coreRowByNodeId.set(m.id, sRg)
           } else if (mHasBlood && !sHasBlood) {
             memberRg.set(sid, mRg) // spouse is the in-law → follow m
+            coreRowByNodeId.set(sid, mRg)
+          } else {
+            // Neither (or both) have blood in the core family — pick whoever is
+            // closer to row 0 as the anchor. This handles cross-family siblings-in-law
+            // (e.g. Shuchita rg=-2, Vinay rg=0 → Shuchita aligns to Vinay at row 0).
+            if (Math.abs(sRg) < Math.abs(mRg)) {
+              memberRg.set(m.id, sRg)
+              coreRowByNodeId.set(m.id, sRg)
+            } else if (Math.abs(mRg) < Math.abs(sRg)) {
+              memberRg.set(sid, mRg)
+              coreRowByNodeId.set(sid, mRg)
+            }
           }
-          // Both or neither have blood (ambiguous) — leave as-is
         })
       })
     }
@@ -388,10 +448,10 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       input.forEach(m => {
         if (added.has(m.id)) return
         out.push(m); added.add(m.id)
-        ;(m.spouseIds ?? []).forEach(sid => {
-          const sp = byId.get(sid)
-          if (sp && input.includes(sp) && !added.has(sid)) { out.push(sp); added.add(sid) }
-        })
+          ; (m.spouseIds ?? []).forEach(sid => {
+            const sp = byId.get(sid)
+            if (sp && input.includes(sp) && !added.has(sid)) { out.push(sp); added.add(sid) }
+          })
       })
       return out
     }
@@ -479,10 +539,21 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
   }>()
   const handledByGroup = new Set<string>()
 
+  // Build a lookup: nodeId → role, used below for core-parent check
+  const roleById = new Map(dedupedNodes.map(n => [n.id, n.role]))
+
   dedupedNodes.forEach(n => {
-    if (n.role === 'other') return // extended members keep individual blood edges
     const pids = n.member.parentIds.filter(pid => pos.has(pid))
     if (pids.length < 2) return   // single-parent — keep individual edge
+    if (n.role === 'other') {
+      // Extended members join the shared trunk ONLY when every one of their
+      // visible parents is a core (non-'other') node.  This lets direct siblings
+      // like Shushita share the PL+Pushpa trunk with Shikha, while still
+      // preventing cross-tree lines for true extended relatives whose parents
+      // are themselves extended nodes.
+      const allParentsAreCore = pids.every(pid => roleById.get(pid) !== 'other')
+      if (!allParentsAreCore) return
+    }
     const sortedPids = [...pids].sort()
     const pairKey = sortedPids.join('|')
     if (!siblingGroups.has(pairKey)) {
@@ -498,7 +569,8 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
     handledByGroup.add(n.id)
   })
 
-  // Individual blood edges — single-parent cases and all extended ('other') nodes
+  // Individual blood edges — single-parent nodes and extended members whose
+  // parents are themselves extended (not joined to a shared trunk above)
   dedupedNodes.forEach(n => {
     if (handledByGroup.has(n.id)) return
     n.member.parentIds.forEach(pid => {
@@ -506,7 +578,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       if (!edgeSet.has(key) && pos.has(pid)) {
         edgeSet.add(key)
         const p = pos.get(pid)!
-        edges.push({ id: key, x1: p.x, y1: p.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood' })
+        edges.push({ id: key, x1: p.x, y1: p.y + NODE_H / 2, x2: n.x, y2: n.y - NODE_H / 2, kind: 'blood', relatedNodeIds: [pid, n.id] })
       }
     })
   })
@@ -524,6 +596,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       kind: 'sibling_trunk',
       railY,
       drops: childPositions.map(cp => ({ x: cp.x, y: cp.y - NODE_H / 2 })),
+      relatedNodeIds: [...group.pairKey.split('|'), ...group.childIds],
     })
   })
 
@@ -536,7 +609,7 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
       const a = pos.get(n.id)!
       const b = pos.get(sid)!
       const [left, right] = a.x < b.x ? [a, b] : [b, a]
-      edges.push({ id: `s-${n.id}-${sid}`, x1: left.x + NODE_W / 2, y1: left.y, x2: right.x - NODE_W / 2, y2: right.y, kind: 'spouse' })
+      edges.push({ id: `s-${n.id}-${sid}`, x1: left.x + NODE_W / 2, y1: left.y, x2: right.x - NODE_W / 2, y2: right.y, kind: 'spouse', relatedNodeIds: [n.id, sid] })
     })
   })
 
@@ -544,43 +617,124 @@ function buildLayout(members: FamilyMember[], selfId: string | null | undefined)
 }
 
 // ─── SVG edge layer ──────────────────────────────────────────────────────────
-function EdgeLayer({ edges }: { edges: EdgeDef[] }) {
+//
+// Premium genealogy connector system:
+//  • Spouse      — solid horizontal line with ring badge at midpoint
+//  • Blood       — smooth cubic bezier from parent bottom-center → child top-center.
+//                  Control points sit 40 % of the vertical span from each endpoint,
+//                  keeping the curve tight to each node and avoiding wide diagonal sweeps.
+//  • Trunk       — vertical trunk → horizontal rail → vertical drops, with filled
+//                  junction dots at every T-intersection for a clean polished look
+//  • Highlight   — hovered OR selected node's edges brighten to full opacity;
+//                  all unrelated edges fade to near-invisible (0.08)
+//  • Default     — edges render at 0.42 opacity so a dense tree stays readable
+//                  without the "spaghetti" clutter of full-opacity lines
+//
+const EDGE_BLOOD_DEFAULT  = '#94a3b8'   // slate-400 (rendered at partial opacity)
+const EDGE_BLOOD_ACTIVE   = '#60a5fa'   // blue-400 — vivid highlight
+const EDGE_SPOUSE_DEFAULT = '#f9a8d4'   // pink-200 — very light pink
+const EDGE_SPOUSE_ACTIVE  = '#f472b6'   // pink-400 — selected path
+const EDGE_BLOOD_SW       = 1.4
+const EDGE_SPOUSE_SW      = 2
+/** Opacity of every edge when nothing is hovered/selected */
+const EDGE_IDLE_OPACITY   = 0.42
+/** Opacity of edges connected to the hovered/selected node */
+const EDGE_ACTIVE_OPACITY = 1
+/** Opacity of edges NOT connected to the hovered/selected node */
+const EDGE_FADE_OPACITY   = 0.08
+
+function EdgeLayer({
+  edges,
+  selectedMemberId,
+  hoveredMemberId,
+}: {
+  edges: EdgeDef[]
+  selectedMemberId: string | null
+  hoveredMemberId: string | null
+}) {
   if (!edges.length) return null
-  const bloodStroke = 'rgba(148,163,184,0.38)'
+  const focusId = selectedMemberId ?? hoveredMemberId
+  const hasFocus = !!focusId
+
   return (
-    <svg style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 0 }} width={1} height={1}>
+    <svg
+      style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 0 }}
+      width={1} height={1}
+    >
       {edges.map(e => {
+        const isConnected = !hasFocus || e.relatedNodeIds.includes(focusId!)
+        const opacity = hasFocus
+          ? (isConnected ? EDGE_ACTIVE_OPACITY : EDGE_FADE_OPACITY)
+          : EDGE_IDLE_OPACITY
+
+        // ── Spouse connector ──────────────────────────────────────────────
         if (e.kind === 'spouse') {
-          const mx = (e.x1 + e.x2) / 2; const my = (e.y1 + e.y2) / 2
+          const mx = (e.x1 + e.x2) / 2
+          const my = (e.y1 + e.y2) / 2
+          const color = hasFocus && isConnected ? EDGE_SPOUSE_ACTIVE : EDGE_SPOUSE_DEFAULT
           return (
-            <g key={e.id}>
-              <line x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="rgba(244,63,94,0.45)" strokeWidth={1.5} strokeDasharray="6 4" />
-              <rect x={mx - 5} y={my - 5} width={10} height={10} rx={2} fill="transparent" stroke="rgba(244,63,94,0.4)" strokeWidth={1.5} />
+            <g key={e.id} opacity={opacity} style={{ transition: 'opacity 0.18s ease' }}>
+              <line
+                x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2}
+                stroke={color} strokeWidth={EDGE_SPOUSE_SW} strokeLinecap="round"
+                style={{ transition: 'stroke 0.18s ease' }}
+              />
+              {/* Ring badge at midpoint — signals a couple bond */}
+              <circle cx={mx} cy={my} r={5} fill="white" stroke={color} strokeWidth={2} />
             </g>
           )
         }
+
+        // ── Sibling-trunk connector (couple → children) ───────────────────
         if (e.kind === 'sibling_trunk' && e.railY !== undefined && e.drops) {
           const xs = e.drops.map(d => d.x)
-          const leftX = Math.min(...xs); const rightX = Math.max(...xs)
+          const railLeft  = Math.min(...xs, e.x1)
+          const railRight = Math.max(...xs, e.x1)
+          const color = hasFocus && isConnected ? EDGE_BLOOD_ACTIVE : EDGE_BLOOD_DEFAULT
           return (
-            <g key={e.id}>
-              {/* Vertical trunk: couple midpoint → horizontal rail */}
-              <line x1={e.x1} y1={e.y1} x2={e.x1} y2={e.railY} stroke={bloodStroke} strokeWidth={1.5} />
-              {/* Horizontal rail spanning all siblings */}
-              {xs.length > 1 && <line x1={leftX} y1={e.railY} x2={rightX} y2={e.railY} stroke={bloodStroke} strokeWidth={1.5} />}
-              {/* Vertical drop to each child */}
+            <g key={e.id} opacity={opacity} style={{ transition: 'opacity 0.18s ease' }}>
+              {/* Vertical trunk from couple midpoint down to horizontal rail */}
+              <line
+                x1={e.x1} y1={e.y1} x2={e.x1} y2={e.railY}
+                stroke={color} strokeWidth={EDGE_BLOOD_SW} strokeLinecap="round"
+              />
+              {/* Horizontal rail spanning all children */}
+              <line
+                x1={railLeft} y1={e.railY} x2={railRight} y2={e.railY}
+                stroke={color} strokeWidth={EDGE_BLOOD_SW} strokeLinecap="round"
+              />
+              {/* Junction dot where trunk meets rail */}
+              <circle cx={e.x1} cy={e.railY} r={3} fill={color} />
+              {/* Vertical drop + junction dot per child */}
               {e.drops.map((d, i) => (
-                <line key={i} x1={d.x} y1={e.railY!} x2={d.x} y2={d.y} stroke={bloodStroke} strokeWidth={1.5} />
+                <g key={i}>
+                  <line
+                    x1={d.x} y1={e.railY!} x2={d.x} y2={d.y}
+                    stroke={color} strokeWidth={EDGE_BLOOD_SW} strokeLinecap="round"
+                  />
+                  <circle cx={d.x} cy={e.railY!} r={2.5} fill={color} />
+                </g>
               ))}
             </g>
           )
         }
-        // Individual blood edge (single-parent or extended member)
-        const midY = (e.y1 + e.y2) / 2
+
+        // ── Individual blood edge — smooth cubic bezier S-curve ───────────
+        // Control points at 40 % of the vertical span from each endpoint keep
+        // the curve tight to the nodes and avoid wide diagonal sweeps on trees
+        // where a parent and child are far apart horizontally.
+        const vy  = (e.y2 - e.y1) * 0.42
+        const cp1y = e.y1 + vy
+        const cp2y = e.y2 - vy
+        const color = hasFocus && isConnected ? EDGE_BLOOD_ACTIVE : EDGE_BLOOD_DEFAULT
         return (
-          <path key={e.id}
-            d={`M ${e.x1} ${e.y1} C ${e.x1} ${midY}, ${e.x2} ${midY}, ${e.x2} ${e.y2}`}
-            fill="none" stroke={bloodStroke} strokeWidth={1.5}
+          <path
+            key={e.id}
+            d={`M ${e.x1},${e.y1} C ${e.x1},${cp1y} ${e.x2},${cp2y} ${e.x2},${e.y2}`}
+            fill="none"
+            stroke={color} strokeWidth={EDGE_BLOOD_SW} strokeLinecap="round"
+            opacity={opacity}
+            style={{ transition: 'opacity 0.18s ease, stroke 0.18s ease' }}
           />
         )
       })}
@@ -601,6 +755,7 @@ interface TreeNodeCardProps {
   onInviteNode?: (id: string) => void
   onClaimNode?: (id: string) => void
   onDelete?: (id: string) => void
+  onHover?: (id: string | null) => void
   allMembers: FamilyMember[]
   isAdmin: boolean
 }
@@ -608,7 +763,7 @@ interface TreeNodeCardProps {
 const TreeNodeCard = memo(function TreeNodeCard({
   node, isSelected, isSelf, relationLabel,
   onSelect, onAddRelative, onOpenMemberDetail,
-  onFindRelationship, onInviteNode, onClaimNode, onDelete,
+  onFindRelationship, onInviteNode, onClaimNode, onDelete, onHover,
   allMembers, isAdmin,
 }: TreeNodeCardProps) {
   const { member } = node
@@ -643,8 +798,8 @@ const TreeNodeCard = memo(function TreeNodeCard({
       transition={{ duration: 0.3, type: 'spring', stiffness: 260, damping: 20 }}
       style={{ position: 'absolute', left: node.x - NODE_W / 2, top: node.y - NODE_H / 2, width: NODE_W, height: NODE_H, zIndex: isSelected ? 20 : hovered ? 15 : 10 }}
       onPointerDown={e => e.stopPropagation()}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => { setHovered(true); onHover?.(member.id) }}
+      onMouseLeave={() => { setHovered(false); onHover?.(null) }}
     >
       <button
         type="button"
@@ -652,14 +807,22 @@ const TreeNodeCard = memo(function TreeNodeCard({
         onContextMenu={e => { e.preventDefault(); setRingOpen(true) }}
         onPointerDown={onPD} onPointerUp={onPU} onPointerCancel={onPU}
         className={cn(
-          'relative w-full h-full rounded-2xl border flex flex-col items-center justify-center gap-1.5 p-2 transition-all duration-200',
+          'relative w-full h-full rounded-2xl border flex flex-col items-center justify-center gap-1.5 p-2.5 transition-all duration-200 overflow-hidden',
           isSelected
-            ? 'border-primary/70 bg-primary/10 shadow-lg shadow-primary/20'
+            ? 'border-primary/60 bg-primary/8 shadow-xl shadow-primary/15 ring-1 ring-primary/25'
             : isDeceased
-              ? 'border-border/30 bg-muted/20 opacity-70'
-              : 'border-border/40 bg-card hover:border-border/80 hover:shadow-md',
+              ? 'border-border/25 bg-muted/15 opacity-65'
+              : 'border-border/35 bg-card hover:border-primary/30 hover:shadow-lg hover:shadow-black/8 hover:-translate-y-0.5',
         )}
       >
+        {/* Subtle gender-tinted gradient wash in top-right corner */}
+        {!isDeceased && (
+          <div
+            className="absolute inset-0 pointer-events-none rounded-2xl"
+            style={{ background: `radial-gradient(ellipse at 100% 0%, ${color}14 0%, transparent 68%)` }}
+          />
+        )}
+
         {isSelf && (
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-amber-400 z-10">
             <Crown className="h-4 w-4 fill-amber-400" />
@@ -671,9 +834,9 @@ const TreeNodeCard = memo(function TreeNodeCard({
         {isUnclaimed && (
           <div className="absolute top-1.5 left-2 h-1.5 w-1.5 rounded-full bg-amber-400 opacity-80" />
         )}
-        <Avatar className="h-14 w-14 border-2" style={{ borderColor: isDeceased ? '#9ca3af44' : color + '55' }}>
+        <Avatar className="h-12 w-12 border-2 shadow-sm" style={{ borderColor: isDeceased ? '#9ca3af44' : color + '88' }}>
           {member.photoUrl && <AvatarImage src={member.photoUrl} alt={displayName} className={cn("object-cover object-top", isDeceased && "grayscale")} />}
-          <AvatarFallback className="text-sm font-bold text-white" style={{ background: isDeceased ? '#6b7280' : color }}>
+          <AvatarFallback className="text-sm font-semibold text-white tracking-wide" style={{ background: isDeceased ? '#6b7280' : color }}>
             {initials}
           </AvatarFallback>
         </Avatar>
@@ -682,14 +845,14 @@ const TreeNodeCard = memo(function TreeNodeCard({
           <div className="absolute top-1.5 left-2 text-[10px] text-muted-foreground/60 font-serif leading-none select-none">†</div>
         )}
         <div className="w-full px-1 text-center">
-          <p className="text-[11px] font-semibold leading-tight truncate" title={displayName}>{displayName}</p>
+          <p className="text-[11.5px] font-semibold leading-tight truncate tracking-tight" title={displayName}>{displayName}</p>
           {/* Lifespan for deceased, relation label otherwise */}
           {isDeceased && (member.birthYear || member.deathYear) ? (
             <p className="text-[9px] leading-tight truncate mt-0.5 text-muted-foreground/60 font-mono">
               {member.birthYear ?? '?'}–{member.deathYear ?? '?'}
             </p>
           ) : relationLabel ? (
-            <p className={cn('text-[9px] leading-tight truncate mt-0.5', node.isInLaw ? 'text-rose-400/80 font-medium' : 'text-muted-foreground')}>
+            <p className={cn('text-[10px] leading-tight truncate mt-0.5', node.isInLaw ? 'text-rose-400/75 font-medium' : 'text-muted-foreground/80')}>
               {relationLabel}
             </p>
           ) : null}
@@ -778,23 +941,23 @@ function GhostSlotCard({ slot, onAddRelative }: { slot: GhostSlot; onAddRelative
       <button
         type="button"
         onClick={() => onAddRelative?.(slot.anchorId, slot.relType)}
-        className="relative w-full h-full rounded-2xl border-2 border-dashed border-border/45 bg-muted/15 flex flex-col items-center justify-center gap-2 transition-all duration-200 hover:border-primary/50 hover:bg-primary/5 group"
-        style={{ opacity: 0.75 }}
+        className="relative w-full h-full rounded-2xl border-2 border-dashed border-border/40 bg-muted/10 flex flex-col items-center justify-center gap-2 transition-all duration-200 hover:border-primary/45 hover:bg-primary/5 hover:shadow-md group"
+        style={{ opacity: 0.72 }}
       >
         {slot.isNextTarget && (
-          <span className="absolute inset-0 rounded-2xl animate-ping border-2 border-primary/35 pointer-events-none" style={{ animationDuration: '2.2s' }} />
+          <span className="absolute inset-0 rounded-2xl animate-ping border-2 border-primary/30 pointer-events-none" style={{ animationDuration: '2.4s' }} />
         )}
         <div className={cn(
-          'h-10 w-10 rounded-full border-2 border-dashed flex items-center justify-center transition-colors',
-          slot.isNextTarget ? 'border-primary/60 text-primary' : 'border-border/50 text-muted-foreground',
-          'group-hover:border-primary/60 group-hover:text-primary',
+          'h-9 w-9 rounded-full border-2 border-dashed flex items-center justify-center transition-all duration-200 shadow-sm',
+          slot.isNextTarget ? 'border-primary/55 text-primary bg-primary/8' : 'border-border/45 text-muted-foreground',
+          'group-hover:border-primary/55 group-hover:text-primary group-hover:bg-primary/8',
         )}>
-          <span className="text-xl font-light">+</span>
+          <span className="text-lg font-light leading-none">+</span>
         </div>
         <span className={cn(
           'text-[10px] font-semibold text-center leading-tight px-2',
-          slot.isNextTarget ? 'text-primary' : 'text-muted-foreground',
-          'group-hover:text-primary',
+          slot.isNextTarget ? 'text-primary/90' : 'text-muted-foreground/80',
+          'group-hover:text-primary/90',
         )}>
           {slot.label}
         </span>
@@ -1243,6 +1406,7 @@ export function HierarchicalTree({
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
+  const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null)
   const panRef = useRef({ x: 0, y: 0 })
   const zoomRef = useRef(1)
   const isDragging = useRef(false)
@@ -1269,6 +1433,23 @@ export function HierarchicalTree({
       if (typeof window !== 'undefined') sessionStorage.removeItem('fg_wizard_done')
     }
   }, [forceWizard])
+
+  // When selfMemberId transitions null→non-null (user just added/claimed themselves
+  // after a data wipe or fresh onboarding), reset the session dismissal so the wizard
+  // can guide them through adding their first relatives.
+  const prevSelfIdRef = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (prevSelfIdRef.current === undefined) {
+      // Skip the very first render — just record the starting value.
+      prevSelfIdRef.current = selfMemberId ?? null
+      return
+    }
+    if (!prevSelfIdRef.current && selfMemberId) {
+      setWizardDismissedThisSession(false)
+      if (typeof window !== 'undefined') sessionStorage.removeItem('fg_wizard_done')
+    }
+    prevSelfIdRef.current = selfMemberId ?? null
+  }, [selfMemberId])
   const [showConfetti, setShowConfetti] = useState(false)
 
   // Core family steps: father + mother. If either is missing and not permanently skipped,
@@ -1327,13 +1508,20 @@ export function HierarchicalTree({
     ro.observe(el); return () => ro.disconnect()
   }, [])
 
+  // When the user hasn't claimed a node (selfMemberId=null), fall back to the
+  // selected member or the first member so ghost slots still render.
+  const layoutAnchorId =
+    selfMemberId ??
+    selectedMemberId ??
+    (members.length > 0 ? members[0].id : null)
+
   const enrichedMembers = useMemo(() =>
-    selfMemberId ? enrichMembersWithDerivedEdges(members, selfMemberId) : members,
-    [members, selfMemberId])
+    layoutAnchorId ? enrichMembersWithDerivedEdges(members, layoutAnchorId) : members,
+    [members, layoutAnchorId])
 
   const { nodes, ghosts, edges } = useMemo(
-    () => buildLayout(enrichedMembers, selfMemberId),
-    [enrichedMembers, selfMemberId],
+    () => buildLayout(enrichedMembers, layoutAnchorId),
+    [enrichedMembers, layoutAnchorId],
   )
 
   const relationLabels = useMemo(() => {
@@ -1535,7 +1723,7 @@ export function HierarchicalTree({
           willChange: 'transform',
         }}
       >
-        <EdgeLayer edges={edges} />
+        <EdgeLayer edges={edges} selectedMemberId={selectedMemberId} hoveredMemberId={hoveredMemberId} />
 
         <AnimatePresence>
           {nodes.map(node => (
@@ -1552,6 +1740,7 @@ export function HierarchicalTree({
               onInviteNode={onInviteNode}
               onClaimNode={onClaimNode}
               onDelete={onDelete}
+              onHover={setHoveredMemberId}
               allMembers={enrichedMembers}
               isAdmin={isAdmin}
             />
@@ -1606,10 +1795,10 @@ export function HierarchicalTree({
         <button
           type="button"
           onClick={() => { sessionStorage.removeItem('fg_wizard_done'); setWizardDismissedThisSession(false) }}
-          className="absolute left-4 z-40 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          className="absolute left-4 z-40 flex items-center gap-1 rounded-full border border-primary/30 bg-card/80 px-3 py-1 text-[11px] font-medium text-primary/70 shadow-sm backdrop-blur-sm hover:border-primary/60 hover:text-primary transition-colors"
           style={{ bottom: bottomControlsInset !== undefined ? bottomControlsInset : 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}
         >
-          Restart guide
+          ✦ Start guide
         </button>
       )}
     </div>

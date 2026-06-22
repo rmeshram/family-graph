@@ -105,6 +105,20 @@ function memberToInsert(
   } as Database['public']['Tables']['family_members']['Insert']
 }
 
+/** Normalize UUID arrays: trim, drop empty values, deduplicate while preserving order. */
+function normalizeUuidArray(values?: string[]): string[] {
+  if (!values || values.length === 0) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of values) {
+    const id = String(raw ?? '').trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
 // ─── useMembers hook ──────────────────────────────────────────────────────────
 
 // ─── Fetch limit — safety cap for initial load. loadMore() fetches next page. ─
@@ -196,7 +210,16 @@ export function useMembers(familyId: string | null) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'family_members', filter: `family_id=eq.${familyId}` },
         (payload) => {
-          const updated = dbToMember(payload.new as any)
+          const row = payload.new as any
+          // Soft-delete: deleted_at was just set — mirror the RLS `deleted_at IS NULL`
+          // filter immediately so stale-closure addMember checks don't find the
+          // archived member and reject same-name re-adds.
+          if (row.deleted_at != null) {
+            setMembers(prev => prev.filter(m => m.id !== row.id))
+            setTotalCount(c => Math.max(0, c - 1))
+            return
+          }
+          const updated = dbToMember(row)
           setMembers(prev => prev.map(m => m.id === updated.id ? updated : m))
         }
       )
@@ -237,13 +260,29 @@ export function useMembers(familyId: string | null) {
       throw new Error('A person cannot have more than 2 biological parents. Use step-parent relationships for additional parents.')
     }
 
+    // Normalize array fields up-front so duplicate UUID entries never persist.
+    const normalizedParentIds = normalizeUuidArray(memberData.parentIds)
+    const normalizedSpouseIds = normalizeUuidArray(memberData.spouseIds)
+
     // ── Uniqueness guards against the current in-memory members list ─────────
     const normName = trimmedName.toLowerCase().replace(/\s+/g, ' ')
     const rel = (memberData.relationship ?? '').toLowerCase().trim()
 
+    // Requirement: duplicate names inside the same family are allowed but warned.
+    const sameNameCount = membersRef.current.filter(
+      m => m.name.toLowerCase().replace(/\s+/g, ' ') === normName
+    ).length
+    if (sameNameCount > 0) {
+      console.warn('[family-members] duplicate_name_warning', {
+        familyId,
+        name: trimmedName,
+        existingCount: sameNameCount,
+      })
+    }
+
     // 1. Exact-same name + relationship already exists in this family
     if (rel) {
-      const dupByNameRel = members.find(m =>
+      const dupByNameRel = membersRef.current.find(m =>
         m.name.toLowerCase().replace(/\s+/g, ' ') === normName &&
         (m.relationship ?? '').toLowerCase().trim() === rel
       )
@@ -259,14 +298,22 @@ export function useMembers(familyId: string | null) {
     //    archived/deleted, their ID is still in anchor.spouseIds but they no longer
     //    exist in the live members array. Treating that as a live link causes a false
     //    "already has a spouse" error (the reported bug: Ratnamala's deleted husband).
-    if ((memberData.spouseIds?.length ?? 0) > 0) {
-      for (const anchorId of memberData.spouseIds!) {
-        const anchor = members.find(m => m.id === anchorId)
+    if (normalizedSpouseIds.length > 0) {
+      const unknownSpouses = normalizedSpouseIds.filter(
+        sid => !membersRef.current.some(m => m.id === sid)
+      )
+      if (unknownSpouses.length > 0) {
+        throw new Error(
+          'Cannot add member: one or more selected spouses no longer exist in the family tree. Please refresh and try again.'
+        )
+      }
+      for (const anchorId of normalizedSpouseIds) {
+        const anchor = membersRef.current.find(m => m.id === anchorId)
         if (anchor) {
           // Only count spouse IDs that resolve to a currently live member
-          const liveSpouseIds = anchor.spouseIds.filter(sid => members.some(m => m.id === sid))
+          const liveSpouseIds = anchor.spouseIds.filter(sid => membersRef.current.some(m => m.id === sid))
           if (liveSpouseIds.length > 0) {
-            const liveSpousseName = members.find(m => m.id === liveSpouseIds[0])?.name ?? 'another member'
+            const liveSpousseName = membersRef.current.find(m => m.id === liveSpouseIds[0])?.name ?? 'another member'
             throw new Error(
               `${anchor.name} already has a spouse (${liveSpousseName}). Remove the existing spouse link before adding a new one.`
             )
@@ -277,18 +324,18 @@ export function useMembers(familyId: string | null) {
 
     // 4. Structural parent cap: each anchor in parentIds can have at most 2 children
     //    with the exact same name — almost certainly a data entry error.
-    if ((memberData.parentIds?.length ?? 0) > 0) {
+    if (normalizedParentIds.length > 0) {
       // GAP-3: reject parentIds pointing to unknown/soft-deleted nodes
-      const unknownParents = (memberData.parentIds ?? []).filter(
-        pid => !members.some(m => m.id === pid)
+      const unknownParents = normalizedParentIds.filter(
+        pid => !membersRef.current.some(m => m.id === pid)
       )
       if (unknownParents.length > 0) {
         throw new Error(
           'Cannot add member: one or more selected parents no longer exist in the family tree. Please refresh and try again.'
         )
       }
-      for (const pid of memberData.parentIds!) {
-        const siblings = members.filter(m => m.parentIds.includes(pid))
+      for (const pid of normalizedParentIds) {
+        const siblings = membersRef.current.filter(m => m.parentIds.includes(pid))
         const dupSibling = siblings.find(s =>
           s.name.toLowerCase().replace(/\s+/g, ' ') === normName
         )
@@ -300,7 +347,25 @@ export function useMembers(familyId: string | null) {
       }
     }
 
-    const insert = memberToInsert({ ...memberData, name: trimmedName }, familyId, userId)
+    // Requirement: generation is derived from parent relationships.
+    const parentGenerationsForInsert = normalizedParentIds
+      .map(pid => membersRef.current.find(m => m.id === pid)?.generation)
+      .filter((g): g is number => typeof g === 'number')
+    const computedGeneration = parentGenerationsForInsert.length > 0
+      ? Math.max(...parentGenerationsForInsert) + 1
+      : memberData.generation
+
+    const insert = memberToInsert(
+      {
+        ...memberData,
+        name: trimmedName,
+        parentIds: normalizedParentIds,
+        spouseIds: normalizedSpouseIds,
+        generation: computedGeneration,
+      },
+      familyId,
+      userId
+    )
     const { data, error } = await supabase.from('family_members').insert(insert).select().single()
     if (error) throw new Error(error.message)
 
@@ -383,17 +448,21 @@ export function useMembers(familyId: string | null) {
     if ('relationship' in updates) patch.relationship = updates.relationship ?? null
     if ('occupation' in updates) patch.occupation = updates.occupation ?? null
     if ('parentIds' in updates) {
-      if ((updates.parentIds?.length ?? 0) > 2) {
+      const normalizedParentIds = normalizeUuidArray(updates.parentIds)
+      if (normalizedParentIds.length > 2) {
         throw new Error('A person cannot have more than 2 biological parents.')
+      }
+      if (normalizedParentIds.includes(id)) {
+        throw new Error('A person cannot list themselves as a parent.')
       }
       // GAP-3: reject parentIds that reference soft-deleted or unknown nodes.
       // A dangling parent reference would create an invisible graph hole —
       // the child appears parentless in the tree even though parent_ids is set.
-      if (updates.parentIds && updates.parentIds.length > 0) {
+      if (normalizedParentIds.length > 0) {
         // Use membersRef (always current) rather than the stale `members`
         // closure — avoids false-positive errors when a parent was just added
         // in the same event loop tick (e.g. wizard: addMember → updateMember).
-        const unknownParents = updates.parentIds.filter(
+        const unknownParents = normalizedParentIds.filter(
           pid => !membersRef.current.some(m => m.id === pid)
         )
         if (unknownParents.length > 0) {
@@ -402,14 +471,13 @@ export function useMembers(familyId: string | null) {
           )
         }
       }
-      patch.parent_ids = updates.parentIds
-      // MED-05: auto-recalculate generation when parentIds changes.
-      // Use the max generation of the new parents + 1. If parents are unknown,
-      // keep the existing generation. This prevents stale generation values from
-      // breaking the generational row layout in the family tree.
-      if (!('generation' in updates) && updates.parentIds && updates.parentIds.length > 0) {
-        const parentGenerations = updates.parentIds
-          .map(pid => members.find(m => m.id === pid)?.generation)
+      patch.parent_ids = normalizedParentIds
+      ;(updates as Partial<FamilyMember>).parentIds = normalizedParentIds
+
+      // Requirement: generation is computed from parentIds on each parent edit.
+      if (normalizedParentIds.length > 0) {
+        const parentGenerations = normalizedParentIds
+          .map(pid => membersRef.current.find(m => m.id === pid)?.generation)
           .filter((g): g is number => typeof g === 'number')
         if (parentGenerations.length > 0) {
           patch.generation = Math.max(...parentGenerations) + 1
@@ -418,8 +486,21 @@ export function useMembers(familyId: string | null) {
         }
       }
     }
-    if ('spouseIds' in updates) patch.spouse_ids = updates.spouseIds
-    if ('generation' in updates) patch.generation = updates.generation
+    if ('spouseIds' in updates) {
+      const normalizedSpouseIds = normalizeUuidArray(updates.spouseIds)
+      if (normalizedSpouseIds.includes(id)) {
+        throw new Error('A person cannot list themselves as a spouse.')
+      }
+      const unknownSpouses = normalizedSpouseIds.filter(
+        sid => !membersRef.current.some(m => m.id === sid)
+      )
+      if (unknownSpouses.length > 0) {
+        throw new Error('Cannot set spouse: one or more selected spouses no longer exist in the family tree.')
+      }
+      patch.spouse_ids = normalizedSpouseIds
+      ;(updates as Partial<FamilyMember>).spouseIds = normalizedSpouseIds
+    }
+    if ('generation' in updates && !('parentIds' in updates)) patch.generation = updates.generation
     if ('isAlive' in updates) patch.is_alive = updates.isAlive
     if ('gender' in updates) patch.gender = updates.gender ?? null
     if ('gotra' in updates) patch.gotra = updates.gotra ?? null

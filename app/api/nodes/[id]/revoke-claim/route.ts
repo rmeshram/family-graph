@@ -163,6 +163,19 @@ export async function POST(
       // Case A: This node was a cross-family secondary claim.
       // The user's primary family (Meshram) is untouched — just clean up the link.
       // No profile update needed at all.
+
+      // Bug 3 fix: Revoke the family_link that was created between the two families
+      // when this cross-family claim was accepted. Without this, use-linked-families
+      // keeps loading the revoked user's family members into this tree with broken links.
+      const [fA, fB] = userPrimaryFamilyId < nodeFamilyId
+        ? [userPrimaryFamilyId, nodeFamilyId]
+        : [nodeFamilyId, userPrimaryFamilyId]
+      await admin
+        .from('family_links')
+        .update({ status: 'revoked', updated_at: new Date().toISOString() } as any)
+        .eq('family_a_id', fA)
+        .eq('family_b_id', fB)
+        .eq('status', 'accepted')
     } else {
       // Case B: Revoked their primary family node. Restore previous state.
       const { data: otherNode } = await admin

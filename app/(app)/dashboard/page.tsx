@@ -538,6 +538,7 @@ export default function FamilyGraphApp() {
   const {
     linkedMembers,
     linkedFamilies,
+    edgeSupplements,
     newMemberAlert,
     clearNewMemberAlert,
     sendLinkRequest,
@@ -676,13 +677,25 @@ export default function FamilyGraphApp() {
     if (isDemoMode) return sampleFamilyMembers
     if (authLoading || dbLoading) return []
     if (!familyId) return []
-    const core = dbMembers.map(m => ({
-      ...m,
-      stories: storiesByMember[m.id] ?? [],
-    }))
+    const core = dbMembers.map(m => {
+      // Apply edge supplements from linked-family junction nodes.
+      // e.g. Rahul in Shikha's family gets parentIds [Sukhdeo, Ratnamala] from
+      // the Meshram-Rahul junction node (even if it's soft-deleted in Meshram's family).
+      const supplement = edgeSupplements?.find(s => s.nodeId === m.id)
+      return {
+        ...m,
+        stories: storiesByMember[m.id] ?? [],
+        parentIds: supplement?.addParentIds?.length
+          ? [...new Set([...m.parentIds, ...supplement.addParentIds])]
+          : m.parentIds,
+        spouseIds: supplement?.addSpouseIds?.length
+          ? [...new Set([...m.spouseIds, ...supplement.addSpouseIds])]
+          : m.spouseIds,
+      }
+    })
     // Merge linked family members as affiliated nodes (shown as Community cluster)
     return [...core, ...linkedMembers]
-  }, [isDemoMode, authLoading, familyId, dbLoading, dbMembers, storiesByMember, linkedMembers])
+  }, [isDemoMode, authLoading, familyId, dbLoading, dbMembers, storiesByMember, linkedMembers, edgeSupplements])
 
   // Focus mode: hide sidebar when user has 0 members (new user, nothing to navigate to).
   // Restore sidebar when they leave the dashboard or add their first member.
@@ -1319,6 +1332,14 @@ export default function FamilyGraphApp() {
 
     // Normalize stored name — collapses extra whitespace, preserves casing
     const storedName = normalizeStoredName(name)
+
+    // Hard guard: exact-name duplicate check (same protection as AddMemberDialog).
+    // The SpeedWizard calls onQuickAdd directly without its own duplicate check,
+    // so this is the only safety net for wizard-submitted names.
+    const exactDup = findExactNameMatch(members, storedName)
+    if (exactDup) {
+      throw new Error(`"${storedName}" is already in your family tree. To add someone with this name, use the full Add Member form for more options.`)
+    }
 
     // ── Spouse gender inference ────────────────────────────────────────────────
     // If adding a spouse and the user didn't explicitly pick a gender, infer the

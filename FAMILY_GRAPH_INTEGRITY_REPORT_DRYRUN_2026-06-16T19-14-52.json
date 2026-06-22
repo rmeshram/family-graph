@@ -1,0 +1,1272 @@
+{
+  "generatedAt": "2026-06-16T19:14:52.013Z",
+  "mode": "dry-run",
+  "familyId": "816baa44-d9ff-47ff-842a-77a23991398b",
+  "memberCount": 44,
+  "bugsFound": 21,
+  "patchesGenerated": 12,
+  "fixes": [
+    {
+      "id": "BUG-1",
+      "memberId": "032ae18b-d445-40e3-847c-4876eb897fe9",
+      "memberName": "shikha meshram",
+      "field": "spouse_ids",
+      "before": [
+        "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+        "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+      ],
+      "after": [
+        "cd5bf853-f63c-4bfc-850b-7811ff42bef0"
+      ],
+      "severity": "error",
+      "description": "shikha meshram has P L Meshran (their PARENT) in spouse_ids. Removing P L Meshran from shikha meshram's spouse_ids."
+    },
+    {
+      "id": "BUG-2a",
+      "memberId": "032ae18b-d445-40e3-847c-4876eb897fe9",
+      "memberName": "shikha meshram",
+      "field": "spouse_ids",
+      "before": [
+        "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+        "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+      ],
+      "after": [
+        "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+        "03273aa9-0477-4f49-9874-6f6653f7b376"
+      ],
+      "severity": "error",
+      "description": "shikha meshram and rahul meshram share children (co-parents) but shikha meshram has no spouse link to rahul meshram. Adding rahul meshram to shikha meshram's spouse_ids."
+    },
+    {
+      "id": "BUG-2b",
+      "memberId": "03273aa9-0477-4f49-9874-6f6653f7b376",
+      "memberName": "rahul meshram",
+      "field": "spouse_ids",
+      "before": [],
+      "after": [
+        "032ae18b-d445-40e3-847c-4876eb897fe9"
+      ],
+      "severity": "error",
+      "description": "rahul meshram and shikha meshram share children (co-parents) but rahul meshram has no spouse link to shikha meshram. Adding shikha meshram to rahul meshram's spouse_ids."
+    },
+    {
+      "id": "BUG-2a",
+      "memberId": "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+      "memberName": "P L Meshran",
+      "field": "spouse_ids",
+      "before": [
+        "032ae18b-d445-40e3-847c-4876eb897fe9"
+      ],
+      "after": [
+        "032ae18b-d445-40e3-847c-4876eb897fe9",
+        "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+      ],
+      "severity": "error",
+      "description": "P L Meshran and Pushpa Meshram share children (co-parents) but P L Meshran has no spouse link to Pushpa Meshram. Adding Pushpa Meshram to P L Meshran's spouse_ids."
+    },
+    {
+      "id": "BUG-2b",
+      "memberId": "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc",
+      "memberName": "Pushpa Meshram",
+      "field": "spouse_ids",
+      "before": [],
+      "after": [
+        "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+      ],
+      "severity": "error",
+      "description": "Pushpa Meshram and P L Meshran share children (co-parents) but Pushpa Meshram has no spouse link to P L Meshran. Adding P L Meshran to Pushpa Meshram's spouse_ids."
+    },
+    {
+      "id": "BUG-3",
+      "memberId": "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+      "memberName": "Shubham meshram",
+      "field": "generation",
+      "before": 0,
+      "after": 3,
+      "severity": "warning",
+      "description": "Shubham meshram has generation=0 but their relationship \"brother\" suggests they should be generation=3 (same as self member shikha meshram)."
+    },
+    {
+      "id": "BUG-4",
+      "memberId": "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+      "memberName": "Shubham meshram",
+      "field": "relationship",
+      "before": "brother",
+      "after": "brother-in-law",
+      "severity": "error",
+      "description": "Shubham meshram is labelled \"brother\" but has no biological parents in this tree. shuchita Meshram has a placeholder spouse \"Mr. shuchi\" — likely a placeholder for Shubham meshram. Correcting Shubham meshram's relationship to \"brother-in-law\"."
+    },
+    {
+      "id": "BUG-5",
+      "memberId": "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+      "memberName": "Shubham meshram",
+      "field": "spouse_ids",
+      "before": [],
+      "after": [
+        "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+      ],
+      "severity": "error",
+      "description": "Shubham meshram has no spouse link. Wiring Shubham meshram ↔ shuchita Meshram as spouses."
+    },
+    {
+      "id": "BUG-5b",
+      "memberId": "f225884c-9b12-4bba-bcfd-f2bdf87319dc",
+      "memberName": "shuchita Meshram",
+      "field": "spouse_ids",
+      "before": [
+        "ca2b9cab-7ef3-4767-95ff-f7042aa335a0"
+      ],
+      "after": [
+        "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9"
+      ],
+      "severity": "error",
+      "description": "Replacing placeholder spouse \"Mr. shuchi\" in shuchita Meshram's spouse_ids with real person Shubham meshram."
+    },
+    {
+      "id": "BUG-6",
+      "memberId": "ca2b9cab-7ef3-4767-95ff-f7042aa335a0",
+      "memberName": "Mr. shuchi",
+      "field": "deleted_at",
+      "before": null,
+      "after": "2026-06-16T19:14:52.008Z",
+      "severity": "warning",
+      "description": "Soft-deleting placeholder member \"Mr. shuchi\" (ca2b9cab-7ef3-4767-95ff-f7042aa335a0) — replaced by real person Shubham meshram."
+    },
+    {
+      "id": "BUG-3",
+      "memberId": "a2edcc06-39dc-49df-884a-c3a26910bb46",
+      "memberName": "Emma Jackson",
+      "field": "generation",
+      "before": 2,
+      "after": 3,
+      "severity": "warning",
+      "description": "Emma Jackson has generation=2 but their relationship \"sister\" suggests they should be generation=3 (same as self member shikha meshram)."
+    },
+    {
+      "id": "BUG-4",
+      "memberId": "a2edcc06-39dc-49df-884a-c3a26910bb46",
+      "memberName": "Emma Jackson",
+      "field": "relationship",
+      "before": "sister",
+      "after": "brother-in-law",
+      "severity": "error",
+      "description": "Emma Jackson is labelled \"brother\" but has no biological parents in this tree. shuchita Meshram has a placeholder spouse \"Mr. shuchi\" — likely a placeholder for Emma Jackson. Correcting Emma Jackson's relationship to \"brother-in-law\"."
+    },
+    {
+      "id": "BUG-5",
+      "memberId": "a2edcc06-39dc-49df-884a-c3a26910bb46",
+      "memberName": "Emma Jackson",
+      "field": "spouse_ids",
+      "before": [],
+      "after": [
+        "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+      ],
+      "severity": "error",
+      "description": "Emma Jackson has no spouse link. Wiring Emma Jackson ↔ shuchita Meshram as spouses."
+    },
+    {
+      "id": "BUG-5b",
+      "memberId": "f225884c-9b12-4bba-bcfd-f2bdf87319dc",
+      "memberName": "shuchita Meshram",
+      "field": "spouse_ids",
+      "before": [
+        "ca2b9cab-7ef3-4767-95ff-f7042aa335a0"
+      ],
+      "after": [
+        "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+        "a2edcc06-39dc-49df-884a-c3a26910bb46"
+      ],
+      "severity": "error",
+      "description": "Replacing placeholder spouse \"Mr. shuchi\" in shuchita Meshram's spouse_ids with real person Emma Jackson."
+    },
+    {
+      "id": "BUG-6",
+      "memberId": "ca2b9cab-7ef3-4767-95ff-f7042aa335a0",
+      "memberName": "Mr. shuchi",
+      "field": "deleted_at",
+      "before": null,
+      "after": "2026-06-16T19:14:52.009Z",
+      "severity": "warning",
+      "description": "Soft-deleting placeholder member \"Mr. shuchi\" (ca2b9cab-7ef3-4767-95ff-f7042aa335a0) — replaced by real person Emma Jackson."
+    },
+    {
+      "id": "BUG-3",
+      "memberId": "faf6c362-c122-42e7-bfb1-fc608872df96",
+      "memberName": "Daniel Jackson",
+      "field": "generation",
+      "before": 2,
+      "after": 3,
+      "severity": "warning",
+      "description": "Daniel Jackson has generation=2 but their relationship \"brother\" suggests they should be generation=3 (same as self member shikha meshram)."
+    },
+    {
+      "id": "BUG-4",
+      "memberId": "faf6c362-c122-42e7-bfb1-fc608872df96",
+      "memberName": "Daniel Jackson",
+      "field": "relationship",
+      "before": "brother",
+      "after": "brother-in-law",
+      "severity": "error",
+      "description": "Daniel Jackson is labelled \"brother\" but has no biological parents in this tree. shuchita Meshram has a placeholder spouse \"Mr. shuchi\" — likely a placeholder for Daniel Jackson. Correcting Daniel Jackson's relationship to \"brother-in-law\"."
+    },
+    {
+      "id": "BUG-5",
+      "memberId": "faf6c362-c122-42e7-bfb1-fc608872df96",
+      "memberName": "Daniel Jackson",
+      "field": "spouse_ids",
+      "before": [],
+      "after": [
+        "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+      ],
+      "severity": "error",
+      "description": "Daniel Jackson has no spouse link. Wiring Daniel Jackson ↔ shuchita Meshram as spouses."
+    },
+    {
+      "id": "BUG-5b",
+      "memberId": "f225884c-9b12-4bba-bcfd-f2bdf87319dc",
+      "memberName": "shuchita Meshram",
+      "field": "spouse_ids",
+      "before": [
+        "ca2b9cab-7ef3-4767-95ff-f7042aa335a0"
+      ],
+      "after": [
+        "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+        "a2edcc06-39dc-49df-884a-c3a26910bb46",
+        "faf6c362-c122-42e7-bfb1-fc608872df96"
+      ],
+      "severity": "error",
+      "description": "Replacing placeholder spouse \"Mr. shuchi\" in shuchita Meshram's spouse_ids with real person Daniel Jackson."
+    },
+    {
+      "id": "BUG-6",
+      "memberId": "ca2b9cab-7ef3-4767-95ff-f7042aa335a0",
+      "memberName": "Mr. shuchi",
+      "field": "deleted_at",
+      "before": null,
+      "after": "2026-06-16T19:14:52.009Z",
+      "severity": "warning",
+      "description": "Soft-deleting placeholder member \"Mr. shuchi\" (ca2b9cab-7ef3-4767-95ff-f7042aa335a0) — replaced by real person Daniel Jackson."
+    },
+    {
+      "id": "BUG-3",
+      "memberId": "7ba98c13-1970-4442-8340-dddf55468235",
+      "memberName": "Matthew Clark",
+      "field": "generation",
+      "before": 2,
+      "after": 3,
+      "severity": "warning",
+      "description": "Matthew Clark has generation=2 but their relationship \"brother-in-law\" suggests they should be generation=3 (same as self member shikha meshram)."
+    }
+  ],
+  "graphDiff": {
+    "before": [
+      {
+        "id": "3c8276f5-8d00-4f33-a25e-e9d3cad20da1",
+        "name": "Yogesh",
+        "relationship": "husband",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "72c086c5-54e3-43ba-b3e8-2677c3c77ca5"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "5f849a90-2ee0-42e2-b741-8d08fe1a34fd",
+        "name": "monu",
+        "relationship": "son",
+        "generation": 4,
+        "parentIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9",
+          "03273aa9-0477-4f49-9874-6f6653f7b376"
+        ],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "ca2b9cab-7ef3-4767-95ff-f7042aa335a0",
+        "name": "Mr. shuchi",
+        "relationship": "husband",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+        ],
+        "status": "will_be_deleted"
+      },
+      {
+        "id": "1db764c4-72fc-4cad-919f-82a64e8e8385",
+        "name": "Vibha Meshram",
+        "relationship": "sister",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "5dac2d12-2b3c-4633-8eaf-b5eef24d5392"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "5dac2d12-2b3c-4633-8eaf-b5eef24d5392",
+        "name": "Snehil Ghodeshwar",
+        "relationship": "husband",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "1db764c4-72fc-4cad-919f-82a64e8e8385"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "61ea0a4b-5be9-44fb-8d6b-6ca8a6ff4125",
+        "name": "Samayra Ghodeshwar",
+        "relationship": "daughter",
+        "generation": 4,
+        "parentIds": [
+          "1db764c4-72fc-4cad-919f-82a64e8e8385"
+        ],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+        "name": "P L Meshran",
+        "relationship": "father-in-law",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "f225884c-9b12-4bba-bcfd-f2bdf87319dc",
+        "name": "shuchita Meshram",
+        "relationship": "sister",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "ca2b9cab-7ef3-4767-95ff-f7042aa335a0"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "032ae18b-d445-40e3-847c-4876eb897fe9",
+        "name": "shikha meshram",
+        "relationship": "self",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "72c086c5-54e3-43ba-b3e8-2677c3c77ca5",
+        "name": "Shubha Meshram",
+        "relationship": "sister",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "3c8276f5-8d00-4f33-a25e-e9d3cad20da1"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc",
+        "name": "Pushpa Meshram",
+        "relationship": "mother",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+        "name": "Shubham meshram",
+        "relationship": "brother",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+        "name": "Rahul",
+        "relationship": "husband",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "d299ec43-3815-4b7e-964a-d815265fad49",
+        "name": "William Jackson",
+        "relationship": "grandfather",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "21f6811c-cae3-4c38-8a52-9d22b9d31bed",
+        "name": "Mary Jackson",
+        "relationship": "grandmother",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "a0bd1083-6cf5-4fe2-a18e-28152d1f5d53",
+        "name": "Robert Jackson",
+        "relationship": "father",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "de9bb607-2c02-4859-9bbc-e8e5b7070968",
+        "name": "Linda Jackson",
+        "relationship": "mother",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "1f5a3bca-c480-487f-92bc-ee4e88cbed63",
+        "name": "Michael Jackson",
+        "relationship": "uncle",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "d51ad56a-70dc-4465-a9fc-f501afdb9801",
+        "name": "Patricia Jackson",
+        "relationship": "aunt",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "07551562-718a-4f3a-bf41-544ee8b89185",
+        "name": "David Jackson",
+        "relationship": "uncle",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "2c75ca48-965f-4a0e-9c9a-b7815ec48539",
+        "name": "Susan Jackson",
+        "relationship": "aunt",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "af467b97-2c7d-4ad6-a091-9aa132947ac7",
+        "name": "Jennifer Wilson",
+        "relationship": "aunt",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "d2d95fe9-7d17-4501-82fe-5ab25fdad704",
+        "name": "Mark Wilson",
+        "relationship": "uncle",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "35507da2-94d0-4aa3-95ca-4c47884e32a6",
+        "name": "James Jackson",
+        "relationship": "self",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "a2edcc06-39dc-49df-884a-c3a26910bb46",
+        "name": "Emma Jackson",
+        "relationship": "sister",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "faf6c362-c122-42e7-bfb1-fc608872df96",
+        "name": "Daniel Jackson",
+        "relationship": "brother",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "8694b077-5bbf-46d3-abd8-278cd63657d9",
+        "name": "Sophia Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "bbc171e7-875e-4322-9cf6-aaaa2214bbbc",
+        "name": "Ethan Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "772c520d-ca56-4c9e-a71b-c9fb9dd603a3",
+        "name": "Olivia Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "f0cfe724-76de-4949-8401-7cc3decacce6",
+        "name": "Noah Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "22277dc5-3dd3-4dad-8f01-f82da9bad166",
+        "name": "Grace Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "b52b93ae-5a31-4909-8c26-8db6f38647e6",
+        "name": "Benjamin Wilson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "076481fc-563a-4316-b505-57fafca7ec04",
+        "name": "Charlotte Wilson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "3f3dae2c-5248-4289-ac3b-b5ef615459ac",
+        "name": "Sarah Jackson",
+        "relationship": "spouse",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "7ba98c13-1970-4442-8340-dddf55468235",
+        "name": "Matthew Clark",
+        "relationship": "brother-in-law",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "4512ca47-d303-462c-a795-dbd4ddd223af",
+        "name": "Lucas Jackson",
+        "relationship": "son",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "0f92ea96-8558-4ab4-b96f-306fce4b740d",
+        "name": "Margaret Jackson",
+        "relationship": "great-grandmother",
+        "generation": -1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "2c1e15ce-dd7a-478f-a816-97590a21e071",
+        "name": "Emma Clark",
+        "relationship": "niece",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "a4a0d2e9-0bfe-49ca-a0b1-6eb8556248ca",
+        "name": "Liam Clark",
+        "relationship": "nephew",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "5f7e6fec-872f-45bb-ba22-a76cf4619e09",
+        "name": "George Jackson",
+        "relationship": "great-grandfather",
+        "generation": -1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "f3105a66-6b83-478d-bd40-d4566faf75e0",
+        "name": "Abigail Jackson",
+        "relationship": "second cousin",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "900c89b4-ddf6-4bcf-8cad-025d9f59ccfa",
+        "name": "Ava Jackson",
+        "relationship": "daughter",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "b7c2bfd3-b98e-4508-a45d-21417ea0def5",
+        "name": "Henry Jackson",
+        "relationship": "second cousin",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "03273aa9-0477-4f49-9874-6f6653f7b376",
+        "name": "rahul meshram",
+        "relationship": "father",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      }
+    ],
+    "after": [
+      {
+        "id": "3c8276f5-8d00-4f33-a25e-e9d3cad20da1",
+        "name": "Yogesh",
+        "relationship": "husband",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "72c086c5-54e3-43ba-b3e8-2677c3c77ca5"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "5f849a90-2ee0-42e2-b741-8d08fe1a34fd",
+        "name": "monu",
+        "relationship": "son",
+        "generation": 4,
+        "parentIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9",
+          "03273aa9-0477-4f49-9874-6f6653f7b376"
+        ],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "1db764c4-72fc-4cad-919f-82a64e8e8385",
+        "name": "Vibha Meshram",
+        "relationship": "sister",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "5dac2d12-2b3c-4633-8eaf-b5eef24d5392"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "5dac2d12-2b3c-4633-8eaf-b5eef24d5392",
+        "name": "Snehil Ghodeshwar",
+        "relationship": "husband",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "1db764c4-72fc-4cad-919f-82a64e8e8385"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "61ea0a4b-5be9-44fb-8d6b-6ca8a6ff4125",
+        "name": "Samayra Ghodeshwar",
+        "relationship": "daughter",
+        "generation": 4,
+        "parentIds": [
+          "1db764c4-72fc-4cad-919f-82a64e8e8385"
+        ],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+        "name": "P L Meshran",
+        "relationship": "father-in-law",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "f225884c-9b12-4bba-bcfd-f2bdf87319dc",
+        "name": "shuchita Meshram",
+        "relationship": "sister",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+          "a2edcc06-39dc-49df-884a-c3a26910bb46",
+          "faf6c362-c122-42e7-bfb1-fc608872df96"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "032ae18b-d445-40e3-847c-4876eb897fe9",
+        "name": "shikha meshram",
+        "relationship": "self",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+          "03273aa9-0477-4f49-9874-6f6653f7b376"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "72c086c5-54e3-43ba-b3e8-2677c3c77ca5",
+        "name": "Shubha Meshram",
+        "relationship": "sister",
+        "generation": 3,
+        "parentIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+          "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+        ],
+        "spouseIds": [
+          "3c8276f5-8d00-4f33-a25e-e9d3cad20da1"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc",
+        "name": "Pushpa Meshram",
+        "relationship": "mother",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [
+          "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+        "name": "Shubham meshram",
+        "relationship": "brother-in-law",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+        "name": "Rahul",
+        "relationship": "husband",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "d299ec43-3815-4b7e-964a-d815265fad49",
+        "name": "William Jackson",
+        "relationship": "grandfather",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "21f6811c-cae3-4c38-8a52-9d22b9d31bed",
+        "name": "Mary Jackson",
+        "relationship": "grandmother",
+        "generation": 0,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "a0bd1083-6cf5-4fe2-a18e-28152d1f5d53",
+        "name": "Robert Jackson",
+        "relationship": "father",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "de9bb607-2c02-4859-9bbc-e8e5b7070968",
+        "name": "Linda Jackson",
+        "relationship": "mother",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "1f5a3bca-c480-487f-92bc-ee4e88cbed63",
+        "name": "Michael Jackson",
+        "relationship": "uncle",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "d51ad56a-70dc-4465-a9fc-f501afdb9801",
+        "name": "Patricia Jackson",
+        "relationship": "aunt",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "07551562-718a-4f3a-bf41-544ee8b89185",
+        "name": "David Jackson",
+        "relationship": "uncle",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "2c75ca48-965f-4a0e-9c9a-b7815ec48539",
+        "name": "Susan Jackson",
+        "relationship": "aunt",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "af467b97-2c7d-4ad6-a091-9aa132947ac7",
+        "name": "Jennifer Wilson",
+        "relationship": "aunt",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "d2d95fe9-7d17-4501-82fe-5ab25fdad704",
+        "name": "Mark Wilson",
+        "relationship": "uncle",
+        "generation": 1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "35507da2-94d0-4aa3-95ca-4c47884e32a6",
+        "name": "James Jackson",
+        "relationship": "self",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "a2edcc06-39dc-49df-884a-c3a26910bb46",
+        "name": "Emma Jackson",
+        "relationship": "brother-in-law",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "faf6c362-c122-42e7-bfb1-fc608872df96",
+        "name": "Daniel Jackson",
+        "relationship": "brother-in-law",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+        ],
+        "status": "active"
+      },
+      {
+        "id": "8694b077-5bbf-46d3-abd8-278cd63657d9",
+        "name": "Sophia Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "bbc171e7-875e-4322-9cf6-aaaa2214bbbc",
+        "name": "Ethan Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "772c520d-ca56-4c9e-a71b-c9fb9dd603a3",
+        "name": "Olivia Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "f0cfe724-76de-4949-8401-7cc3decacce6",
+        "name": "Noah Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "22277dc5-3dd3-4dad-8f01-f82da9bad166",
+        "name": "Grace Jackson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "b52b93ae-5a31-4909-8c26-8db6f38647e6",
+        "name": "Benjamin Wilson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "076481fc-563a-4316-b505-57fafca7ec04",
+        "name": "Charlotte Wilson",
+        "relationship": "cousin",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "3f3dae2c-5248-4289-ac3b-b5ef615459ac",
+        "name": "Sarah Jackson",
+        "relationship": "spouse",
+        "generation": 2,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "7ba98c13-1970-4442-8340-dddf55468235",
+        "name": "Matthew Clark",
+        "relationship": "brother-in-law",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "4512ca47-d303-462c-a795-dbd4ddd223af",
+        "name": "Lucas Jackson",
+        "relationship": "son",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "0f92ea96-8558-4ab4-b96f-306fce4b740d",
+        "name": "Margaret Jackson",
+        "relationship": "great-grandmother",
+        "generation": -1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "2c1e15ce-dd7a-478f-a816-97590a21e071",
+        "name": "Emma Clark",
+        "relationship": "niece",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "a4a0d2e9-0bfe-49ca-a0b1-6eb8556248ca",
+        "name": "Liam Clark",
+        "relationship": "nephew",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "5f7e6fec-872f-45bb-ba22-a76cf4619e09",
+        "name": "George Jackson",
+        "relationship": "great-grandfather",
+        "generation": -1,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "f3105a66-6b83-478d-bd40-d4566faf75e0",
+        "name": "Abigail Jackson",
+        "relationship": "second cousin",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "900c89b4-ddf6-4bcf-8cad-025d9f59ccfa",
+        "name": "Ava Jackson",
+        "relationship": "daughter",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "b7c2bfd3-b98e-4508-a45d-21417ea0def5",
+        "name": "Henry Jackson",
+        "relationship": "second cousin",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [],
+        "status": "active"
+      },
+      {
+        "id": "03273aa9-0477-4f49-9874-6f6653f7b376",
+        "name": "rahul meshram",
+        "relationship": "father",
+        "generation": 3,
+        "parentIds": [],
+        "spouseIds": [
+          "032ae18b-d445-40e3-847c-4876eb897fe9"
+        ],
+        "status": "active"
+      }
+    ],
+    "changed": [
+      {
+        "id": "ca2b9cab-7ef3-4767-95ff-f7042aa335a0",
+        "name": "Mr. shuchi",
+        "change": "soft_deleted"
+      },
+      {
+        "id": "19e88fe3-6f96-4a08-b359-d6a94e1c163e",
+        "name": "P L Meshran",
+        "change": "updated",
+        "spouseIds": {
+          "before": [
+            "032ae18b-d445-40e3-847c-4876eb897fe9"
+          ],
+          "after": [
+            "032ae18b-d445-40e3-847c-4876eb897fe9",
+            "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc"
+          ]
+        }
+      },
+      {
+        "id": "f225884c-9b12-4bba-bcfd-f2bdf87319dc",
+        "name": "shuchita Meshram",
+        "change": "updated",
+        "spouseIds": {
+          "before": [
+            "ca2b9cab-7ef3-4767-95ff-f7042aa335a0"
+          ],
+          "after": [
+            "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+            "a2edcc06-39dc-49df-884a-c3a26910bb46",
+            "faf6c362-c122-42e7-bfb1-fc608872df96"
+          ]
+        }
+      },
+      {
+        "id": "032ae18b-d445-40e3-847c-4876eb897fe9",
+        "name": "shikha meshram",
+        "change": "updated",
+        "spouseIds": {
+          "before": [
+            "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+            "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+          ],
+          "after": [
+            "cd5bf853-f63c-4bfc-850b-7811ff42bef0",
+            "03273aa9-0477-4f49-9874-6f6653f7b376"
+          ]
+        }
+      },
+      {
+        "id": "b4f28701-9dc3-4cd9-a581-3d35c8bdafdc",
+        "name": "Pushpa Meshram",
+        "change": "updated",
+        "spouseIds": {
+          "before": [],
+          "after": [
+            "19e88fe3-6f96-4a08-b359-d6a94e1c163e"
+          ]
+        }
+      },
+      {
+        "id": "aee3dfaa-34d3-4443-ae64-b1c7a930b2d9",
+        "name": "Shubham meshram",
+        "change": "updated",
+        "relationship": {
+          "before": "brother",
+          "after": "brother-in-law"
+        },
+        "generation": {
+          "before": 0,
+          "after": 3
+        },
+        "spouseIds": {
+          "before": [],
+          "after": [
+            "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+          ]
+        }
+      },
+      {
+        "id": "a2edcc06-39dc-49df-884a-c3a26910bb46",
+        "name": "Emma Jackson",
+        "change": "updated",
+        "relationship": {
+          "before": "sister",
+          "after": "brother-in-law"
+        },
+        "generation": {
+          "before": 2,
+          "after": 3
+        },
+        "spouseIds": {
+          "before": [],
+          "after": [
+            "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+          ]
+        }
+      },
+      {
+        "id": "faf6c362-c122-42e7-bfb1-fc608872df96",
+        "name": "Daniel Jackson",
+        "change": "updated",
+        "relationship": {
+          "before": "brother",
+          "after": "brother-in-law"
+        },
+        "generation": {
+          "before": 2,
+          "after": 3
+        },
+        "spouseIds": {
+          "before": [],
+          "after": [
+            "f225884c-9b12-4bba-bcfd-f2bdf87319dc"
+          ]
+        }
+      },
+      {
+        "id": "7ba98c13-1970-4442-8340-dddf55468235",
+        "name": "Matthew Clark",
+        "change": "updated",
+        "generation": {
+          "before": 2,
+          "after": 3
+        }
+      },
+      {
+        "id": "03273aa9-0477-4f49-9874-6f6653f7b376",
+        "name": "rahul meshram",
+        "change": "updated",
+        "spouseIds": {
+          "before": [],
+          "after": [
+            "032ae18b-d445-40e3-847c-4876eb897fe9"
+          ]
+        }
+      }
+    ]
+  }
+}
