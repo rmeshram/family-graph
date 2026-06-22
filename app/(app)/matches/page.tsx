@@ -640,6 +640,33 @@ function ProfileCard({
             &ldquo;{profile.partner_expectations}&rdquo;
           </p>
         )}
+
+        {/* Trust / profile-strength badge — SPEC §5.3 */}
+        {(() => {
+          const filled = [
+            profile.biodata_photo_url,
+            profile.gotra,
+            profile.birth_year,
+            profile.occupation,
+            profile.education_level,
+            profile.annual_income_range,
+            profile.current_place,
+            profile.family_type,
+          ].filter(Boolean).length
+          if (filled < 3) return null
+          const high = filled >= 6
+          return (
+            <div className={`flex items-center gap-2 rounded-xl px-3 py-2 ${high ? 'bg-green-50' : 'bg-amber-50'}`}>
+              <CheckCircle2 className={`h-4 w-4 shrink-0 ${high ? 'text-green-600' : 'text-amber-600'}`} />
+              <span className={`text-xs font-semibold ${high ? 'text-green-700' : 'text-amber-700'}`}>
+                {high ? 'Verified profile · Family-backed' : 'Profile complete'}
+              </span>
+              <span className={`ml-auto text-[10px] font-bold ${high ? 'text-green-600' : 'text-amber-600'}`}>
+                {Math.round((filled / 8) * 100)}%
+              </span>
+            </div>
+          )
+        })()}
       </div>
 
       {/* action bar */}

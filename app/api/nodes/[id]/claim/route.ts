@@ -359,6 +359,7 @@ export async function POST(
         .select('node_id')
         .eq('user_id', user.id)
         .eq('is_primary', true)
+        .eq('status', 'active')
         .neq('node_id', nodeId)
         .limit(1)
         .maybeSingle()

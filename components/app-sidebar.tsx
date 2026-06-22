@@ -35,6 +35,7 @@ const ALL_NAV_ITEMS = [
   { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500', flag: null },
   { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400', flag: 'enableMigrationMap' as const },
   { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400', flag: 'enableBiodata' as const },
+  { icon: Heart, label: 'Find Matches', href: '/matches', color: 'text-pink-500', flag: 'enableMatrimonyFeed' as const },
   { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400', flag: 'enableFamilyPoster' as const },
   { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400', flag: 'enableKulgathaPDF' as const },
   { icon: Shield, label: 'Moderation', href: '/moderation', color: 'text-violet-400', flag: 'enableModeratorUI' as const },

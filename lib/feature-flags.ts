@@ -47,8 +47,8 @@ export const FEATURE_FLAGS = {
   enablePhoneOtpAuth: true,
   /** Email + password authentication. Disable only if switching 100% to phone OTP. */
   enableEmailPasswordAuth: true,
-  /** Matrimony biodata generation & matching page (/biodata). Disabled until the matching pipeline is ready. */
-  enableBiodata: false,
+  /** Matrimony biodata generation & matching page (/biodata). */
+  enableBiodata: true,
   /** Cross-family matrimony match discovery feed (/matches). Requires matrimony_interests migration 046. */
   enableMatrimonyFeed: true,
   /** Hierarchical family tree view — screenshot-faithful layout (grandparents → parents → You → children).
@@ -72,7 +72,7 @@ export const FEATURE_FLAGS = {
   /** Premium matrimony paywall. Free at launch for traction — flip with enableStripePayments. */
   enableMatrimonyPremium: false,
   /** "Share on WhatsApp" button on biodata page. Uses wa.me deep link — no Business API needed. */
-  enableBiodataWhatsappShare: false,
+  enableBiodataWhatsappShare: true,
   /** Community matrimony pools. */
   enableCommunityPools: false,
   /** Show matrimony matches outside the user's own family. */
@@ -84,7 +84,7 @@ export const FEATURE_FLAGS = {
   /** Kundli PDF via AstroSage API. Requires ASTROSAGE_API_KEY. V3 — post-traction only. */
   enableKundliIntegration: false,
   /** Matrimony-first 3-screen onboarding (SPEC §4.3). */
-  enableMatrimonyFirstOnboarding: false,
+  enableMatrimonyFirstOnboarding: true,
 
   // ─────────────────────────────────────────────────────────────────────────
   // SPEC §2.2 — V2 flags (Days 31–90). Default OFF.

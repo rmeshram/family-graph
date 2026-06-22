@@ -162,11 +162,12 @@ export async function POST(
 
   // 3. Remove user_node_links for the previous claimer.
   if (previousClaimantId) {
-    await admin
+    const { error: linkErr } = await admin
       .from('user_node_links')
       .delete()
       .eq('node_id', nodeId)
       .eq('user_id', previousClaimantId)
+    if (linkErr) console.error('[unclaim] user_node_links delete failed:', linkErr.message)
   }
 
   // 4. Clear profiles.member_id so the app immediately stops treating this node
@@ -175,11 +176,12 @@ export async function POST(
   //    next time they try to claim a node.
   //    Always clear — for both self-unclaim and admin revoke.
   if (previousClaimantId) {
-    await admin
+    const { error: profileErr } = await admin
       .from('profiles')
       .update({ member_id: null } as any)
       .eq('id', previousClaimantId)
       .eq('member_id', nodeId) // guard: only clear if still pointing at this node
+    if (profileErr) console.error('[unclaim] profiles.member_id clear failed:', profileErr.message)
   }
 
   // 5. Audit log

@@ -168,22 +168,25 @@ export async function POST(
   }
 
   // 3. Update user_node_links: deactivate old link, upsert new one
-  await (admin.from('user_node_links') as any)
+  const { error: deactivateErr } = await (admin.from('user_node_links') as any)
     .update({ status: 'inactive', is_primary: false })
     .eq('user_id', targetUserId)
     .eq('node_id', fromNodeId)
     .eq('family_id', familyId)
+  if (deactivateErr) console.error('[transfer] user_node_links deactivate failed:', deactivateErr.message)
 
-  await (admin.from('user_node_links') as any).upsert({
+  const { error: upsertErr } = await (admin.from('user_node_links') as any).upsert({
     user_id: targetUserId,
     node_id: toNodeId,
     family_id: familyId,
     is_primary: true,
     status: 'active',
   }, { onConflict: 'user_id,node_id,family_id' })
+  if (upsertErr) console.error('[transfer] user_node_links upsert failed:', upsertErr.message)
 
   // 4. Update profiles.member_id
-  await admin.from('profiles').update({ member_id: toNodeId }).eq('id', targetUserId)
+  const { error: profileErr } = await admin.from('profiles').update({ member_id: toNodeId }).eq('id', targetUserId)
+  if (profileErr) console.error('[transfer] profiles.member_id update failed:', profileErr.message)
 
   // 5. Audit log
   await (admin.from('claim_audit_log') as any).insert({

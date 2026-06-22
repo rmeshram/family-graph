@@ -1,5 +1,30 @@
 import { FamilyMember, FamilyEvent, MemoryItem, VoiceNote } from './types'
 
+// ── Demo matrimony types (mirror the shape the matches/inbox pages expect) ──
+export interface DemoBiodataProfile {
+  id: string; name: string; gender: string | null; birth_year: number | null
+  current_place: string | null; gotra: string | null; religion: string | null
+  caste: string | null; occupation: string | null; occupation_category: string | null
+  education_level: string | null; education_field: string | null
+  annual_income_range: string | null; height_cm: number | null
+  marital_status: string | null; family_type: string | null; manglik: boolean | null
+  biodata_photo_url: string | null; residency_status: string | null
+  current_country: string | null; partner_expectations: string | null
+  family_id: string
+}
+
+export interface DemoSenderProfile {
+  id: string; name: string; birth_year: number | null; gotra: string | null
+  religion: string | null; occupation: string | null; current_place: string | null
+  biodata_photo_url: string | null; education_level: string | null; height_cm: number | null
+}
+
+export interface DemoReceivedInterest {
+  id: string; from_node_id: string; action: 'like' | 'connect_request'
+  message: string | null; status: string; created_at: string
+  profile: DemoSenderProfile | null
+}
+
 // Dynamic today — used so birthday notification always fires in demo mode
 const _today = new Date()
 const _todayMonth = _today.getMonth() + 1
@@ -1110,3 +1135,209 @@ export const sampleVoiceNotes: VoiceNote[] = [
     memberId: 'g1-2',
   },
 ]
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Demo matrimony data — used by /matches and /matches/inbox in demo mode
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const sampleMatrimonyProfiles: DemoBiodataProfile[] = [
+  {
+    id: 'demo-bio-01', family_id: 'demo-family-b',
+    name: 'Priya Sharma', gender: 'female', birth_year: 1998,
+    gotra: 'Kashyap', religion: 'Hindu', caste: 'Brahmin',
+    occupation: 'Senior Software Engineer', occupation_category: 'private',
+    current_place: 'Bangalore', current_country: 'India',
+    height_cm: 163, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Computer Science',
+    annual_income_range: '10_to_15lakh', family_type: 'nuclear',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Looking for a well-educated, family-oriented partner. Love books and travel.',
+  },
+  {
+    id: 'demo-bio-02', family_id: 'demo-family-b',
+    name: 'Anjali Reddy', gender: 'female', birth_year: 1996,
+    gotra: 'Gowda', religion: 'Hindu', caste: 'Reddy',
+    occupation: 'MBBS Doctor', occupation_category: 'private',
+    current_place: 'Hyderabad', current_country: 'India',
+    height_cm: 158, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Medicine',
+    annual_income_range: '15_to_25lakh', family_type: 'joint',
+    manglik: null, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Prefer someone in a stable profession. Open to living in any metro city.',
+  },
+  {
+    id: 'demo-bio-03', family_id: 'demo-family-c',
+    name: 'Kavya Nair', gender: 'female', birth_year: 1999,
+    gotra: null, religion: 'Christian', caste: 'Syrian Christian',
+    occupation: 'Marketing Manager', occupation_category: 'private',
+    current_place: 'Mumbai', current_country: 'India',
+    height_cm: 161, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Business Administration',
+    annual_income_range: '10_to_15lakh', family_type: 'nuclear',
+    manglik: null, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Looking for someone kind, ambitious and family-loving.',
+  },
+  {
+    id: 'demo-bio-04', family_id: 'demo-family-c',
+    name: 'Meera Patel', gender: 'female', birth_year: 1997,
+    gotra: 'Audich', religion: 'Hindu', caste: 'Audich Brahmin',
+    occupation: 'Chartered Accountant', occupation_category: 'professional',
+    current_place: 'Ahmedabad', current_country: 'India',
+    height_cm: 155, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Commerce & Finance',
+    annual_income_range: '10_to_15lakh', family_type: 'joint',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Hoping to find a grounded, value-driven partner from a good family.',
+  },
+  {
+    id: 'demo-bio-05', family_id: 'demo-family-d',
+    name: 'Neha Singh', gender: 'female', birth_year: 2000,
+    gotra: 'Kaushik', religion: 'Hindu', caste: 'Rajput',
+    occupation: 'Data Scientist', occupation_category: 'private',
+    current_place: 'New Jersey', current_country: 'USA',
+    height_cm: 166, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Data Science',
+    annual_income_range: '25_to_50lakh', family_type: 'nuclear',
+    manglik: null, biodata_photo_url: null, residency_status: 'nri',
+    partner_expectations: 'NRI looking to settle down. Open to India or abroad. Family values are important.',
+  },
+  {
+    id: 'demo-bio-06', family_id: 'demo-family-d',
+    name: 'Shreya Kapoor', gender: 'female', birth_year: 1995,
+    gotra: 'Vashisht', religion: 'Hindu', caste: 'Punjabi Khatri',
+    occupation: 'Architect', occupation_category: 'professional',
+    current_place: 'Delhi', current_country: 'India',
+    height_cm: 168, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Architecture',
+    annual_income_range: '10_to_15lakh', family_type: 'joint',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Creative, independent. Looking for someone emotionally mature and supportive.',
+  },
+  {
+    id: 'demo-bio-07', family_id: 'demo-family-b',
+    name: 'Arjun Sharma', gender: 'male', birth_year: 1994,
+    gotra: 'Bharadwaj', religion: 'Hindu', caste: 'Brahmin',
+    occupation: 'Senior Engineer (Google)', occupation_category: 'private',
+    current_place: 'Bangalore', current_country: 'India',
+    height_cm: 178, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Computer Science (IIT)',
+    annual_income_range: '25_to_50lakh', family_type: 'nuclear',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'IIT grad, loves trekking and cooking. Looking for an educated, independent partner.',
+  },
+  {
+    id: 'demo-bio-08', family_id: 'demo-family-c',
+    name: 'Rahul Patel', gender: 'male', birth_year: 1993,
+    gotra: 'Audich', religion: 'Hindu', caste: 'Audich Brahmin',
+    occupation: 'Chartered Accountant', occupation_category: 'professional',
+    current_place: 'Ahmedabad', current_country: 'India',
+    height_cm: 172, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Commerce & Law',
+    annual_income_range: '15_to_25lakh', family_type: 'joint',
+    manglik: null, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Family-oriented, settled career. Want a life partner who values traditions.',
+  },
+  {
+    id: 'demo-bio-09', family_id: 'demo-family-c',
+    name: 'Kiran Kumar', gender: 'male', birth_year: 1995,
+    gotra: 'Lingayat', religion: 'Hindu', caste: 'Lingayat',
+    occupation: 'MD Doctor', occupation_category: 'private',
+    current_place: 'Hyderabad', current_country: 'India',
+    height_cm: 175, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Medicine (MD)',
+    annual_income_range: '15_to_25lakh', family_type: 'joint',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: "Calm, caring. Prefer someone understanding of a doctor's schedule.",
+  },
+  {
+    id: 'demo-bio-10', family_id: 'demo-family-d',
+    name: 'Vikram Kapoor', gender: 'male', birth_year: 1991,
+    gotra: 'Parashar', religion: 'Hindu', caste: 'Punjabi Khatri',
+    occupation: 'Startup Founder', occupation_category: 'business',
+    current_place: 'Delhi', current_country: 'India',
+    height_cm: 182, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Business (IIM)',
+    annual_income_range: '50lakh_plus', family_type: 'nuclear',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'Entrepreneur, passionate about building things. Seeking a driven, ambitious partner.',
+  },
+  {
+    id: 'demo-bio-11', family_id: 'demo-family-d',
+    name: 'Dev Malhotra', gender: 'male', birth_year: 1992,
+    gotra: 'Atri', religion: 'Hindu', caste: 'Punjabi Brahmin',
+    occupation: 'Principal Engineer', occupation_category: 'private',
+    current_place: 'London', current_country: 'UK',
+    height_cm: 180, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Computer Science',
+    annual_income_range: '50lakh_plus', family_type: 'nuclear',
+    manglik: false, biodata_photo_url: null, residency_status: 'nri',
+    partner_expectations: 'Based in UK, visit India twice a year. Open to settling in India or UK.',
+  },
+  {
+    id: 'demo-bio-12', family_id: 'demo-family-b',
+    name: 'Rohan Joshi', gender: 'male', birth_year: 1993,
+    gotra: 'Sandilya', religion: 'Hindu', caste: 'Maharashtrian Brahmin',
+    occupation: 'IAS Officer', occupation_category: 'government',
+    current_place: 'Pune', current_country: 'India',
+    height_cm: 174, marital_status: 'never_married',
+    education_level: 'post_graduate', education_field: 'Public Administration (UPSC)',
+    annual_income_range: '10_to_15lakh', family_type: 'joint',
+    manglik: false, biodata_photo_url: null, residency_status: 'indian_citizen',
+    partner_expectations: 'IAS officer, simple living. Looking for an understanding, grounded partner.',
+  },
+]
+
+// ── Demo inbox data ──────────────────────────────────────────────────────────
+
+const _demoSender = (id: string): DemoSenderProfile => {
+  const p = sampleMatrimonyProfiles.find(x => x.id === id)!
+  return {
+    id: p.id, name: p.name, birth_year: p.birth_year,
+    gotra: p.gotra, religion: p.religion, occupation: p.occupation,
+    current_place: p.current_place, biodata_photo_url: p.biodata_photo_url,
+    education_level: p.education_level, height_cm: p.height_cm,
+  }
+}
+
+export const sampleInboxData: DemoReceivedInterest[] = [
+  // Connect requests tab
+  {
+    id: 'inbox-r1', from_node_id: 'demo-bio-07',
+    action: 'connect_request', status: 'pending',
+    created_at: new Date(Date.now() - 3 * 3600000).toISOString(),
+    message: "Hi! I came across your profile on Outverse and would love to connect. I'm a software engineer in Bangalore, family-oriented and love trekking. Would be great to know more about you.",
+    profile: _demoSender('demo-bio-07'),
+  },
+  {
+    id: 'inbox-r2', from_node_id: 'demo-bio-10',
+    action: 'connect_request', status: 'accepted',
+    created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+    message: "Hello! Vikram here from Delhi. Running a startup and always looking to connect with like-minded people. Your profile stood out — would love to have a chat.",
+    profile: _demoSender('demo-bio-10'),
+  },
+  {
+    id: 'inbox-r3', from_node_id: 'demo-bio-11',
+    action: 'connect_request', status: 'declined',
+    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+    message: "Hi, I'm Dev — NRI based in London. Your profile seemed really genuine. Happy to connect if there's mutual interest.",
+    profile: _demoSender('demo-bio-11'),
+  },
+  // Likes tab (one is mutual — from-node also liked back)
+  {
+    id: 'inbox-l1', from_node_id: 'demo-bio-01',
+    action: 'like', status: 'pending',
+    created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+    message: null,
+    profile: _demoSender('demo-bio-01'),
+  },
+  {
+    id: 'inbox-l2', from_node_id: 'demo-bio-03',
+    action: 'like', status: 'pending',
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    message: null,
+    profile: _demoSender('demo-bio-03'),
+  },
+]
+
+// IDs that the demo user has "liked back" — creates the Mutual tab entry
+export const sampleMutualNodeIds = new Set(['demo-bio-03'])

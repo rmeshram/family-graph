@@ -124,7 +124,14 @@ export async function POST(
     .eq('node_id', id)
     .neq('status', 'rejected')
 
-  await admin.from('user_node_links').delete().eq('node_id', id)
+  const { error: linkDeleteErr } = await admin.from('user_node_links').delete().eq('node_id', id)
+  if (linkDeleteErr) {
+    console.error('[revoke] user_node_links delete failed:', linkDeleteErr.message)
+    return NextResponse.json(
+      { error: 'REVOKE_CLEANUP_FAILED', message: 'Claim revoked but could not remove linked account. Contact support.' },
+      { status: 500 }
+    )
+  }
 
   // Handle the revoked user's profile state.
   //
@@ -164,18 +171,30 @@ export async function POST(
       // The user's primary family (Meshram) is untouched — just clean up the link.
       // No profile update needed at all.
 
-      // Bug 3 fix: Revoke the family_link that was created between the two families
-      // when this cross-family claim was accepted. Without this, use-linked-families
-      // keeps loading the revoked user's family members into this tree with broken links.
+      // Revoke the family_link between the two families ONLY if no other user
+      // has an active cross-family claim between those same two families.
+      // Without this check, revoking one user's cross-family claim would sever
+      // the link for all other users who also bridged those same two families.
       const [fA, fB] = userPrimaryFamilyId < nodeFamilyId
         ? [userPrimaryFamilyId, nodeFamilyId]
         : [nodeFamilyId, userPrimaryFamilyId]
-      await admin
-        .from('family_links')
-        .update({ status: 'revoked', updated_at: new Date().toISOString() } as any)
-        .eq('family_a_id', fA)
-        .eq('family_b_id', fB)
-        .eq('status', 'accepted')
+
+      const { count: otherCrossFamilyClaims } = await admin
+        .from('family_members')
+        .select('id', { count: 'exact', head: true })
+        .eq('family_id', nodeFamilyId)
+        .eq('is_claimed', true)
+        .neq('claimed_by_user_id', revokedUserId)
+        .not('claimed_by_user_id', 'is', null)
+
+      if ((otherCrossFamilyClaims ?? 0) === 0) {
+        await admin
+          .from('family_links')
+          .update({ status: 'revoked', updated_at: new Date().toISOString() } as any)
+          .eq('family_a_id', fA)
+          .eq('family_b_id', fB)
+          .eq('status', 'accepted')
+      }
     } else {
       // Case B: Revoked their primary family node. Restore previous state.
       const { data: otherNode } = await admin

@@ -246,7 +246,7 @@ export async function POST(
   // ── 4. Update all OTHER members that reference the duplicate ───────────────
   const { data: affectedMembers } = await admin
     .from('family_members')
-    .select('id, parent_ids, spouse_ids')
+    .select('id, parent_ids, spouse_ids, updated_at')
     .eq('family_id', (primary as any).family_id)
     .neq('id', primaryId)
     .neq('id', targetId)
@@ -265,9 +265,13 @@ export async function POST(
       refUpdates.push(
         Promise.resolve(
           admin.from('family_members')
-            .update({ parent_ids: newParents, spouse_ids: newSpouses })
+            .update({ parent_ids: newParents, spouse_ids: newSpouses, updated_at: new Date().toISOString() })
             .eq('id', memberAny.id)
-        ).then(() => { })
+            .eq('updated_at', memberAny.updated_at) // optimistic lock: if another merge already updated this row, skip gracefully
+        ).then(({ error }) => {
+          if (error) console.warn(`[merge] ref-remap failed for member ${memberAny.id}:`, error.message)
+          // 0 rows updated = another concurrent merge already remapped this node; that merge's result is correct
+        })
       )
     }
   }
@@ -468,6 +472,21 @@ export async function POST(
   // ISSUE-14: retarget cross_family_node_matches to the surviving primary.
   // After merge, suggestions that referenced the archived duplicate would show
   // a broken/invisible node to admins reviewing the cross-family dashboard.
+  // Delete any existing (primaryId, node_b_id) or (node_a_id, primaryId) rows first
+  // to avoid unique constraint violations when the primary already had its own matches
+  // that overlap with the duplicate's matches.
+  await (admin.from('cross_family_node_matches') as any)
+    .delete()
+    .in('node_a_id', [primaryId])
+    .in('node_b_id', (await (admin.from('cross_family_node_matches') as any)
+      .select('node_b_id').eq('node_a_id', targetId).then(({ data }: any) => (data ?? []).map((r: any) => r.node_b_id)))
+    ).then(() => { })
+  await (admin.from('cross_family_node_matches') as any)
+    .delete()
+    .in('node_b_id', [primaryId])
+    .in('node_a_id', (await (admin.from('cross_family_node_matches') as any)
+      .select('node_a_id').eq('node_b_id', targetId).then(({ data }: any) => (data ?? []).map((r: any) => r.node_a_id)))
+    ).then(() => { })
   await (admin.from('cross_family_node_matches') as any)
     .update({ node_a_id: primaryId }).eq('node_a_id', targetId).then(() => { })
   await (admin.from('cross_family_node_matches') as any)

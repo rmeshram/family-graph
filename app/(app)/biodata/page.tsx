@@ -245,6 +245,44 @@ export default function BiodataPage() {
     return 'Extended network'
   }
 
+  /* ── loading skeleton — matches biodata card shape ── */
+  if (authLoading || (loading && !isDemoMode)) {
+    return (
+      <div className="flex flex-col min-h-screen bg-background">
+        <div className="sticky top-0 z-20 h-16 border-b border-border/50 bg-card/95 flex items-center px-4 sm:px-6 gap-3">
+          <div className="h-8 w-8 rounded-lg bg-muted animate-pulse" />
+          <div className="h-5 w-28 rounded bg-muted animate-pulse" />
+        </div>
+        <div className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 space-y-4">
+          {/* member selector */}
+          <div className="h-10 w-48 rounded-xl bg-muted animate-pulse" />
+          {/* biodata card skeleton */}
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+            {/* amber header */}
+            <div className="h-20 bg-amber-100 animate-pulse" />
+            <div className="p-5 space-y-4">
+              <div className="h-5 w-40 rounded bg-gray-200 animate-pulse" />
+              <div className="space-y-2.5">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="flex gap-2 items-center overflow-hidden relative">
+                    <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" style={{ animationDelay: `${i * 100}ms` }} />
+                    <div className="h-3 w-24 rounded bg-gray-100 animate-pulse shrink-0" />
+                    <div className="h-3 flex-1 rounded bg-gray-200 animate-pulse" style={{ maxWidth: `${120 + (i % 3) * 40}px` }} />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-9 flex-1 rounded-xl bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-background overflow-x-hidden">
       <DemoBanner />
@@ -471,8 +509,17 @@ export default function BiodataPage() {
                               ["Occupation", member.occupation ?? "–"],
                               [
                                 "Education",
-                                member.milestones?.find(ms => ms.type === "education")?.title ?? "–",
+                                member.educationField
+                                  ? `${member.educationField}${member.educationLevel ? ` (${member.educationLevel.replace(/_/g, ' ')})` : ''}`
+                                  : member.educationLevel?.replace(/_/g, ' ') ?? member.milestones?.find(ms => ms.type === "education")?.title ?? "–",
                               ],
+                              [
+                                "Height",
+                                member.heightCm
+                                  ? (() => { const i = Math.round(member.heightCm / 2.54); return `${Math.floor(i / 12)}'${i % 12}" (${member.heightCm} cm)` })()
+                                  : "–",
+                              ],
+                              ["Income", member.annualIncomeRange?.replace(/_/g, ' ').replace('lakh', 'L').replace('plus', '+').toUpperCase() ?? "–"],
                             ].map(([label, value]) => (
                               <div key={label} className="flex gap-2" style={{ fontSize: '13px' }}>
                                 <dt style={{ color: '#6B7280', width: '112px', flexShrink: 0, fontWeight: 500 }}>{label}</dt>

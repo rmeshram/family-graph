@@ -126,7 +126,7 @@ PHASE 4 — BIODATA CREATION (FF: enableBiodata)
 
 PHASE 5 — MATCH DISCOVERY (FF: enableCrossFamilyMatching, Day 7 paywall)
   8. User opens Matches page
-       → If not premium: paywall shown → upgrade flow (Stripe)
+       → If not premium: paywall shown → upgrade flow (Stripe) [V2 — free at launch]
        → After upgrade: match feed loads
        → Sorted by: gotra compatibility → community pool → trust score
        → Each card shows: name/age/city, trust badge, "how connected"
@@ -209,8 +209,9 @@ These flags do not yet exist in `lib/feature-flags.ts` and must be added before 
 
 | Flag Name | Default | Description | Blocks |
 |---|---|---|---|
-| `enableStripePayments` | `false` | Payment processing via Stripe | Revenue |
-| `enableMatrimonyPremium` | `false` | Premium paywall at day 7 | Revenue |
+| `enableStripePayments` | `false` | Payment processing via Stripe | Revenue — V2 |
+| `enableMatrimonyPremium` | `false` | Premium paywall — free at launch for traction | Revenue — V2 |
+| `enableBiodataWhatsappShare` | `false` | "Share on WhatsApp" button on biodata page (no Business API needed — uses deep link) | Sharing |
 | `enableCommunityPools` | `false` | Community matrimony pools | Matching |
 | `enableCrossFamilyMatching` | `false` | Show matches outside own family | Matching |
 | `enableWhatsAppNotifications` | `false` | WhatsApp Business API notifications | Notifs |
@@ -268,6 +269,177 @@ if (process.env.NEXT_PUBLIC_ENABLE_BIODATA === 'true') { ... }
 
 ## 3. Architecture Principles
 
+### 3.0 Design Direction (Locked — Billion-Dollar Bar. No Negotiation.)
+
+**Reference companies:** Linear, Stripe, Raycast, Superhuman, Craft, Arc Browser — combined with the cultural warmth of a premium Indian brand (Tanishq, Nykaa, Zepto's best screens).
+
+**App UI:** Clean, fast, trusted. Every pixel intentional.
+**Biodata share card (WhatsApp image):** Premium printed invitation. Parents forward it proudly.
+
+---
+
+#### Color System
+
+| Token | Hex | Tailwind | Usage |
+|---|---|---|---|
+| Background | `#F8F9FA` | `bg-[#F8F9FA]` | Page canvas |
+| Surface 0 | `#FFFFFF` | `bg-white` | Primary cards |
+| Surface 1 | `#F3F4F6` | `bg-gray-100` | Secondary surfaces, inputs |
+| Border | `#E5E7EB` | `border-gray-200` | All borders |
+| Primary | `#1D4ED8` | `bg-blue-700` | CTAs, active states, links |
+| Primary hover | `#1E40AF` | `hover:bg-blue-800` | |
+| Verified | `#15803D` | `text-green-700` | Verified, claimed, trusted |
+| Verified bg | `#F0FDF4` | `bg-green-50` | Badge backgrounds |
+| Amber accent | `#D97706` | `text-amber-600` | Gotra, cultural elements |
+| Text primary | `#0F172A` | `text-slate-900` | Names, headings |
+| Text secondary | `#475569` | `text-slate-500` | Labels, meta |
+| Text muted | `#94A3B8` | `text-slate-400` | Placeholders, timestamps |
+| Danger | `#B91C1C` | `text-red-700` | Errors, destructive actions |
+| Danger bg | `#FEF2F2` | `bg-red-50` | Error surfaces |
+
+> The amber accent is the ONLY cultural color in the app UI — used sparingly for gotra, community, and cultural signals. Everything else is blue/slate.
+
+---
+
+#### Typography Scale
+
+| Role | Size | Weight | Line height | Element |
+|---|---|---|---|---|
+| Display | 36px / 2.25rem | 700 | 1.1 | Landing hero only |
+| H1 | 28px / 1.75rem | 700 | 1.2 | Page titles |
+| H2 | 22px / 1.375rem | 600 | 1.3 | Section headings |
+| H3 | 17px / 1.0625rem | 600 | 1.4 | Card headings, names |
+| Body | 15px / 0.9375rem | 400 | 1.6 | All body text |
+| Small | 13px / 0.8125rem | 400 | 1.5 | Labels, metadata, badges |
+| Micro | 11px / 0.6875rem | 500 | 1.4 | Timestamps, counts |
+
+**Font:** `Inter` — loaded via `next/font/google`, applied to `<html>` with `font-feature-settings: 'cv11', 'ss01'` (Inter's alternate digits + open 'a'). No other font in the app UI.
+
+---
+
+#### Spacing & Layout
+
+- **Base unit:** 4px. All spacing is multiples of 4.
+- **Page max-width:** `max-w-2xl` (672px) for content, `max-w-4xl` for dashboard
+- **Card padding:** `p-5` (20px) on desktop, `p-4` (16px) on mobile
+- **Section gap:** `gap-4` between cards, `gap-6` between sections
+- **Mobile breakpoint:** Design starts at 375px. `sm:` breakpoint = 640px.
+
+---
+
+#### Elevation System
+
+| Level | CSS | When |
+|---|---|---|
+| Flat | `border border-gray-200` | Default cards |
+| Raised | `shadow-sm border border-gray-100` | Hover state, active cards |
+| Float | `shadow-md` | Dropdowns, popovers |
+| Modal | `shadow-xl` | Dialogs, drawers |
+
+Never use `shadow-lg` or `shadow-2xl` — too heavy for this aesthetic.
+
+---
+
+#### Motion & Animation (Framer Motion — already in deps)
+
+**Principle:** Motion communicates state change. Never animate for decoration.
+
+| Interaction | Animation | Duration |
+|---|---|---|
+| Page transition | `opacity: 0→1, y: 8→0` | 200ms ease-out |
+| Card appear | `opacity: 0→1, scale: 0.98→1` | 150ms ease-out |
+| Modal open | `opacity: 0→1, scale: 0.96→1` | 200ms ease-out |
+| Drawer slide | `x: 100%→0` (right), `y: 100%→0` (bottom sheet) | 250ms spring |
+| Button press | `scale: 1→0.97` on mousedown | 100ms |
+| Success state | `scale: 1→1.05→1` (bounce) | 300ms spring |
+| Verified badge appear | `scale: 0→1` with spring | 400ms spring (bouncy) |
+| Skeleton loading | `opacity: 0.5→1` pulse | 1.5s infinite |
+
+**Rules:**
+- All `duration` values ≤ 300ms for interactions (>300ms feels slow)
+- Use `spring` for things that "land" (badges, modals), `ease-out` for things that "arrive" (pages, cards)
+- Every loading state has a skeleton — no spinners except for full-page auth
+- Every success state has a micro-animation — the user must FEEL it worked
+
+---
+
+#### Component Standards
+
+**Buttons:**
+- Primary: `bg-blue-700 text-white rounded-xl px-5 py-2.5 font-semibold text-sm hover:bg-blue-800 active:scale-[0.97] transition-all`
+- Secondary: `bg-white text-slate-700 border border-gray-200 rounded-xl px-5 py-2.5 font-semibold text-sm hover:bg-gray-50`
+- Destructive: `bg-red-50 text-red-700 border border-red-200 rounded-xl`
+- Ghost: `text-slate-600 hover:bg-gray-100 rounded-lg`
+- Full-width on mobile always: `w-full sm:w-auto`
+
+**Input fields:**
+- `bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all`
+- Error state: `border-red-300 focus:ring-red-500`
+- Success state: checkmark icon appears inside the field
+
+**Cards:**
+- Default: `bg-white rounded-2xl border border-gray-200 p-5`
+- Interactive: add `hover:shadow-sm hover:border-gray-300 cursor-pointer transition-all duration-150`
+- Never use `rounded-3xl` — too soft, loses precision
+
+**Badges / Pills:**
+- Verified: `bg-green-50 text-green-700 text-xs font-semibold px-2.5 py-1 rounded-full`
+- Gotra: `bg-amber-50 text-amber-700 text-xs font-semibold px-2.5 py-1 rounded-full`
+- Pending: `bg-yellow-50 text-yellow-700 text-xs font-semibold px-2.5 py-1 rounded-full`
+
+---
+
+#### States That Must Be Designed (No Exceptions)
+
+Every feature screen must have all 5 states built before it ships:
+
+| State | Requirement |
+|---|---|
+| **Loading** | Skeleton that matches the shape of the loaded content |
+| **Empty** | Illustration + headline + CTA — never just "No data found" |
+| **Error** | Specific error message + recovery action — never just "Something went wrong" |
+| **Success** | Micro-animation + confirmation message |
+| **Partial** (data exists but incomplete) | Inline prompt to complete (e.g. "Add a photo to strengthen your profile") |
+
+---
+
+#### Mobile-First Rules
+
+- Touch targets minimum 44×44px (Apple HIG standard)
+- Bottom sheet for all contextual actions (never right-click menus)
+- Sticky CTAs at bottom of screen on mobile (`fixed bottom-0 left-0 right-0 p-4 bg-white border-t`)
+- No hover-only interactions — everything accessible by tap
+- Bottom navigation bar for the 4 main sections (Dashboard, Matches, Family, Profile)
+
+---
+
+#### What Billion-Dollar Design Looks Like in Practice
+
+1. **The match card** — when a user sees a match, the verified family badge is the first thing their eye goes to. Green. Prominent. Trustworthy. Not buried.
+2. **The biodata page** — loads in under 1 second, skeleton perfectly matches the content, every field either has content or has a polished prompt to add it.
+3. **The "Share on WhatsApp" card** — when a parent receives this image, it looks as premium as a wedding invitation. Saffron header, structured layout, family tree badge at the bottom.
+4. **Every error state** — tells the user exactly what happened and exactly what to do next. No "Oops! Something went wrong."
+5. **The family graph** — smooth pan/zoom, nodes have hover states, edges animate in on load.
+6. **The OTP screen** — clean, single input, auto-submits on 6th digit, error state is clear.
+
+---
+
+#### Biodata Share Card (WhatsApp PNG)
+
+| Token | Value |
+|---|---|
+| Size | 800×1000px (portrait, WhatsApp-optimized) |
+| Background | `#FDF8F2` (warm ivory) |
+| Header band | `#B45309` (deep saffron) — name + gotra in white |
+| Accent line | `#78350F` (dark maroon) |
+| Font — name | Playfair Display Bold, 32px |
+| Font — body | Inter, 14px |
+| Family tree badge | Bottom corner — "Verified family of X members" in green |
+| QR code | Bottom right — links to live biodata profile |
+| Generator | `html2canvas` on hidden off-screen component → PNG → `navigator.share()` |
+
+> This card is shared in WhatsApp family groups by parents. It must look like it was designed by a premium wedding bureau. If a parent sees it and thinks "this looks cheap", it's a failure.
+
 ### 3.1 Stack (Do Not Change Without Founder Approval)
 
 | Layer | Technology | Reason |
@@ -278,7 +450,7 @@ if (process.env.NEXT_PUBLIC_ENABLE_BIODATA === 'true') { ... }
 | Payments | Stripe | Industry standard, global |
 | Transcription | OpenAI Whisper API | Multi-language, accurate |
 | AI/LLM | Gemini (existing) + Claude Sonnet for sensitive prompts | Existing + quality |
-| Kundli API | AstroSage REST API | V2 |
+| Kundli API | AstroSage REST API | V3 — post-traction only |
 | WhatsApp | WhatsApp Business API (Meta) | V2 |
 | Vector store | Supabase pgvector | V2 (AI matching) |
 | CDN/Storage | Supabase Storage | Existing |
@@ -2315,30 +2487,30 @@ Before merging any PR:
 ## 23. Rollout Sequence
 
 ### Phase 1 — Enable What's Built (Week 1–2)
-Priority: Ship zero new code. Enable what already exists.
+Priority: Ship zero new code. Enable what already exists. **No payments — free launch for traction.**
 
 | Action | Flag | Day |
 |---|---|---|
 | Enable biodata profiles | `enableBiodata: true` | Day 1 |
-| Enable Stripe payments | `enableStripePayments: true` | Day 1 |
-| Enable premium paywall | `enableMatrimonyPremium: true` | Day 2 |
-| Enable phone OTP as default | `enablePhoneOtpAuth: true` | Day 3 |
-| Enable trust score display | `enableTrustScore: true` | Day 5 |
-| Enable cross-family matching | `enableCrossFamilyMatching: true` | Day 7 |
+| Enable phone OTP as default | `enablePhoneOtpAuth: true` | Day 1 |
+| Enable matrimony-first onboarding | `enableMatrimonyFirstOnboarding: true` | Day 2 |
+| Enable trust score display | `enableTrustScore: true` | Day 3 |
+| Enable cross-family matching | `enableCrossFamilyMatching: true` | Day 5 |
+| Enable WhatsApp biodata share button | `enableBiodataWhatsappShare: true` | Day 5 |
 
-**Acceptance gate:** At least 1 paying customer before proceeding to Phase 2.
+**Acceptance gate:** 50 active families with biodata profiles before proceeding to Phase 2.
 
 ### Phase 2 — Core Matrimony Loop (Week 3–6)
 
 | Feature | Flag | Week |
 |---|---|---|
 | Community pools (open pools) | `enableCommunityPools: true` | Week 3 |
-| Matrimony-first onboarding | `enableMatrimonyFirstOnboarding: true` | Week 3 |
-| WhatsApp notifications | `enableWhatsAppNotifications: true` | Week 4 |
-| Kundli integration | `enableKundliIntegration: true` | Week 5 |
-| AI compatibility narrative | `enableAiCompatibilityNarrative: true` | Week 6 |
+| WhatsApp notifications (Business API) | `enableWhatsAppNotifications: true` | Week 4 |
+| AI compatibility narrative | `enableAiCompatibilityNarrative: true` | Week 5 |
+| Stripe payments (premium tier) | `enableStripePayments: true` | Week 6 |
+| Premium paywall | `enableMatrimonyPremium: true` | Week 6 |
 
-**Acceptance gate:** 50 paying families before proceeding to Phase 3.
+**Acceptance gate:** 200 active families + strong D7 retention before adding paywall.
 
 ### Phase 3 — Growth & B2B (Month 2–3)
 
@@ -2346,6 +2518,7 @@ Priority: Ship zero new code. Enable what already exists.
 |---|---|---|
 | Sabha B2B OS | `enableSabhaB2B: true` | Month 2 |
 | AI tree builder (onboarding) | `enableAiOnboarding: true` | Month 2 |
+| Kundli integration | `enableKundliIntegration: true` | Month 2 — V2, post-traction |
 | Assisted matchmaking tier | `enableAssistedMatchmaking: true` | Month 3 |
 | Relationship path narrative | `enableRelationshipPathNarrative: true` | Month 3 |
 | Hindi language UI | `enableHindiLanguage: true` | Month 3 |
