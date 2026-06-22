@@ -1,0 +1,1 @@
+Refer to docs/SPEC.md as the single source of truth for all product requirements.

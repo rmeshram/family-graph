@@ -1,0 +1,246 @@
+{
+  "generatedAt": "2026-06-17T18:49:11.518Z",
+  "mode": "execute",
+  "familyFilter": "2c03c277-d4cb-4b6e-9f33-4c043258a183",
+  "totalFamilies": 1,
+  "totalAutoMerges": 0,
+  "totalFieldFixes": 2,
+  "humanReviewCount": 2,
+  "families": [
+    {
+      "familyId": "2c03c277-d4cb-4b6e-9f33-4c043258a183",
+      "memberCount": 8,
+      "plan": {
+        "familyId": "2c03c277-d4cb-4b6e-9f33-4c043258a183",
+        "merges": [],
+        "fieldFixes": [
+          {
+            "memberId": "89e089e1-ddf2-42cf-99ec-d288bf789ce9",
+            "memberName": "rahul",
+            "field": "generation",
+            "oldValue": 0,
+            "newValue": 3,
+            "reason": "generation recomputed from BFS: 0 → 3"
+          },
+          {
+            "memberId": "3600aef7-a22a-40cd-aca4-91e062919fa4",
+            "memberName": "Shikha",
+            "field": "spouse_ids",
+            "oldValue": [
+              "89e089e1-ddf2-42cf-99ec-d288bf789ce9",
+              "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+            ],
+            "newValue": [
+              "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+            ],
+            "reason": "spouse_ids normalised"
+          }
+        ],
+        "humanReviewQueue": [
+          {
+            "idA": "3fb9bdd8-8d68-4105-8670-8b4801dc44c8",
+            "nameA": "Pushpa Meshram",
+            "idB": "1cc67d4a-6be5-41c2-a1da-d99df3312d78",
+            "nameB": "Shushita Meshram",
+            "confidence": 38,
+            "matchReasons": [
+              "name similarity 75%"
+            ],
+            "autoMerged": false,
+            "canonicalId": null
+          },
+          {
+            "idA": "f9080f1b-a5b6-41ad-ba60-99d921f25340",
+            "nameA": "Shikha M",
+            "idB": "3600aef7-a22a-40cd-aca4-91e062919fa4",
+            "nameB": "Shikha",
+            "confidence": 58,
+            "matchReasons": [
+              "name similarity 75%",
+              "same or shared spouse"
+            ],
+            "autoMerged": false,
+            "canonicalId": null
+          }
+        ],
+        "summary": {
+          "totalMembers": 8,
+          "autoMerges": 0,
+          "fieldFixes": 2,
+          "humanReview": 2
+        }
+      },
+      "before": [
+        {
+          "id": "3fb9bdd8-8d68-4105-8670-8b4801dc44c8",
+          "name": "Pushpa Meshram",
+          "generation": -1,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+          "name": "PL meshram",
+          "generation": -1,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "1cc67d4a-6be5-41c2-a1da-d99df3312d78",
+          "name": "Shushita Meshram",
+          "generation": 0,
+          "parentIds": [
+            "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+            "3fb9bdd8-8d68-4105-8670-8b4801dc44c8"
+          ],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "89e089e1-ddf2-42cf-99ec-d288bf789ce9",
+          "name": "rahul",
+          "generation": 0,
+          "parentIds": [
+            "9f2271dd-7d00-456c-8a4d-877da459897b",
+            "9859ba53-ed2c-4f89-a0d2-cc0bb3213ded"
+          ],
+          "spouseIds": [
+            "f9080f1b-a5b6-41ad-ba60-99d921f25340",
+            "3600aef7-a22a-40cd-aca4-91e062919fa4"
+          ],
+          "status": "active"
+        },
+        {
+          "id": "f9080f1b-a5b6-41ad-ba60-99d921f25340",
+          "name": "Shikha M",
+          "generation": 0,
+          "parentIds": [
+            "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+            "3fb9bdd8-8d68-4105-8670-8b4801dc44c8"
+          ],
+          "spouseIds": [
+            "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+          ],
+          "status": "active"
+        },
+        {
+          "id": "9859ba53-ed2c-4f89-a0d2-cc0bb3213ded",
+          "name": "Ratnamala Meshram",
+          "generation": 2,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "9f2271dd-7d00-456c-8a4d-877da459897b",
+          "name": "SUKHDEO MESHRAM",
+          "generation": 2,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "3600aef7-a22a-40cd-aca4-91e062919fa4",
+          "name": "Shikha",
+          "generation": 3,
+          "parentIds": [],
+          "spouseIds": [
+            "89e089e1-ddf2-42cf-99ec-d288bf789ce9",
+            "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+          ],
+          "status": "active"
+        }
+      ],
+      "after": [
+        {
+          "id": "3fb9bdd8-8d68-4105-8670-8b4801dc44c8",
+          "name": "Pushpa Meshram",
+          "generation": -1,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+          "name": "PL meshram",
+          "generation": -1,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "1cc67d4a-6be5-41c2-a1da-d99df3312d78",
+          "name": "Shushita Meshram",
+          "generation": 0,
+          "parentIds": [
+            "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+            "3fb9bdd8-8d68-4105-8670-8b4801dc44c8"
+          ],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "89e089e1-ddf2-42cf-99ec-d288bf789ce9",
+          "name": "rahul",
+          "generation": 3,
+          "parentIds": [
+            "9f2271dd-7d00-456c-8a4d-877da459897b",
+            "9859ba53-ed2c-4f89-a0d2-cc0bb3213ded"
+          ],
+          "spouseIds": [
+            "f9080f1b-a5b6-41ad-ba60-99d921f25340",
+            "3600aef7-a22a-40cd-aca4-91e062919fa4"
+          ],
+          "status": "active"
+        },
+        {
+          "id": "f9080f1b-a5b6-41ad-ba60-99d921f25340",
+          "name": "Shikha M",
+          "generation": 0,
+          "parentIds": [
+            "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+            "3fb9bdd8-8d68-4105-8670-8b4801dc44c8"
+          ],
+          "spouseIds": [
+            "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+          ],
+          "status": "active"
+        },
+        {
+          "id": "9859ba53-ed2c-4f89-a0d2-cc0bb3213ded",
+          "name": "Ratnamala Meshram",
+          "generation": 2,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "9f2271dd-7d00-456c-8a4d-877da459897b",
+          "name": "SUKHDEO MESHRAM",
+          "generation": 2,
+          "parentIds": [],
+          "spouseIds": [],
+          "status": "active"
+        },
+        {
+          "id": "3600aef7-a22a-40cd-aca4-91e062919fa4",
+          "name": "Shikha",
+          "generation": 3,
+          "parentIds": [],
+          "spouseIds": [
+            "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+          ],
+          "status": "active"
+        }
+      ],
+      "mutations": {
+        "mergesApplied": 0,
+        "refRewrites": 0,
+        "fieldFixesApplied": 2,
+        "softDeleted": 0
+      }
+    }
+  ]
+}

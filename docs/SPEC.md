@@ -21,7 +21,7 @@
 
 1. [Product Vision & Positioning](#1-product-vision--positioning)
 2. [Feature Flags Master Registry](#2-feature-flags-master-registry)
-3. [Architecture Principles](#3-architecture-principles)
+3. [Architecture Principles](#3-architecture-principles) — Stack · DB · API · Performance · Roles · User Account Layer · Canonical Graph · Mutation Rules · Relationship Source of Truth · Document Split Policy
 4. [Authentication & Onboarding](#4-authentication--onboarding)
 5. [Family Tree & Graph Core](#5-family-tree--graph-core)
 6. [Member Management & Claims](#6-member-management--claims)
@@ -86,7 +86,86 @@ A **trusted family relationship network** where:
 | WhatsApp biodata shares/week | 50 | 1,000 |
 | MRR | ₹50,000 | ₹8,00,000 |
 
----
+### 1.7 End-to-End Happy Path (Full User Journey)
+
+This is the golden path QA must validate before every release. Every step must work flawlessly.
+
+```
+PHASE 1 — ACQUISITION
+  1. User lands on homepage
+       → Sees: "Find matches your family can trust"
+       → Primary CTA: "Start with your phone number"
+       → Secondary CTA: "See how it works" (demo family)
+
+PHASE 2 — AUTH & ONBOARDING (< 2 minutes)
+  2. Phone OTP signup
+       → Enter +91 / international number
+       → Receive 6-digit OTP via SMS
+       → Verify → account created
+  3. Matrimony-first onboarding (3 screens, FF: enableMatrimonyFirstOnboarding)
+       → Screen 1: "Who are you looking for?" (son/daughter/self/no matrimony)
+       → Screen 2 (matrimony path): Community + gotra + city
+       → Screen 3: Name + age + photo (optional)
+       → Family node created, user auto-claimed to it
+
+PHASE 3 — FAMILY TREE BUILDING
+  4. Dashboard loads — empty tree with 1 node (themselves)
+       → Prompt: "Invite your parents to verify your profile → 3x more matches"
+       → User sends WhatsApp invite to parent
+  5. Parent receives invite link
+       → Opens /join/[code]
+       → Sees preview → selects their node (or creates new)
+       → Claims node → trust score increases for both
+  6. More family added over D1–D7 (repeat step 4–5)
+
+PHASE 4 — BIODATA CREATION (FF: enableBiodata)
+  7. User opens Biodata page
+       → Guided multi-step form (see Section 7.3)
+       → Fills required fields → status changes draft → active
+       → PDF generated → WhatsApp share button shown
+
+PHASE 5 — MATCH DISCOVERY (FF: enableCrossFamilyMatching, Day 7 paywall)
+  8. User opens Matches page
+       → If not premium: paywall shown → upgrade flow (Stripe)
+       → After upgrade: match feed loads
+       → Sorted by: gotra compatibility → community pool → trust score
+       → Each card shows: name/age/city, trust badge, "how connected"
+
+PHASE 6 — EXPRESSION OF INTEREST
+  9. User taps "Send Interest" on a match card
+       → Interest record created (status: pending)
+       → Notification sent to: candidate + candidate's family contact
+  10. Candidate's family reviews
+       → Accept → status: mutual
+       → Decline → status: declined (both notified)
+       → No response in 30 days → status: expired (both notified)
+
+PHASE 7 — MUTUAL INTEREST UNLOCKS
+  11. On mutual:
+       → Both families get "Mutual Interest" notification
+       → Full biodata of both parties unlocked
+       → Family tree view of other family unlocked (read-only)
+       → WhatsApp contact sharing enabled (gated by consent)
+       → Kundli compatibility shown (FF: enableKundliIntegration)
+
+PHASE 8 — INTRODUCTION & COMMUNICATION
+  12. Families communicate via WhatsApp (contact shared) or platform chat (V2)
+       → Meeting arranged outside platform
+       → If proceeding: families mark outcome
+
+PHASE 9 — MARRIAGE OUTCOME
+  13. Platform prompts: "Did this match lead to a marriage? 🎉"
+       → If yes:
+           → Both biodata profiles archived (removed from discovery)
+           → Couple's nodes linked via spouse edge in both family trees
+           → Both extended families (3 degrees) receive invite to join merged network
+           → "Welcome to the family" notifications sent
+           → Marriage milestone added to both family timelines
+       → If no:
+           → Interest archived, both profiles remain active
+```
+
+
 
 ## 2. Feature Flags Master Registry
 
@@ -231,9 +310,229 @@ if (process.env.NEXT_PUBLIC_ENABLE_BIODATA === 'true') { ... }
 | API response (write) | < 500ms | 1000ms |
 | Kundli calculation | < 3s | 8s |
 
+### 3.5 Role Permissions Matrix
+
+Five roles exist. Stored in `profiles.role`. Enforced by Supabase RLS policies.
+
+> **Role hierarchy (highest → lowest):** Admin > Moderator > Contributor > Viewer
+> Branch Admin is a sub-role of Admin scoped to a subtree (`FF: enableBranchAdmin`).
+
+| Action | Viewer | Contributor | Moderator | Admin |
+|---|---|---|---|---|
+| **Tree — Read** | ✓ | ✓ | ✓ | ✓ |
+| **Tree — Add member** | ✗ | ✓ | ✗ | ✓ |
+| **Tree — Edit member** | ✗ | ✓ | ✗ | ✓ |
+| **Tree — Archive member** | ✗ | Own unclaimed nodes only | ✗ | ✓ (any) |
+| **Tree — Restore archived** | ✗ | ✗ | ✗ | ✓ |
+| **Tree — Merge duplicates** | ✗ | ✗ | ✗ | ✓ |
+| **Claims — View queue** | ✗ | ✗ | ✓ | ✓ |
+| **Claims — Approve/reject** | ✗ | ✗ | ✓ | ✓ |
+| **Claims — Revoke** | ✗ | ✗ | ✗ | ✓ |
+| **Claims — Transfer** | Self-transfer only | Self-transfer only | ✓ | ✓ |
+| **Invites — Create (non-admin)** | ✗ | ✓ | ✗ | ✓ |
+| **Invites — Create admin-role** | ✗ | ✗ | ✗ | ✓ |
+| **Invites — Revoke** | ✗ | ✓ | ✗ | ✓ |
+| **Conflicts — View** | ✗ | ✗ | ✓ | ✓ |
+| **Conflicts — Resolve/dismiss** | ✗ | ✗ | ✓ | ✓ |
+| **Family links — Initiate** | ✗ | ✗ | ✗ | ✓ |
+| **Family links — Accept/reject** | ✗ | ✗ | ✗ | ✓ |
+| **Member roles — Change** | ✗ | ✗ | ✗ | ✓ |
+| **Biodata — Own profile** | ✓ | ✓ | ✓ | ✓ |
+| **Stories/Memories — Create** | ✗ | ✓ | ✗ | ✓ |
+| **Graph integrity — Run repair** | ✗ | ✗ | ✗ | ✓ |
+| **Normalization — Run** | ✗ | ✗ | ✗ | ✓ |
+
+**Key distinctions:**
+- **Moderator** can review and act on claims but cannot edit the tree or create members
+- **Contributor** can build the tree but cannot touch claim state of other users
+- **Viewer** is read-only — only used for sensitive family members who should observe but not edit
+- Self-transfer: user can move their own claim from one node to another (same family only)
+
+### 3.6 User Account Layer
+
+Understanding this layer is essential for any feature that touches multi-family membership.
+
+```
+auth.users (Supabase Auth)
+    │  1:1
+    ▼
+profiles
+    │  id = auth.users.id
+    │  family_id     → primary family (the one shown on dashboard)
+    │  member_id     → primary node in that family
+    │  role          → role in that primary family
+    │  auth_provider → 'email' | 'phone' | 'google'
+    │
+    │  1:many
+    ▼
+user_node_links
+    │  user_id    → profiles.id
+    │  node_id    → family_members.id
+    │  family_id  → families.id
+    │  is_primary → true for the node that profiles.member_id points to
+    │  status     → 'active' | 'inactive' | 'pending'
+    │
+    │  many:1
+    ▼
+family_members (nodes)
+```
+
+**Rules:**
+- A user has exactly one `profiles` row
+- A user can be linked to multiple nodes across multiple families (via `user_node_links`)
+- Exactly one `user_node_links` row per user has `is_primary = true`
+- `profiles.member_id` always mirrors the primary `user_node_links.node_id`
+- When a claim is completed, both `profiles.member_id` and `user_node_links` are updated atomically
+- When a claim is revoked from the primary node, the system tries to restore the user to their previous family context (from `claim_audit_log` metadata), or orphans them (`member_id = null`) if no valid prior context exists
+
+### 3.7 Canonical Graph Principle
+
+There is exactly **one canonical version** of a family's graph. There is no "draft graph", no "pending graph", no per-user copy. Every mutation is immediately live for all members of that family.
+
+**Rules:**
+- `family_members` is the graph. Every row is a node. Every node belongs to exactly one `family_id`.
+- The canonical graph is the state of `family_members` WHERE `deleted_at IS NULL AND archived_at IS NULL`.
+- Soft-deleted (`deleted_at`) and archived (`archived_at`) nodes are excluded from all graph renders and relationship queries but remain in the DB for audit/restore.
+- A node can appear in multiple families only via **cross-family links** (`family_links` table) — the node is NOT duplicated; a bridge node is created in the other family and the two families are linked via `family_links`.
+- No merge, claim, or edit creates a "version" of the graph — it mutates the canonical graph in place under optimistic locking (`updated_at` / `is_claimed` guards).
+- **Conflict resolution** is the only exception: `pending_conflicts` rows represent a disputed mutation that hasn't been resolved yet. Until resolved, the pre-conflict state is canonical.
+
+### 3.8 Graph Mutation Rules
+
+All mutations to `family_members` nodes or their relationship arrays must follow these rules. Violating them creates ghost nodes, orphans, or broken kinship paths.
+
+| Mutation | Allowed By | Lock Mechanism | Side Effects |
+|---|---|---|---|
+| Add node | Contributor, Admin | None (insert) | Run normalization check on new node |
+| Edit node fields | Contributor (own unclaimed), Admin | `updated_at` optimistic lock | Re-run normalization for affected rules |
+| Archive node | Admin only | `archived_at` set atomically | Remove from all `parent_ids[]` / `spouse_ids[]` arrays on other nodes |
+| Restore archived node | Admin only | Check `archived_at IS NOT NULL` | Re-add to relationship arrays if previously removed |
+| Soft-delete node | Admin only | `deleted_at` set | Same as archive — remove from relationship arrays |
+| Claim node | Any user (via claim flow) | `is_claimed false→true` atomic CAS | Update `user_node_links`, `profiles.member_id`, write `claim_audit_log` |
+| Revoke claim | Admin, self (7-day grace) | `is_claimed true→false` | Restore prior family context from `claim_audit_log` |
+| Merge nodes | Admin only | `updated_at` optimistic lock on both | Union `parent_ids[]` + `spouse_ids[]`, soft-delete duplicate, BFS generation cascade (≤500 nodes) |
+| Add relationship | Contributor, Admin | None (array append via Postgres `||`) | Normalization re-check on both endpoints |
+| Remove relationship | Admin only | None (array remove) | Normalization re-check, orphan detection |
+| Cross-family link | Admin only | Unique constraint on `(family_a_id, family_b_id)` | Create bridge node in other family, insert `family_links` row |
+
+**Absolute prohibitions:**
+- Never hard-delete a `family_members` row — use `deleted_at` (soft delete)
+- Never write `parent_ids` or `spouse_ids` arrays directly from the client — always go through the API which validates the mutation
+- Never set `is_claimed = true` outside of the claim route — the claim route owns optimistic locking and audit logging
+- Never add a person as their own parent or spouse (the normalization engine flags this as rule `SELF_REFERENCE`)
+
+### 3.9 Relationship Source of Truth
+
+Relationships are **NOT** stored in a separate edges/relationships table. They are stored as arrays on `family_members`.
+
+```
+family_members
+  parent_ids   uuid[]   -- IDs of this person's parent nodes in this family
+  spouse_ids   uuid[]   -- IDs of this person's spouse nodes
+```
+
+**Derived relationships (never stored, always computed):**
+- **Children** of node X = all nodes WHERE `parent_ids @> ARRAY[X]`
+- **Siblings** of node X = all nodes that share ≥1 parent with X (excluding X itself)
+- **Grandparents** = parents of parents (2-hop traversal)
+- **In-laws** = spouses' parents
+- **Cousins, uncles, aunts, etc.** = computed by `lib/relationship-engine.ts` BFS traversal
+
+**Rules:**
+- `parent_ids` is capped at 2 entries (biological parents). A third parent entry is a data error flagged by normalization rule `EXCESS_PARENTS`.
+- `spouse_ids` has no hard cap but >3 concurrent spouses triggers normalization warning `EXCESS_SPOUSES`.
+- A removed/archived parent is not removed from `parent_ids` automatically — admin must explicitly repair. The normalization engine flags dangling IDs.
+- Cross-family relationships (e.g. married into a different family's tree) are represented via the **bridge node** pattern — a placeholder node in one family linked via `family_links` to the actual node in the other family.
+- **Sibling relationships are always derived** — never store `sibling_ids`. If `sibling_ids` appears anywhere in the code it is a bug.
+
+### 3.10 Document Split Policy
+
+`docs/SPEC.md` is the single source of truth. As it grows, sections may be extracted into sub-documents. Rules governing splits:
+
+**When to split:** A section exceeds ~500 lines AND is referenced independently by a team/role (e.g. design, QA, data engineering).
+
+**Current split status:**
+
+| Document | Contents | Status |
+|---|---|---|
+| `docs/SPEC.md` | Full product requirements, all sections | Active — master document |
+| `docs/SCHEMA.md` | Full DB schema, all tables, all columns, RLS policies | To be extracted when schema exceeds 200 tables |
+| `docs/API.md` | All API routes, request/response shapes, error codes | To be extracted for external API consumers |
+| `docs/MIGRATIONS.md` | Migration log, rollback procedures, backfill history | To be extracted when migration count exceeds 100 |
+| `docs/CLAUDE.md` | Instructions for AI assistant working in this repo | Active |
+
+**Rules for sub-documents:**
+- Every sub-document must have a header pointing back to `SPEC.md` as the authoritative source
+- `SPEC.md` always wins in case of conflict — sub-documents are derived views
+- Sub-documents must be updated in the same PR as the `SPEC.md` change that triggers the extraction
+- Never delete content from `SPEC.md` when splitting — keep a summary + pointer to the sub-document
+
 ---
 
 ## 4. Authentication & Onboarding
+
+### 4.0 [MVP] Landing Page & Acquisition
+
+**Route:** `/` (homepage)
+
+#### Messaging
+
+| Segment | Headline | Subheadline |
+|---|---|---|
+| Default (India) | "Find matches your family can trust" | "The only matrimony platform where every match comes with a verified family tree" |
+| NRI (detected by timezone/IP) | "Indian matrimony, the way your parents actually want it" | "Verified families. Gotra matching. Family trees. Not just profiles." |
+
+**Primary CTA:** "Start with your phone number" → `/auth/signin` (phone OTP flow)  
+**Secondary CTA:** "See a family" → demo family graph (read-only, anonymized)  
+**Trust signals below fold:** Sample trust badge, gotra matching, "Connected via Sharma family of Jaipur" example
+
+#### What First-Time Visitors See
+
+```
+Hero section
+  → Headline + CTA (above fold on mobile)
+  → Short loop video / animation: tree building → match found → family verified
+
+How it works (3 steps)
+  1. Build your family tree (invite parents, add grandparents)
+  2. Create your biodata (guided, 5 minutes)
+  3. Get matched with verified families (trust score, gotra, family background)
+
+Social proof
+  → "X families. Y verified members. Z matches this month."
+  → 2–3 family testimonials (real, after launch)
+
+Community trust signals
+  → "Used by Khatri Mahasabha, Agarwal Sabha, ..."
+
+Footer
+  → Hindi toggle (FF: enableHindiLanguage)
+  → "For Sabhas / Community organizations" → B2B enquiry form
+```
+
+#### SEO Strategy
+
+| Page | Target keyword |
+|---|---|
+| `/` | "Indian matrimony family verified", "matrimony with family tree" |
+| `/community/khatri` | "Khatri matrimony", "Khatri biodata" |
+| `/community/agarwal` | "Agarwal matrimony" |
+| `/community/iyer` | "Iyer matrimony NRI" |
+| `/blog/gotra-matching` | "gotra compatibility matrimony" |
+
+Community pages are generated from the pool database. Each community gets a public-facing landing page showing (anonymized) stats — families on platform, recent joins, gotra list.
+
+#### India vs NRI Positioning
+
+| Signal | India Experience | NRI Experience |
+|---|---|---|
+| Currency | ₹ pricing prominent | $ pricing prominent (₹ available) |
+| Language | Hindi toggle visible | English default |
+| Phone format | +91 pre-filled | Country selector |
+| Community | Tier 1/2 city pools shown | "NRI pool" + city of origin |
+| Urgency message | "Join 500+ families in Delhi NCR" | "Connect with verified families back home" |
+
+
 
 ### 4.1 Current State (FF: all auth flags default)
 
@@ -445,6 +744,81 @@ These run on every graph mutation and must never be bypassed. Violations are sto
 | Parents from conflicting family clusters | `conflicting_parentage` | error | Flagged for admin |
 | Duplicate detection on name + birth year | `duplicate_identity` | warning | Surface merge UI |
 
+### 5.5 Normalization Engine Rules
+
+Runs via `lib/normalization-engine.ts`. Called by admin via `POST /api/admin/graph-integrity` or as a dry-run first.
+
+**Constants:** `MIN_PARENT_CHILD_YEARS = 12`, `MAX_PARENT_CHILD_YEARS = 80`, `SPOUSE_GEN_TOLERANCE = 2`
+
+| # | Rule | Auto-Fix? | Confidence | Notes |
+|---|---|---|---|---|
+| 1 | Self-reference in `parent_ids` or `spouse_ids` | ✓ | 100% | Removed silently |
+| 2 | `parent_ids` has > 2 entries | ✓ | 60% | Trimmed to first 2; flag for review |
+| 3 | Dangling ref (parent/spouse ID doesn't exist) | ✓ | 95% | Removed |
+| 4 | One-way spouse (A→B but B↛A) | ✓ | 98% | Back-reference added |
+| 5 | Spouse is also listed as parent | ✓ | 100% | Spouse link removed (parent assumed correct) |
+| 6 | Child is listed as spouse of their parent | ✓ | 95% | Parent link removed from child |
+| 7 | `marital_status = 'never_married'` but has `spouse_ids` | ✓ | 95% | Status corrected to `'married'` |
+| 8 | Spouse generation gap > 2 | ✗ flag only | — | Logged as `spouse_generation_mismatch` |
+| 9 | Parent generation ≥ child generation | ✗ flag only | — | Fixed by rule 14 below |
+| 10 | Parent born after child (birth year) | ✗ flag only | — | `birth_year_gap` conflict |
+| 11 | Parent–child birth gap < 12 or > 80 years | ✗ flag only | — | Error if < 12, warning if > 80 |
+| 12 | Two members share parents but one is parent of the other | ✗ flag only | — | `cycle_detected` via sibling-as-parent |
+| 13 | DFS detects cycle in parent chain | ✗ flag only | — | `cycle_detected` |
+| 14 | Stored `generation` ≠ computed generation | ✓ | 90% | Recomputed as `max(parent.generation) + 1` |
+| 15 | Name similarity ≥ 80% + shared parents/spouse/birth year | ✗ flag only | — | `duplicate_identity` — requires manual merge |
+| 16 | Child has 1 parent with known spouse(s) | ✗ suggest only | — | "Missing second parent" suggestion |
+| 17 | `parent_ids` fully overlaps spouse's parents (in-law-as-child) | ✓ | 100% | All `parent_ids` removed |
+| 18 | `parent_ids` partially overlaps spouse's parents | ✗ flag only | — | `conflicting_parentage` warning |
+| 19 | Node has no parents, no spouses, no children | ✗ suggest only | — | Orphan node suggestion |
+
+**Dry-run mode:** Returns all proposed changes with confidence scores before applying. Always dry-run first.
+
+### 5.6 Cross-Family Link Flow
+
+Linking two separate family trees is a two-step admin flow across both families.
+
+#### Step 1: Initiation (`POST /api/families/link-request`)
+**Actor:** Admin of Family A
+
+```
+Admin opens Settings → Linked Families → "Link another family"
+  → Enter the target family's invite code
+  → Optionally: select a junction member from their own family
+      (the "bridge" person, e.g. a married-in spouse)
+  → Submit → creates family_links row with status='pending'
+  → family_link_notifications row created for Family B
+```
+
+**Edge cases:**
+- Target family = own family → `400 CANNOT_LINK_SELF`
+- Already linked (accepted) → `409 ALREADY_LINKED`
+- Pending request already exists → `409 REQUEST_PENDING`
+- Previous revoked/rejected link → old record deleted, new request allowed
+- Race condition (concurrent requests) → Postgres unique constraint catches, returns `409 REQUEST_PENDING`
+- Junction member must belong to Family A → `400 INVALID_JUNCTION_MEMBER`
+
+#### Step 2: Response (`POST /api/family-links/[id]/respond`)
+**Actor:** Admin of Family B
+
+```
+Family B admin sees notification: "Family A wants to link trees"
+  → Accept: optionally select junction member from their family (Family B's bridge node)
+  → or Reject
+  → family_links.status updated to 'accepted' | 'rejected'
+  → family_link_notifications row created for Family A (result notification)
+```
+
+**Edge cases:**
+- Initiator (Family A admin) cannot accept their own request → `403 CANNOT_ACCEPT_OWN_REQUEST`
+- Link already accepted/rejected (concurrent response) → `409 ALREADY_PROCESSED`
+- Junction member B must belong to Family B → `400 INVALID_JUNCTION_MEMBER`
+
+#### What "linked" means in practice
+- Members of both families see each other's tree in read-only mode (scoped by `visibility_scope`: `'names_only'` | `'full_profile'` | `'admin_only'`)
+- Cross-family claims flow through `POST /api/family-links/cross-claim`
+- Revoking a cross-family claim also revokes the family link
+
 ---
 
 ## 6. Member Management & Claims
@@ -539,6 +913,246 @@ When two nodes are merged:
 11. **Merged-away node ID must never 404:** Remapped references ensure all edges point to primary; old ID soft-deleted
 12. **Optimistic lock on merge:** `updated_at` checked; concurrent merges return `409 MERGE_CONFLICT`
 
+### 6.5 Claim State Machine
+
+Authoritative states live in `family_members.claim_status` and `family_members.identity_state`. The `claim_audit_log` records every transition.
+
+```
+                  ┌─────────────┐
+                  │  unclaimed  │◄─────────────────────────────┐
+                  └──────┬──────┘                              │
+                         │ admin sends targeted invite          │
+                         ▼                                     │
+                  ┌─────────────┐                              │
+                  │ invite_sent │                              │
+                  └──────┬──────┘                              │
+                         │ user opens invite link              │
+                         ▼                                     │
+                  ┌──────────────┐                             │
+                  │claim_pending │                             │
+                  └──────┬───────┘                             │
+            ┌────────────┼────────────┐                        │
+    score≥80 │     score  │            │ score<40               │
+             │    60–79   │            │                        │
+             ▼            ▼           ▼                        │
+         ┌────────┐  ┌─────────┐  ┌──────────┐                │
+         │claimed │  │ (admin  │  │ rejected │                 │
+         │(auto)  │  │ review) │  └──────────┘                 │
+         └───┬────┘  └────┬────┘                               │
+             │            │ admin approves                      │
+             │            ▼                                     │
+             │       ┌────────┐                                 │
+             └──────►│claimed │                                 │
+                     └───┬────┘                                 │
+                         │ admin revokes                        │
+                         ▼                                     │
+                     ┌─────────┐   admin re-invites            │
+                     │ revoked │──────────────────────────────►│
+                     └─────────┘                               │
+                                                               │
+  Self-unclaim (within 7 days):  claimed ──────────────────►unclaimed
+  Admin unclaim (any time):       claimed ──────────────────►unclaimed
+  Transfer:                       claimed ──────────────────►unclaimed(from)
+                                                         +claimed(to)
+```
+
+**Valid transitions and who can trigger them:**
+
+| From | To | Actor | Route |
+|---|---|---|---|
+| `unclaimed` | `invite_sent` | Admin | Admin sends node-claim invite |
+| `invite_sent` | `claim_pending` | Any user | Opens invite link |
+| `claim_pending` | `claimed` | System (score ≥ 80) | `POST /api/nodes/[id]/claim` |
+| `claim_pending` | `claimed` | Admin approves | Claim review queue |
+| `claim_pending` | `rejected` | System (score < 40) | Auto-reject |
+| `claimed` | `revoked` | Admin | `POST /api/nodes/[id]/revoke-claim` |
+| `claimed` | `unclaimed` | Self (≤ 7 days) or Admin | `POST /api/nodes/[id]/unclaim` |
+| `claimed` | `claimed` (new node) | Self or Admin | `POST /api/nodes/[id]/transfer-claim` |
+| `revoked` | `invite_sent` | Admin (re-invite) | Admin sends new invite |
+| `revoked` | `claimed` | System (phone match) | Phone bypass re-claim |
+
+### 6.6 Two Invite Paths — Side-by-Side
+
+There are two completely different invite types in `invite_links.invite_type`. They share the same `/join/[code]` entry point but diverge immediately.
+
+| | `invite_type: 'family'` | `invite_type: 'node_claim'` |
+|---|---|---|
+| **Created by** | Any contributor or admin | Admin only |
+| **`node_id`** | NULL | Specific node UUID |
+| **Max uses** | Up to 50 (default) | 1 (single-use) |
+| **`consumed_at`** | Set when `max_uses` reached | Set immediately on claim |
+| **`birth_year_hint`** | NULL | Optional hint for identity check |
+| **`invited_phone`** | NULL | Optional — pre-matches via phone |
+| **Identity check** | Not required — user creates new node or picks from list | Required — user must pass confidence scoring |
+| **Result** | New `family_members` row created OR existing unclaimed node picked | Specific node claimed; `is_claimed=true` |
+| **Cross-family** | Cannot claim nodes from other families | Can trigger cross-family merge flow |
+| **Entry UI** | Preview → pick/create | Profile card → verify birth year |
+| **API used** | `POST /api/families/join-create` | `POST /api/nodes/[id]/claim` via `POST /api/invites/[token]/claim` |
+
+### 6.7 Screen-by-Screen: `/join/[code]` Flow
+
+This is the primary entry point for all invite links. Route: `app/join/[code]/page.tsx`.
+
+#### Path A: General Family Invite (`invite_type: 'family'`)
+
+```
+Screen 1 — PREVIEW
+  Shown: family name, member count, generations, sample names (if privacy allows), inviter name
+  Hidden: phone/email of any member (always)
+  CTAs: "Join Family Tree" (primary) | "Learn more" (secondary)
+  Edge: privacy_mode='closed' → only family name shown, no member names
+
+Screen 2 — WHO ARE YOU? (identity resolution)
+  System scores all unclaimed nodes in the family against the joiner's name/phone/email
+  Shows: ranked candidate list with confidence tiers
+    → HIGH tier match: "Is this you? [Name, Age, Relationship]" — "Yes, that's me" | "No"
+    → MEDIUM tier: shows candidate but requires checkbox "I confirm this is my profile"
+    → LOW tier: shown at bottom with disclaimer
+    → "None of these are me" → create new profile path
+  Edge (HIGH match): "Create new" button is hidden to prevent duplicates
+  Edge (phone exact match): auto-selects candidate, skips list entirely
+
+Screen 3A — CLAIM EXISTING NODE
+  Shown: the selected node's name, birth year (if known), relationship in tree
+  User enters: birth year (if node has no birth year yet)
+  CTA: "This is me — join family"
+  → Calls POST /api/families/join-create with existing nodeId
+  Edge: CROSS_FAMILY_JOIN → "You're already in [Family]. Switch to this family?" confirmation
+
+Screen 3B — CREATE NEW PROFILE
+  Shown: form with name (pre-filled), gender, birth year, relationship (optional)
+  CTA: "Join as new member"
+  → Calls POST /api/families/join-create with new member data
+  Edge: FUZZY_NAME_DUPLICATE → "Someone named [X] already exists. Are you the same person?" prompt
+  Edge: PHONE_DUPLICATE → hard block, "A profile with your phone already exists: [Name]"
+
+Screen 4 — SUCCESS
+  Shown: "Welcome to the [Family] family tree! 🎉"
+  Shows: their node's position in the tree (mini preview)
+  CTA: "View your family tree" → /dashboard
+  Optional: "Add your birth year to improve matching" (if missing)
+```
+
+#### Path B: Node-Claim Invite (`invite_type: 'node_claim'`)
+
+```
+Screen 1 — PROFILE CARD
+  Shown: target node name, birth year hint (if set), parent names (if known)
+  Message: "[Admin name] has invited you to claim this profile"
+  CTA: "Verify my identity" (primary) | "That's not me" (secondary)
+
+Screen 2 — VERIFY IDENTITY
+  User enters: birth year
+  Edge (DOB_MISMATCH_INVITE): "Birth year doesn't match. Try again. [N] attempts left"
+  Edge (LOCKED_OUT): "Too many attempts. Contact your family admin."
+  Edge (NODE_DECEASED): "This profile belongs to a deceased member and cannot be claimed."
+
+Screen 2B — CROSS-FAMILY PROMPT (if CROSS_FAMILY_CLAIM / SUGGEST_FAMILY_LINK)
+  Shown: "You're currently in [Family A]. Claiming this profile will move you to [Family B]."
+  OR: "Your two families can be linked instead. Link [Family A] and [Family B]?"
+  CTAs: "Move to new family" | "Link families" | "Cancel"
+
+Screen 3 — SUCCESS
+  Shown: "You've claimed your profile in [Family]!"
+  CTA: "View your family tree" → /dashboard
+  Optional: birth year fill-in (if node had no birth year)
+```
+
+#### Unauthenticated User Hitting Either Path
+
+```
+User opens /join/[code] without being logged in
+  → Screen 1 (Preview) shown with "Sign in to join" CTA
+  → Invite code stored in sessionStorage
+  → Redirect to /auth/signin
+  → After login: claim_intent cookie restored, redirect back to /join/[code]
+  → Flow resumes from Screen 2
+```
+
+### 6.8 Unclaim / Revoke / Transfer Flows
+
+Three distinct operations for removing or moving a claim. Different actors, different rules.
+
+#### Unclaim (self-service)
+
+**Route:** `POST /api/nodes/[id]/unclaim`  
+**Actor:** The claimer themselves  
+**Constraint:** Only within 7 days of claiming (`claimed_at + 7 days`)
+
+```
+User → Settings → "Leave this profile"
+  → Confirmation dialog: "Are you sure? You will lose access to this family tree."
+  → POST /api/nodes/[id]/unclaim { confirm: true }
+  → Node: is_claimed=false, claim_status='unclaimed'
+  → User: profiles.member_id=null
+  → Audit: claim_unclaimed logged
+  → User redirected to /auth/signin (no longer in a family)
+Edge: > 7 days → "Self-unclaim window has expired. Contact your family admin."
+```
+
+#### Revoke (admin action)
+
+**Route:** `POST /api/nodes/[id]/revoke-claim` (default action)  
+**Actor:** Family admin  
+**Constraint:** None — admin can revoke any claim at any time
+
+```
+Admin → Member detail → "Revoke claim"
+  → Confirmation: "This will remove [User]'s access to this node."
+  → Optional reason field (stored in claim_revoke_reason)
+  → POST /api/nodes/[id]/revoke-claim { reason: "..." }
+
+  Case A — node is user's PRIMARY family:
+    → System checks claim_audit_log for previousFamilyId/previousMemberId
+    → If valid prior context: restores user to previous family
+    → If none: user is orphaned (member_id=null), shown "Join a family" onboarding
+    → Family link revoked if cross-family claim
+
+  Case B — node is user's SECONDARY family:
+    → Only the user_node_links entry for this family is removed
+    → User's primary family context is untouched
+
+  → Audit: claim_revoked logged with actor, reason, previousContext
+  → All pending invite_links for this node expired
+  → User notified (in-app notification)
+```
+
+#### Archive Node (admin or contributor)
+
+**Route:** `POST /api/nodes/[id]/revoke-claim` with `{ action: 'archive' }`  
+**Actor:** Admin (any node) or Contributor (own unclaimed node only)
+
+```
+Node soft-deleted: deleted_at set, node hidden from all views
+Claimer's profiles.member_id cleared if pointing at this node
+Audit: node_archived logged
+Node can be restored by admin: POST /api/nodes/[id]/revoke-claim { action: 'restore' }
+```
+
+#### Transfer Claim (admin or self)
+
+**Route:** `POST /api/nodes/[id]/transfer-claim`  
+**Actor:** Self (moving their own claim) or Admin/Moderator  
+**Constraint:** Both nodes must be in same family; `toNode` must be unclaimed
+
+```
+Admin → Member detail → "Transfer claim to another node"
+  → Select target unclaimed node from family tree
+  → POST /api/nodes/[fromId]/transfer-claim { toNodeId: "...", reason: "..." }
+
+Atomic operation (fail-safe):
+  1. Detach fromNode (is_claimed=false)
+  2. Claim toNode (conditional: .eq('is_claimed', false))
+     → If toNode was claimed between step 1 and 2: roll back fromNode, return 409 TARGET_ALREADY_CLAIMED
+  3. Update user_node_links: old=inactive, new=active+primary
+  4. Update profiles.member_id to toNodeId
+  5. Audit: claim_transferred logged
+
+Edge: fromNode not claimed → 409 FROM_NODE_NOT_CLAIMED
+Edge: toNode already claimed → 409 TO_NODE_ALREADY_CLAIMED
+Edge: different families → 403 CROSS_FAMILY_TRANSFER_FORBIDDEN
+```
+
 ---
 
 ## 7. Biodata & Matrimony
@@ -546,9 +1160,168 @@ When two nodes are merged:
 ### 7.1 Current State
 Biodata feature exists but is gated behind `enableBiodata: false`. This flag **must be set to `true` immediately.**
 
-### 7.2 [MVP] Biodata Profile
+### 7.2 [MVP] Biodata Database Schema
 
-A biodata profile is created on top of a graph node for matrimony-eligible members.
+> **Note:** Biodata is NOT a separate table. All biodata fields are columns on `family_members` (migrations 020, 028). The key control column is `is_biodata_visible boolean DEFAULT false`.
+
+Key biodata-specific columns on `family_members`:
+
+```sql
+-- Status / visibility
+is_biodata_visible     boolean DEFAULT false   -- true = active in matrimony pool
+marital_status         text    CHECK ('never_married','divorced','widowed','separated')
+
+-- Identity for matching
+gotra                  text
+caste                  text
+religion               text
+native_language        text
+
+-- Vital stats
+height_cm              integer
+weight_kg              integer
+complexion             text CHECK ('fair','wheatish','dusky','dark')
+blood_group            text
+manglik                boolean
+rashi                  text
+nakshatra              text
+time_of_birth          time    -- HH:mm, for kundli
+place_of_birth         text    -- city, for kundli
+
+-- Education & career
+education_level        text CHECK (below_10th ... doctorate)
+education_field        text
+occupation_category    text CHECK (government ... not_working)
+annual_income_range    text CHECK (below_2lakh ... 50lakh_plus)
+residency_status       text CHECK (indian_citizen ... student_visa)
+current_country        text DEFAULT 'India'
+willing_to_relocate    boolean DEFAULT true
+
+-- Family background
+father_occupation      text
+mother_occupation      text
+family_income_range    text
+family_type            text CHECK ('joint','nuclear') DEFAULT 'joint'
+number_of_brothers     integer DEFAULT 0
+number_of_sisters      integer DEFAULT 0
+brothers_married       integer DEFAULT 0
+sisters_married        integer DEFAULT 0
+ancestral_property     text
+
+-- Partner preferences
+partner_expectations   text        -- free text, max 500 chars
+preferred_locations    text[]
+preferred_age_min      integer
+preferred_age_max      integer
+preferred_height_min_cm integer
+preferred_height_max_cm integer
+
+-- Photos
+biodata_photo_url      text        -- passport-style
+full_length_photo_url  text
+
+-- Analytics (read-only, system-updated)
+biodata_views_count        integer DEFAULT 0
+biodata_pdf_downloads      integer DEFAULT 0
+biodata_whatsapp_shares    integer DEFAULT 0
+biodata_last_updated_at    timestamptz DEFAULT now()
+```
+
+**Matrimony interests** require a new table (does not exist yet — add migration when building Section 8):
+
+```sql
+CREATE TABLE matrimony_interests (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_node_id      uuid NOT NULL REFERENCES family_members(id),
+  to_node_id        uuid NOT NULL REFERENCES family_members(id),
+  from_family_id    uuid NOT NULL REFERENCES families(id),
+  to_family_id      uuid NOT NULL REFERENCES families(id),
+  sent_by_user_id   uuid NOT NULL REFERENCES auth.users(id),   -- could be admin acting on behalf
+  on_behalf_of      boolean DEFAULT false,                      -- true = admin sent on behalf of candidate
+  status            text NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','mutual','declined','expired','withdrawn','archived')),
+  declined_by       uuid REFERENCES auth.users(id),
+  withdrawn_by      uuid REFERENCES auth.users(id),
+  expires_at        timestamptz NOT NULL DEFAULT now() + INTERVAL '30 days',
+  mutual_at         timestamptz,
+  contact_shared_at timestamptz,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (from_node_id, to_node_id)   -- one active interest per pair
+);
+```
+
+**Community pools** require a new table (does not exist yet):
+
+```sql
+CREATE TABLE community_pools (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          text NOT NULL,
+  community     text NOT NULL,             -- e.g. "Khatri"
+  gotra_rules   text[],                    -- gotras allowed/excluded
+  geographic_scope text,                   -- city, state, or 'global'
+  pool_type     text CHECK ('open','invite_only') DEFAULT 'open',
+  created_by    uuid REFERENCES auth.users(id),
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE community_pool_members (
+  pool_id       uuid REFERENCES community_pools(id) ON DELETE CASCADE,
+  family_id     uuid REFERENCES families(id) ON DELETE CASCADE,
+  joined_at     timestamptz DEFAULT now(),
+  joined_by     uuid REFERENCES auth.users(id),  -- admin who opted in
+  PRIMARY KEY (pool_id, family_id)
+);
+```
+
+### 7.3 [MVP] Biodata Creation Flow
+
+**Who creates biodata:** The node's claimer (the person themselves) or a family admin on their behalf.
+
+**Eligibility check (enforced before form opens):**
+- Node must be claimed (`is_claimed = true`)
+- `birth_year` must make the person ≥ 18 years old → else `422 UNDERAGE_BIODATA`
+- `marital_status` must be `'never_married'`, `'divorced'`, or `'widowed'` (not married)
+
+**Multi-step form (guided, not one long form):**
+
+```
+Step 1 — Basic details    (name, DOB, gender, photo upload)
+Step 2 — Identity         (gotra, caste, religion, native language)
+Step 3 — Location         (current city, country, willing to relocate, residency)
+Step 4 — Education        (level, field of study, occupation, income range)
+Step 5 — Family background (parents' occupations, family type, siblings)
+Step 6 — Astro / Optional  (manglik, rashi, nakshatra, time of birth)
+Step 7 — Partner prefs     (free text expectations, age/height range, locations)
+Step 8 — Review & publish  (completeness score shown, publish or save as draft)
+```
+
+Progress is saved after each step (no data loss on close).
+
+### 7.4 [MVP] Biodata States
+
+| State | `is_biodata_visible` | Who can see | How to enter |
+|---|---|---|---|
+| **Draft** | `false` | Own family admins only | Default on creation |
+| **Active** | `true` | See visibility rules below | User publishes from Step 8 |
+| **Paused** | `false` | Own family admins only | User explicitly pauses |
+| **Archived** | `false` | Platform admins only | After marriage outcome |
+
+**Visibility when Active:**
+
+| User's plan | Who sees their biodata |
+|---|---|
+| Free | Own family only |
+| Premium | All verified families in shared community pools |
+
+**Transitions:**
+- Draft → Active: user completes required fields + taps "Publish"
+- Active → Paused: user taps "Pause" (e.g. during negotiations)
+- Active → Archived: marriage outcome confirmed OR admin archives
+- Paused → Active: user resumes
+- Any → Draft: user retracts and edits (resets `is_biodata_visible = false`)
+
+
 
 #### 7.2.1 Required Fields (must be filled to activate biodata)
 - Full name
@@ -622,7 +1395,37 @@ When user taps "Share Biodata":
 
 A community pool is a named group of families that have opted in to share biodata with each other.
 
+#### Pool Database Schema
+See Section 7.2 for `community_pools` and `community_pool_members` table definitions.
+
 #### Pool Creation
+- Admin or Sabha admin creates a pool with: name, community, gotra restrictions, geographic scope
+- Pool can be `open` (any premium family can join) or `invite-only` (admin approves)
+- Examples: "Khatri - Delhi NCR", "Agarwal - Mumbai", "Iyer - Global NRI"
+
+#### Pool Membership — Joining Rules
+- Only a family admin can opt their family into a pool
+- Opt-in requires explicit consent dialog: "Your active biodata profiles will be visible to all verified families in this pool"
+- Family must have at least 1 active biodata profile to join (no empty shells)
+- Family can be in multiple pools simultaneously
+- Opting out removes from discovery within 1 minute (set `is_biodata_visible = false` for pool context)
+
+#### Pool Visibility Logic
+A biodata profile is visible in a pool only when ALL are true:
+1. `is_biodata_visible = true` on the node
+2. Family is an active member of the pool (`community_pool_members` row exists)
+3. User has an active premium subscription
+4. Profile is not paused or archived
+
+#### Matching Eligibility Within a Pool
+A match is surfaced only when ALL are true:
+1. Both candidates are in at least one shared pool
+2. Gotra compatibility confirmed (different gotras, per pool's `gotra_rules`)
+3. Neither family has blocked the other
+4. Neither interest has been previously declined between the same pair
+5. Candidate is not a close relative (≤ 2 degrees on graph)
+
+
 - Admin or Sabha admin creates a pool with: name, community, gotra restrictions, geographic scope
 - Pool can be `open` (any premium family can join) or `invite-only` (admin approves)
 - Examples: "Khatri - Delhi NCR", "Agarwal - Mumbai", "Iyer - Global NRI"
@@ -670,6 +1473,123 @@ A community pool is a named group of families that have opted in to share biodat
 4. Mutual interest unlocks: full biodata, family tree view, WhatsApp contact sharing
 5. No interest from either side in 30 days → interest auto-expires, both parties notified
 
+### 8.3 [MVP] Matrimony Interest State Machine
+**FF: `enableCrossFamilyMatching`**
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │              PENDING                     │
+                    │  (interest sent, awaiting response)      │
+                    └──────────────┬──────────────────────────┘
+                                   │
+              ┌────────────────────┼──────────────────────────┐
+              ▼                    ▼                          ▼
+         DECLINED              WITHDRAWN                   EXPIRED
+     (other party          (sender cancels             (30 days, no
+      says no)              before response)             response)
+              │                    │                          │
+              └────────────────────┴──────────────────────────┘
+                                   │
+                               ARCHIVED
+                          (terminal — read-only)
+
+  If OTHER PARTY also sends interest (or explicitly accepts):
+                                   │
+                                   ▼
+                                MUTUAL
+                         (both parties confirmed)
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+              (marriage confirmed)         (no outcome)
+                 ARCHIVED                   ARCHIVED
+```
+
+**State rules:**
+- `pending → mutual`: only when the other party sends interest back OR explicitly accepts
+- `pending → declined`: other party (or their family admin) declines
+- `pending → withdrawn`: original sender withdraws before any response
+- `pending → expired`: cron job runs daily, sets `expired` if `expires_at < now()`
+- `mutual → archived`: either on marriage outcome OR mutual agreement to close
+- All terminal states (`declined`, `expired`, `withdrawn`, `archived`) are read-only
+
+**Who can act:**
+| Action | Actor |
+|---|---|
+| Send interest | Claimer of `from_node` OR family admin (sets `on_behalf_of=true`) |
+| Accept/decline | Claimer of `to_node` OR `to_family` admin |
+| Withdraw | Original sender OR `from_family` admin |
+| Mark marriage outcome | Either family admin |
+
+**Interest edge cases:**
+
+| Scenario | Behavior |
+|---|---|
+| Duplicate interest (same pair) | `UNIQUE (from_node_id, to_node_id)` — return `409 INTEREST_ALREADY_EXISTS` |
+| Reverse interest exists (B already sent to A) | Auto-resolve to `mutual`; notify both |
+| Sender's premium lapses after sending | Interest stays `pending`; sender cannot send new ones |
+| Candidate deactivates biodata | Interest → `expired`; both notified "Profile unavailable" |
+| Family admin declines on behalf | Logged as `on_behalf_of=true` in decline event |
+| User sends interest to themselves | Block: `422 SELF_INTEREST` |
+| User sends interest to close relative (≤ 2 degrees) | Block: `422 CLOSE_RELATIVE` |
+| Interest from blocked family | Silently drop — `403 FORBIDDEN` |
+
+### 8.4 [MVP] After Mutual Match Flow
+
+When `status` transitions to `mutual`:
+
+```
+1. Both families get WhatsApp notification (FF: enableWhatsAppNotifications)
+   → "🎉 Mutual interest! [Name] and [Name]'s families have both expressed interest."
+
+2. Unlocked for both parties:
+   → Full biodata of the other person (all fields, not just card preview)
+   → Other family's full tree (read-only, 3 generations)
+   → Kundli compatibility score (FF: enableKundliIntegration)
+   → AI compatibility narrative (FF: enableAiCompatibilityNarrative)
+
+3. Contact sharing (consent required):
+   → "Share your family contact number?" → Yes / Not yet
+   → If both consent → each sees other's family_contact phone
+   → If one declines → contact not shared, "Introduction pending" state
+
+4. Platform role ends here for MVP
+   → Families communicate via WhatsApp / phone
+   → Platform shows: "How did it go?" prompt after 14 days
+```
+
+### 8.5 [MVP] Marriage Lifecycle
+
+When admin marks a match as marriage outcome:
+
+```
+POST /api/matrimony/interests/[id]/outcome
+  body: { outcome: 'married' | 'no_outcome' }
+```
+
+**If `married`:**
+1. Both biodata profiles → `is_biodata_visible = false` (removed from discovery immediately)
+2. `matrimony_interests.status` → `'archived'`
+3. Spouse edge created between the two nodes (in both family trees)
+4. `marital_status` updated to `'married'` on both nodes
+5. Marriage milestone added to both family timelines
+6. Extended family (3 degrees both sides) receives invite via WhatsApp
+7. "Welcome to the family" notification sent to both trees
+8. Both users prompted to add spouse to their family graph (if not already linked)
+
+**If `no_outcome`:**
+1. Interest → `'archived'`
+2. Both profiles remain active and discoverable
+3. No notification sent to either party
+
+**What stays after marriage:**
+- Both family tree nodes remain — the couple is now in each other's trees
+- Biodata is archived (not deleted) — viewable by admins for 1 year
+- The family link between the two families (if created) remains active
+- All audit trail preserved
+
+
+
 #### Match Edge Cases
 | Scenario | Behavior |
 |---|---|
@@ -680,7 +1600,7 @@ A community pool is a named group of families that have opted in to share biodat
 | Both parties interested but one's premium lapses | Match preserved for 30 days, then archived if not renewed |
 | Family admin rejects interest on behalf of family | Candidate's family notified politely, no reason required |
 
-### 8.3 [MVP] Family Trust Layer in Matching
+### 8.6 [MVP] Family Trust Layer in Matching
 
 This is the core differentiator. Every match card shows:
 
@@ -696,6 +1616,42 @@ Families with trust score < 40% are:
 - Shown at bottom of match feed
 - Cannot initiate interests (only receive them)
 - Shown "Complete your profile to send interests" prompt
+
+---
+
+### 8.7 [MVP] Empty States & UX Edge States
+
+Every screen must have a defined empty state. These are not edge cases — new users hit these on day 1.
+
+| Screen | Condition | What user sees | Primary CTA |
+|---|---|---|---|
+| Dashboard / Family Tree | 0 members besides self | "Your family tree starts here. Add your parents to get started." | "Add a parent" |
+| Dashboard / Family Tree | 1–3 members | Ghost slot UI showing where to add next generation | "Add [Father/Mother/Grandparent]" |
+| Biodata page | No biodata created | "Create your matrimony profile — takes 5 minutes" | "Start biodata" |
+| Biodata page | Draft exists | "Your profile is saved as a draft. Publish to appear in matches." | "Complete & publish" |
+| Match discovery | Premium but 0 matches | "No matches yet in your community pool. Invite your community to join." | "Invite others" |
+| Match discovery | Not premium | Paywall: "Upgrade to see verified matches" | "Upgrade" |
+| Match discovery | Premium, not in pool | "Join a community pool to see matches" | "Browse pools" |
+| Interests sent | 0 interests sent | "You haven't sent any interests yet." | "Browse matches" |
+| Interests received | 0 interests received | "No interests yet. Complete your profile to get more visibility." | "Improve profile" |
+| Community pools | 0 pools exist | "No pools in your community yet. Start one or invite your Sabha." | "Create a pool" |
+| Community pools | Pool has < 10 families | "Pool is growing — [N] families so far. Invite others to unlock matches." | "Invite to pool" |
+| Notifications | 0 notifications | "You're all caught up." | — |
+| Family members list | 0 members | Same as dashboard empty state | "Add first member" |
+
+**Error states (network / API failure):**
+
+| Scenario | UI behavior | Recovery action |
+|---|---|---|
+| API call fails (5xx) | Toast: "Something went wrong. Please try again." | Retry button |
+| Network offline | Banner: "You're offline — changes will sync when connected" | Auto-retry on reconnect |
+| Graph fails to load | Skeleton → error state with retry button | "Reload graph" |
+| Biodata save fails mid-step | Toast error, data preserved in component state | Retry same step |
+| Claim fails (non-conflict error) | Toast: "Couldn't complete your claim. Try again." | Retry button |
+| PDF generation timeout (> 10s) | Toast: "PDF is taking longer than usual. We'll notify you when it's ready." | Continue using app |
+| Payment fails | Inline error on payment form: show Stripe's error message | "Try again" or "Use different card" |
+| Partial save (multi-step form) | Progress auto-saved per step. If session expires mid-form: restore from localStorage on re-login. | Resume from last completed step |
+| Supabase Realtime disconnects | Silent reconnect with exponential backoff. If > 30s: show "Live updates paused" badge | Auto-reconnects |
 
 ---
 
@@ -991,7 +1947,25 @@ Admin dashboard shows (internal only):
 
 > Build AI only where it removes friction from the core matrimony funnel or creates a measurable improvement in match quality. No AI for novelty.
 
-### 15.2 [V2] Conversational Family Tree Builder
+### 15.0 [MVP] AI Copilot Scope Decision
+
+**Decision: AI Copilot is RESTRICTED for MVP. `enableAICopilot: true` in code but scope is limited.**
+
+| Use case | Allowed in MVP? | Reason |
+|---|---|---|
+| "How am I related to [person]?" | ✓ Yes | Core value, uses existing graph engine |
+| "Find a relationship path between X and Y" | ✓ Yes | Core value, PathFinder feature |
+| "What's my family's gotra?" | ✓ Yes | Simple lookup |
+| "Add [person] to my tree" | ✗ No | AI must not autonomously modify graph — suggest only |
+| "Tell me about my family history" | ✗ No | V3 — requires Memory Vault content |
+| General conversation / off-topic | ✗ No | Restrict via system prompt |
+| Matrimony advice / match suitability | ✗ No | Liability risk, V2 with proper guardrails |
+| Compatibility narrative for a match | ✗ No | V2 (FF: `enableAiCompatibilityNarrative`) |
+
+**Implementation:** Add a restrictive system prompt to the Gemini call in `app/api/ai/route.ts`:
+> "You are a family relationship assistant for FamilyGraph. You can only answer questions about the user's family relationships, family tree navigation, and gotra. Do not answer general questions, give matrimony advice, or modify the family tree."
+
+
 **FF: `enableAiOnboarding`**
 
 **Problem it solves:** Data entry abandonment. Building a family tree via forms takes 2+ hours. Most users quit after 5–10 nodes.
@@ -1387,6 +2361,126 @@ Priority: Ship zero new code. Enable what already exists.
 | Identity verification (Aadhaar) | `enableIdentityVerification: true` | Month 5 |
 | Regional languages | `enableRegionalLanguages: true` | Month 5 |
 | Native mobile app | `enableNativeApp: true` | Month 6 |
+
+---
+
+---
+
+## 24. Analytics Events
+
+All product analytics events must be fired consistently on both client and server. Use a single `trackEvent(name, properties)` utility. No PII in event properties — use IDs, not names/phones.
+
+### 24.1 Authentication
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `auth_signup_started` | User opens signup screen | `method: 'phone'|'email'` |
+| `auth_otp_sent` | OTP dispatched | `method: 'sms'|'whatsapp'`, `country_code` |
+| `auth_otp_verified` | OTP accepted | `method`, `is_new_user: bool` |
+| `auth_otp_failed` | Wrong OTP entered | `attempt_number`, `method` |
+| `auth_login_success` | Session created | `method`, `returning_user: bool` |
+| `auth_logout` | User signs out | — |
+
+### 24.2 Onboarding
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `onboarding_started` | First screen shown after signup | `path: 'matrimony'|'family_only'` |
+| `onboarding_step_completed` | Each screen completed | `step: 1|2|3`, `path` |
+| `onboarding_completed` | Final screen submitted | `path`, `duration_seconds` |
+| `onboarding_abandoned` | User drops off mid-flow | `last_step`, `path` |
+
+### 24.3 Family Tree
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `tree_member_added` | New family_members row created | `relationship_type`, `has_birth_year: bool`, `has_photo: bool`, `source: 'manual'|'invite'` |
+| `tree_member_edited` | Member fields updated | `fields_changed: string[]` |
+| `tree_member_archived` | Node soft-deleted | `actor_role: 'admin'|'contributor'` |
+| `tree_view_switched` | User switches between views | `from_view`, `to_view: 'hierarchical'|'universe'|'graph'` |
+| `tree_graph_rendered` | Graph canvas first paint | `node_count`, `render_ms` |
+
+### 24.4 Invite & Claim
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `invite_created` | New invite_links row | `invite_type: 'family'|'node_claim'`, `max_uses` |
+| `invite_shared_whatsapp` | WhatsApp share button tapped | `invite_type` |
+| `invite_opened` | `/join/[code]` page loaded | `invite_type`, `is_authenticated: bool` |
+| `invite_preview_shown` | Preview screen displayed | `privacy_mode`, `member_count` |
+| `claim_attempt` | User submits claim | `invite_type`, `confidence_score`, `confidence_tier` |
+| `claim_success` | Claim completed | `invite_type`, `confidence_tier`, `is_new_user: bool` |
+| `claim_failed` | Identity mismatch / conflict | `error_code`, `attempt_number` |
+| `claim_revoked` | Admin revokes claim | `actor_role` |
+| `claim_transferred` | Claim moved to new node | `actor_role` |
+| `claim_unclaimed` | Self-unclaim | `days_since_claim` |
+
+### 24.5 Biodata
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `biodata_wizard_started` | Step 1 opened | `is_first_time: bool` |
+| `biodata_step_completed` | Each step saved | `step: 1..8`, `completion_pct` |
+| `biodata_published` | `is_biodata_visible` set true | `completion_pct`, `has_photo: bool`, `has_gotra: bool` |
+| `biodata_paused` | User pauses visibility | — |
+| `biodata_pdf_generated` | PDF created | `trigger: 'manual'|'share'` |
+| `biodata_shared_whatsapp` | WhatsApp share tapped | — |
+| `biodata_viewed` | Another user views a biodata | `viewer_family_id` (hashed) |
+
+### 24.6 Matrimony Matching
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `match_feed_viewed` | Match feed page loaded | `match_count`, `pool_count` |
+| `match_card_viewed` | Card expanded / detail opened | `trust_score_bucket: '0-40'|'40-70'|'70-100'`, `has_connection: bool` |
+| `interest_sent` | Interest record created | `on_behalf_of: bool`, `from_pool: bool` |
+| `interest_received` | Notification fired to recipient | — |
+| `interest_mutual` | Status → mutual | `days_to_mutual`, `initiated_by_side: 'sender'|'receiver'` |
+| `interest_declined` | Status → declined | `on_behalf_of: bool` |
+| `interest_expired` | Cron sets expired | `days_elapsed` |
+| `interest_withdrawn` | Sender withdraws | `hours_since_sent` |
+| `contact_shared` | Contact sharing consent given | `both_consented: bool` |
+| `marriage_outcome_marked` | Admin marks outcome | `outcome: 'married'|'no_outcome'` |
+
+### 24.7 Payments & Premium
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `paywall_shown` | Premium gate displayed | `trigger_screen`, `days_since_signup` |
+| `upgrade_cta_tapped` | User taps upgrade button | `plan: 'monthly'|'annual'`, `trigger_screen` |
+| `upgrade_flow_started` | Stripe checkout opened | `plan` |
+| `upgrade_completed` | Stripe webhook `payment_intent.succeeded` | `plan`, `amount`, `currency` |
+| `upgrade_failed` | Payment declined | `error_code` |
+| `subscription_cancelled` | User cancels | `plan`, `days_active` |
+| `subscription_expired` | Lapse after grace period | `plan` |
+
+### 24.8 Community Pools
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `pool_viewed` | Pool listing/detail opened | `pool_id` (hashed), `family_count` |
+| `pool_joined` | Family added to pool | `pool_type: 'open'|'invite_only'` |
+| `pool_left` | Family removed from pool | — |
+
+### 24.9 AI & Engagement
+
+| Event | Trigger | Key Properties |
+|---|---|---|
+| `ai_copilot_query` | AI query submitted | `query_type: 'relationship'|'path_finder'|'other'`, `response_ms` |
+| `path_finder_used` | PathFinder panel submitted | `degrees_found: number|null` |
+| `kulgatha_pdf_generated` | Kulgatha PDF created | `member_count`, `generation_count` |
+| `family_poster_generated` | Poster image created | — |
+| `notification_opened` | User taps a notification | `notification_type` |
+| `trust_score_increased` | Score threshold crossed | `new_tier`, `trigger: 'parent_joined'|'phone_verified'|'biodata'` |
+
+### 24.10 Analytics Implementation Rules
+
+- **No PII ever:** use hashed IDs, not names, phones, or emails in any event property
+- **Server-side for revenue events:** `upgrade_completed`, `upgrade_failed` must be server-side (Stripe webhook handler), not client-side
+- **Client-side for UX events:** all view/tap/interaction events fired from components
+- **Use one utility:** `lib/analytics.ts` — `trackEvent(name: string, properties: Record<string, unknown>)` — all events go through this, never call the analytics SDK directly from components
+- **Session properties** (attached to every event automatically): `user_id` (hashed), `family_id` (hashed), `platform: 'web'|'pwa'`, `app_version`
+- **Tool choice:** Posthog (recommended, open-source, can self-host) or Mixpanel — decision to be made before MVP launch
 
 ---
 

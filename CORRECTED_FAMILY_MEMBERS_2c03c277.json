@@ -1,0 +1,81 @@
+{
+  "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183",
+  "corrected_members": [
+    {
+      "id": "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+      "name": "PL meshram",
+      "generation": -1,
+      "parent_ids": [],
+      "spouse_ids": [],
+      "relationship": "father",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    },
+    {
+      "id": "3fb9bdd8-8d68-4105-8670-8b4801dc44c8",
+      "name": "Pushpa Meshram",
+      "generation": -1,
+      "parent_ids": [],
+      "spouse_ids": [],
+      "relationship": "mother",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    },
+    {
+      "id": "f9080f1b-a5b6-41ad-ba60-99d921f25340",
+      "name": "Shikha M",
+      "generation": 0,
+      "parent_ids": [
+        "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+        "3fb9bdd8-8d68-4105-8670-8b4801dc44c8"
+      ],
+      "spouse_ids": [
+        "89e089e1-ddf2-42cf-99ec-d288bf789ce9"
+      ],
+      "relationship": "self",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    },
+    {
+      "id": "1cc67d4a-6be5-41c2-a1da-d99df3312d78",
+      "name": "Shushita Meshram",
+      "generation": 0,
+      "parent_ids": [
+        "f1d61ffa-7a26-4d43-b75b-7f8e36760f1e",
+        "3fb9bdd8-8d68-4105-8670-8b4801dc44c8"
+      ],
+      "spouse_ids": [],
+      "relationship": "sister",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    },
+    {
+      "id": "9859ba53-ed2c-4f89-a0d2-cc0bb3213ded",
+      "name": "Ratnamala Meshram",
+      "generation": 2,
+      "parent_ids": [],
+      "spouse_ids": [],
+      "relationship": "mother",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    },
+    {
+      "id": "9f2271dd-7d00-456c-8a4d-877da459897b",
+      "name": "SUKHDEO MESHRAM",
+      "generation": 2,
+      "parent_ids": [],
+      "spouse_ids": [],
+      "relationship": "father",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    },
+    {
+      "id": "89e089e1-ddf2-42cf-99ec-d288bf789ce9",
+      "name": "rahul",
+      "generation": 3,
+      "parent_ids": [
+        "9f2271dd-7d00-456c-8a4d-877da459897b",
+        "9859ba53-ed2c-4f89-a0d2-cc0bb3213ded"
+      ],
+      "spouse_ids": [
+        "f9080f1b-a5b6-41ad-ba60-99d921f25340"
+      ],
+      "relationship": "husband",
+      "family_id": "2c03c277-d4cb-4b6e-9f33-4c043258a183"
+    }
+  ]
+}
