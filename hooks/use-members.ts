@@ -554,6 +554,42 @@ export function useMembers(familyId: string | null) {
         }))
       }
     }
+    // ── Self-healing: propagate a newly-added parent to existing siblings ────────
+    // SPEC §3.9 — siblings are *derived* from shared parentIds. When a 2nd parent
+    // is added to a node that already shares a parent with siblings, those siblings
+    // must inherit the new parent too, or the branch silently desyncs (one child
+    // links to both parents, the rest to only one → they stop rendering as siblings).
+    // We only touch nodes that ALREADY share an existing parent with this node
+    // (high confidence they are true siblings) and never exceed the 2-parent cap.
+    if ('parentIds' in updates) {
+      const prevParentIds = target?.parentIds ?? []
+      const nextParentIds = (updates.parentIds as string[] | undefined) ?? []
+      const addedParents = nextParentIds.filter(p => !prevParentIds.includes(p))
+      if (addedParents.length > 0 && prevParentIds.length > 0) {
+        const siblings = membersRef.current.filter(m =>
+          m.id !== id &&
+          m.parentIds.length > 0 &&
+          m.parentIds.length < 2 &&
+          m.parentIds.some(pid => prevParentIds.includes(pid)),
+        )
+        for (const sib of siblings) {
+          const inherit = addedParents.filter(p => !sib.parentIds.includes(p))
+          if (inherit.length === 0) continue
+          const merged = [...sib.parentIds, ...inherit].slice(0, 2)
+          const sibParentGens = merged
+            .map(pid => membersRef.current.find(m => m.id === pid)?.generation)
+            .filter((g): g is number => typeof g === 'number')
+          const sibGen = sibParentGens.length > 0 ? Math.max(...sibParentGens) + 1 : sib.generation
+          const { error: sibErr } = await (supabase.from('family_members') as any)
+            .update({ parent_ids: merged, generation: sibGen, updated_at: new Date().toISOString() })
+            .eq('id', sib.id)
+          if (!sibErr) {
+            setMembers(prev => prev.map(m => m.id === sib.id ? { ...m, parentIds: merged, generation: sibGen } : m))
+            membersRef.current = membersRef.current.map(m => m.id === sib.id ? { ...m, parentIds: merged, generation: sibGen } : m)
+          }
+        }
+      }
+    }
   }, [supabase, members])
 
   const deleteMember = useCallback(async (id: string) => {

@@ -533,6 +533,21 @@ export function MemberDetail({
                   Family Connections
                 </h3>
                 <div className="space-y-3">
+                  {parents.length === 0 && onEdit && allMembers.length > 1 && (member.generation ?? 0) > Math.min(...allMembers.map((m) => m.generation ?? 0)) && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                        <Link2 className="h-3.5 w-3.5" />
+                        Not linked to any parents
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        This person isn’t connected to their parents, so they won’t appear as a sibling or child in the tree. Link them to fix the connection.
+                      </p>
+                      <Button size="sm" variant="outline" className="mt-2 h-7 text-xs border-amber-500/40 text-amber-600 hover:bg-amber-500/10" onClick={onEdit}>
+                        <Edit className="h-3 w-3 mr-1.5" />
+                        Link parents
+                      </Button>
+                    </div>
+                  )}
                   {parents.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">

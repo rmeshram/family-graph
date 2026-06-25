@@ -778,6 +778,14 @@ const TreeNodeCard = memo(function TreeNodeCard({
   const displayName = (!isAdmin && member.showAsAnonymous) ? '? Member' : member.name
   const initials = (!isAdmin && member.showAsAnonymous) ? '?' : getInitials(member.name)
   const color = genderColor(member.gender)
+  // A node with no parents, no spouse and no children is orphaned from the graph
+  // — almost always a data gap (e.g. a sibling added before parents existed).
+  // Flag it visually so it's obvious it needs linking. Never flags the self node
+  // or a legitimately-sole starter tree.
+  const isIsolated = !isSelf && allMembers.length > 2 && !isDeceased &&
+    (member.parentIds?.length ?? 0) === 0 &&
+    (member.spouseIds?.length ?? 0) === 0 &&
+    !allMembers.some(m => m.parentIds?.includes(member.id))
 
   const onPD = (e: React.PointerEvent) => {
     if (e.pointerType !== 'touch') return
@@ -821,6 +829,11 @@ const TreeNodeCard = memo(function TreeNodeCard({
             className="absolute inset-0 pointer-events-none rounded-2xl"
             style={{ background: `radial-gradient(ellipse at 100% 0%, ${color}14 0%, transparent 68%)` }}
           />
+        )}
+
+        {/* Orphaned-node signal — dashed amber ring when disconnected from the graph */}
+        {isIsolated && !isSelected && (
+          <span className="absolute inset-0 rounded-2xl border-2 border-dashed border-amber-400/55 pointer-events-none" />
         )}
 
         {isSelf && (
