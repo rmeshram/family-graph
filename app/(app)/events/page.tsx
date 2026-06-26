@@ -1,5 +1,7 @@
 "use client"
 
+import { redirect } from "next/navigation"
+import { FEATURE_FLAGS } from "@/lib/feature-flags"
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -108,6 +110,7 @@ function getDaysUntil(dateStr: string) {
 }
 
 export default function EventsPage() {
+  if (!FEATURE_FLAGS.enableEvents) redirect("/dashboard")
   const { familyId, user, profile, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
   const { events: dbEvents, loading: eventsLoading, createEvent: dbCreateEvent, updateRSVP, deleteEvent: dbDeleteEvent } = useEvents(familyId)

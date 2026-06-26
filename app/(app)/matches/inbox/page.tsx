@@ -10,8 +10,10 @@ import { useAuth } from "@/hooks/use-auth"
 import {
   ArrowLeft, Heart, MessageCircle, CheckCircle2,
   X, Users, GraduationCap, Briefcase, Loader2,
-  RefreshCw, Send, Sparkles,
+  RefreshCw, Send, Sparkles, LayoutGrid,
 } from "lucide-react"
+import { MatchVault } from "@/components/match-vault"
+import { FEATURE_FLAGS as FF } from "@/lib/feature-flags"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { sampleInboxData, sampleMutualNodeIds, type DemoSenderProfile, type DemoReceivedInterest } from "@/lib/sample-data"
@@ -106,6 +108,7 @@ export default function MatchesInboxPage() {
 
   const [actioning, setActioning] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [vaultProfile, setVaultProfile] = useState<SenderProfile | null>(null)
 
   const isDemoMode = forceDemo || (!authLoading && !user)
 
@@ -205,8 +208,8 @@ export default function MatchesInboxPage() {
   const totalUnread = pendingRequests.length + likes.length
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
-    { id: "requests", label: "Connect Requests", count: pendingRequests.length || undefined },
-    { id: "likes", label: "Liked You", count: likes.length || undefined },
+    { id: "requests", label: "Introductions", count: pendingRequests.length || undefined },
+    { id: "likes", label: "Interests", count: likes.length || undefined },
     { id: "mutual", label: "Mutual", count: mutual.length || undefined },
   ]
 
@@ -314,7 +317,7 @@ export default function MatchesInboxPage() {
           {tab === "requests" && (
             <motion.div key="requests" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {requests.length === 0 ? (
-                <EmptyState icon={<MessageCircle className="h-8 w-8" />} title="No connect requests yet" sub="When someone sends you an introduction, it'll appear here." />
+                <EmptyState icon={<MessageCircle className="h-8 w-8" />} title="No family introductions yet" sub="When a family sends you an introduction request, it'll appear here." showImprove />
               ) : (
                 requests.map(r => (
                   <RequestCard
@@ -332,7 +335,7 @@ export default function MatchesInboxPage() {
           {tab === "likes" && (
             <motion.div key="likes" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               {likes.length === 0 ? (
-                <EmptyState icon={<Heart className="h-8 w-8" />} title="No likes yet" sub="Profiles that liked you will appear here." />
+                <EmptyState icon={<Heart className="h-8 w-8" />} title="No interests yet" sub="Profiles that showed interest in you will appear here." showImprove />
               ) : (
                 likes.map(r => (
                   <LikeCard key={r.id} item={r} isMutual={mutualIds.has(r.from_node_id)} />
@@ -347,13 +350,28 @@ export default function MatchesInboxPage() {
                 <EmptyState icon={<Sparkles className="h-8 w-8" />} title="No mutual likes yet" sub="When you both like each other, it'll show up here as a match." />
               ) : (
                 mutual.map(r => (
-                  <MutualCard key={r.id} item={r} />
+                  <MutualCard key={r.id} item={r} onOpenVault={p => setVaultProfile(p)} />
                 ))
               )}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* vault */}
+      {FF.enableMatchVault && (
+        <MatchVault
+          profile={vaultProfile}
+          open={!!vaultProfile}
+          onClose={() => setVaultProfile(null)}
+          onConnect={() => {
+            if (!vaultProfile) return
+            const text = `Hi, we matched on Outverse! I'd love to connect — ${vaultProfile.name}, ${vaultProfile.current_place ?? ""}`
+            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank")
+            setVaultProfile(null)
+          }}
+        />
+      )}
 
       {/* toast */}
       <AnimatePresence>
@@ -449,7 +467,7 @@ function RequestCard({
             {actioning === item.id
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <CheckCircle2 className="h-3.5 w-3.5" />}
-            Accept
+            Accept Introduction
           </Button>
         </div>
       )}
@@ -523,7 +541,7 @@ function LikeCard({ item, isMutual }: { item: ReceivedInterest; isMutual: boolea
 }
 
 /* ── mutual card ── */
-function MutualCard({ item }: { item: ReceivedInterest }) {
+function MutualCard({ item, onOpenVault }: { item: ReceivedInterest; onOpenVault: (p: SenderProfile) => void }) {
   const p = item.profile
   if (!p) return null
   const age = p.birth_year ? CURRENT_YEAR - p.birth_year : null
@@ -557,8 +575,9 @@ function MutualCard({ item }: { item: ReceivedInterest }) {
         </div>
         <Button
           size="sm"
+          variant="outline"
           className="shrink-0 gap-1.5 text-xs"
-          style={{ background: "#1D4ED8", color: "#fff" }}
+          style={{ borderColor: '#FDE68A', color: '#B45309' }}
           onClick={() => {
             const text = `Hi, we matched on Outverse! I'd love to connect — ${p.name}, ${p.current_place ?? ""}`
             window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank")
@@ -567,18 +586,29 @@ function MutualCard({ item }: { item: ReceivedInterest }) {
           <Send className="h-3 w-3" />
           Connect
         </Button>
+        {FF.enableMatchVault && (
+          <Button
+            size="sm"
+            className="shrink-0 gap-1.5 text-xs"
+            style={{ background: '#1D4ED8', color: '#fff' }}
+            onClick={() => onOpenVault(p)}
+          >
+            <LayoutGrid className="h-3 w-3" />
+            Vault
+          </Button>
+        )}
       </div>
     </motion.div>
   )
 }
 
 /* ── empty state ── */
-function EmptyState({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
+function EmptyState({ icon, title, sub, showImprove }: { icon: React.ReactNode; title: string; sub: string; showImprove?: boolean }) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-col items-center gap-3 text-center py-16 px-6"
+      className="flex flex-col items-center gap-4 text-center py-12 px-6"
     >
       <div
         className="h-16 w-16 rounded-full flex items-center justify-center"
@@ -586,8 +616,32 @@ function EmptyState({ icon, title, sub }: { icon: React.ReactNode; title: string
       >
         {icon}
       </div>
-      <p className="font-semibold text-sm" style={{ color: "#111827" }}>{title}</p>
-      <p className="text-xs max-w-xs" style={{ color: "#9CA3AF" }}>{sub}</p>
+      <div>
+        <p className="font-semibold text-sm mb-1" style={{ color: "#111827" }}>{title}</p>
+        <p className="text-xs max-w-xs" style={{ color: "#9CA3AF" }}>{sub}</p>
+      </div>
+      {showImprove && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left max-w-xs w-full space-y-2.5">
+          <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wide">
+            Profiles with higher trust scores receive 4× more requests
+          </p>
+          <div className="space-y-1.5">
+            {[
+              { label: "Add your photo", href: "/biodata/setup", pts: "+15 pts" },
+              { label: "Invite your father to verify you", href: "/invite", pts: "+15 pts" },
+              { label: "Complete your biodata", href: "/biodata/setup", pts: "+15 pts" },
+              { label: "Add 3+ family members", href: "/dashboard", pts: "+10 pts" },
+            ].map(({ label, href, pts }) => (
+              <Link key={label} href={href}
+                className="flex items-center justify-between rounded-xl bg-white border border-amber-100 px-3 py-2 hover:border-amber-300 transition-colors"
+              >
+                <span className="text-[12px] font-medium text-slate-700">{label}</span>
+                <span className="text-[11px] font-bold text-amber-700 shrink-0 ml-2">{pts}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }

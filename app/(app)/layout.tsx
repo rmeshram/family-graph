@@ -86,9 +86,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   function NodeSkel({ w, highlight = false, delay = 0 }: { w: number; highlight?: boolean; delay?: number }) {
     return (
       <div
-        className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${
-          highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
-        }`}
+        className={`rounded-2xl border p-3 flex flex-col items-center gap-2 shadow-sm overflow-hidden relative ${highlight ? 'border-primary/40 bg-primary/8' : 'border-border/70 bg-card'
+          }`}
         style={{ width: w + 16 }}
       >
         {/* shimmer sweep */}

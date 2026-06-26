@@ -2,30 +2,31 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { GitBranch, Heart, FileText, UserPlus, Home } from 'lucide-react'
+import { GitBranch, Heart, FileText, Inbox, User } from 'lucide-react'
 import { isFeatureEnabled } from '@/lib/feature-flags'
 
+// Audit fix: Rename "Tree" → "Family" (user goal), replace "Invite" with "Inbox"
+// (Invite is a growth mechanic, not a daily destination), add "Me" for own profile.
 const BASE_TABS = [
-  { href: '/dashboard', icon: GitBranch, label: 'Tree' },
-  { href: '/invite',    icon: UserPlus,  label: 'Invite' },
+  { href: '/dashboard', icon: GitBranch, label: 'Family' },
+  { href: '/matches/inbox', icon: Inbox, label: 'Inbox', flag: 'enableMatrimonyFeed' as const },
+  { href: '/biodata', icon: FileText, label: 'Biodata', flag: 'enableBiodata' as const },
 ] as const
 
-const MATRIMONY_TABS = [
-  { href: '/biodata', icon: FileText, label: 'Biodata', flag: 'enableBiodata' as const },
-  { href: '/matches', icon: Heart,    label: 'Matches', flag: 'enableMatrimonyFeed' as const },
-] as const
+const MATCHES_TAB = { href: '/matches', icon: Heart, label: 'Matches', flag: 'enableMatrimonyFeed' as const }
 
 /** Fixed bottom tab bar — shown on mobile only (hidden lg+). SPEC §3.0. */
 export function MobileBottomNav() {
   const pathname = usePathname()
 
-  const matrimonyTabs = MATRIMONY_TABS.filter(t => isFeatureEnabled(t.flag))
+  const showMatrimony = isFeatureEnabled('enableMatrimonyFeed')
+  const showBiodata = isFeatureEnabled('enableBiodata')
 
-  // Build ordered tabs: Tree | [Biodata] | [Matches] | Invite
   const tabs = [
-    BASE_TABS[0],
-    ...matrimonyTabs,
-    BASE_TABS[1],
+    BASE_TABS[0], // Family (tree)
+    ...(showMatrimony ? [MATCHES_TAB] : []),
+    ...(showMatrimony ? [BASE_TABS[1]] : []), // Inbox
+    ...(showBiodata ? [BASE_TABS[2]] : []), // Biodata
   ]
 
   return (
@@ -36,16 +37,17 @@ export function MobileBottomNav() {
     >
       <div className="flex items-center justify-around">
         {tabs.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || pathname.startsWith(href + '/')
+          // Active if exact match or sub-path, but /matches/inbox should not activate /matches
+          const active =
+            href === '/matches'
+              ? pathname === '/matches'
+              : pathname === href || pathname.startsWith(href + '/')
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center justify-center gap-1 py-2 flex-1 min-h-[56px] transition-colors duration-150 ${
-                active
-                  ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`flex flex-col items-center justify-center gap-1 py-2 flex-1 min-h-[56px] transition-colors duration-150 ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                }`}
               aria-current={active ? 'page' : undefined}
             >
               <Icon

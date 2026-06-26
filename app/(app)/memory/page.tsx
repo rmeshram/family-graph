@@ -1,5 +1,7 @@
 "use client"
 
+import { redirect } from "next/navigation"
+import { FEATURE_FLAGS } from "@/lib/feature-flags"
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -78,6 +80,7 @@ function formatDuration(seconds: number) {
 const BLANK_MEMORY = { title: '', description: '', eventType: 'other' as MemoryItem['eventType'], year: undefined as number | undefined, photoUrl: '', photoFile: null as File | null, taggedMemberIds: [] as string[] }
 
 export default function MemoryPage() {
+  if (!FEATURE_FLAGS.enableMemoryVault) redirect("/dashboard")
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading: membersLoading } = useMembers(familyId)
   const { memories: dbMemories, loading: memoriesLoading, addMemory: dbAddMemory, updateMemory: dbUpdateMemory, deleteMemory: dbDeleteMemory, uploadPhoto } = useMemories(familyId)
@@ -418,28 +421,62 @@ export default function MemoryPage() {
                   onBack={() => setSelectedMemory(null)}
                 />
               ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredMemories.map(memory => (
-                    <MemoryCard
-                      key={memory.id}
-                      memory={memory}
-                      members={allMembers}
-                      onClick={() => setSelectedMemory(memory)}
-                      onEdit={() => openEdit(memory)}
-                      onDelete={() => handleDeleteMemory(memory.id)}
-                    />
-                  ))}
-                  {/* Add Memory Card */}
-                  <button onClick={() => setShowAddForm(true)} className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/50 p-8 text-muted-foreground transition-colors hover:border-amber-500/50 hover:text-amber-400 min-h-[200px]">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 group-hover:bg-amber-500/10 transition-colors">
-                      <Plus className="h-6 w-6" />
+                filteredMemories.length === 0 ? (
+                  <div className="flex flex-col items-center gap-6 py-16 text-center px-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 border border-amber-500/20">
+                      <Camera className="h-8 w-8 text-amber-400" />
                     </div>
-                    <div className="text-center">
-                      <p className="font-medium">Add Memory</p>
-                      <p className="text-xs">Upload photos from family events</p>
+                    <div className="max-w-xs">
+                      <h3 className="font-bold text-lg text-foreground mb-2">Your family story starts here</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Every photo, voice note, and story you add becomes part of your family&apos;s permanent record — accessible to your children and grandchildren.
+                      </p>
                     </div>
-                  </button>
-                </div>
+                    <blockquote className="max-w-xs rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-left">
+                      <p className="text-[12px] italic text-amber-400/90 leading-relaxed">
+                        &ldquo;My grandmother spoke for 4 minutes about partition. We almost lost it. Now we never will.&rdquo;
+                      </p>
+                      <footer className="mt-1.5 text-[11px] text-amber-400/60">— Arjun, Delhi</footer>
+                    </blockquote>
+                    <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                      <button
+                        onClick={() => setShowAddForm(true)}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-400 hover:bg-amber-500/20 transition-colors"
+                      >
+                        <Camera className="h-4 w-4" /> Add a family photo
+                      </button>
+                      <button
+                        onClick={() => setShowVoiceRecorder(true)}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm font-semibold text-violet-400 hover:bg-violet-500/20 transition-colors"
+                      >
+                        <Mic className="h-4 w-4" /> Record voice story
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredMemories.map(memory => (
+                      <MemoryCard
+                        key={memory.id}
+                        memory={memory}
+                        members={allMembers}
+                        onClick={() => setSelectedMemory(memory)}
+                        onEdit={() => openEdit(memory)}
+                        onDelete={() => handleDeleteMemory(memory.id)}
+                      />
+                    ))}
+                    {/* Add Memory Card */}
+                    <button onClick={() => setShowAddForm(true)} className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/50 p-8 text-muted-foreground transition-colors hover:border-amber-500/50 hover:text-amber-400 min-h-[200px]">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 group-hover:bg-amber-500/10 transition-colors">
+                        <Plus className="h-6 w-6" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-medium">Add Memory</p>
+                        <p className="text-xs">Upload photos from family events</p>
+                      </div>
+                    </button>
+                  </div>
+                )
               )}
             </div>
           </ScrollArea>

@@ -19,28 +19,42 @@ import {
   Users, Globe, Star, BarChart3, Activity,
   CalendarDays, Sun, Map, FileText, Crown, X, Menu, LogOut,
   Printer, BookOpen, Shield, ChevronRight, ChevronLeft, ChevronDown,
-  UserCheck, UserX, TreeDeciduous, Heart,
+  UserCheck, UserX, TreeDeciduous, Heart, SlidersHorizontal, BadgeCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FEATURE_FLAGS } from '@/lib/feature-flags'
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
-const ALL_NAV_ITEMS = [
-  { icon: GitBranch, label: 'Family Tree', href: '/dashboard', color: 'text-primary', flag: null },
-  { icon: UserPlus, label: 'Invite Family', href: '/invite', color: 'text-green-400', flag: null },
-  { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400', flag: null },
+// Order: matrimony-critical paths first, family management second, memory/tools last
+const PRIMARY_NAV = [
+  { icon: Heart,              label: 'Find Matches', href: '/matches',   color: 'text-pink-500',   flag: 'enableMatrimonyFeed'          as const },
+  { icon: FileText,           label: 'Biodata',      href: '/biodata',   color: 'text-orange-400', flag: 'enableBiodata'                as const },
+  { icon: SlidersHorizontal,  label: 'Lifestyle',    href: '/lifestyle', color: 'text-purple-400', flag: 'enableLifestyleIntelligence'  as const },
+  { icon: BadgeCheck,         label: 'Vouches',      href: '/vouches',   color: 'text-green-500',  flag: 'enableVouches'                as const },
+  { icon: GitBranch,          label: 'Family Tree',  href: '/dashboard', color: 'text-primary',    flag: null },
+  { icon: UserPlus,           label: 'Invite Family',href: '/invite',    color: 'text-green-400',  flag: null },
+]
+const SECONDARY_NAV = [
   { icon: Camera, label: 'Memory Vault', href: '/memory', color: 'text-amber-400', flag: null },
+  { icon: Clock, label: 'Timeline', href: '/timeline', color: 'text-blue-400', flag: null },
+  { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500', flag: null },
+]
+const TOOLS_NAV = [
   { icon: Sparkles, label: 'AI Copilot', href: '/ai-copilot', color: 'text-violet-400', flag: 'enableAICopilot' as const },
   { icon: CalendarDays, label: 'Events', href: '/events', color: 'text-pink-400', flag: 'enableEvents' as const },
-  { icon: Sun, label: 'On This Day', href: '/today', color: 'text-amber-500', flag: null },
   { icon: Map, label: 'Migration Map', href: '/migration', color: 'text-cyan-400', flag: 'enableMigrationMap' as const },
-  { icon: FileText, label: 'Biodata', href: '/biodata', color: 'text-orange-400', flag: 'enableBiodata' as const },
-  { icon: Heart, label: 'Find Matches', href: '/matches', color: 'text-pink-500', flag: 'enableMatrimonyFeed' as const },
   { icon: Printer, label: 'Family Poster', href: '/poster', color: 'text-rose-400', flag: 'enableFamilyPoster' as const },
   { icon: BookOpen, label: 'Kulgatha PDF', href: '/kulgatha', color: 'text-emerald-400', flag: 'enableKulgathaPDF' as const },
   { icon: Shield, label: 'Moderation', href: '/moderation', color: 'text-violet-400', flag: 'enableModeratorUI' as const },
 ]
-const NAV_ITEMS = ALL_NAV_ITEMS.filter(item => item.flag === null || FEATURE_FLAGS[item.flag])
+
+const filterByFlag = <T extends { flag: keyof typeof FEATURE_FLAGS | null }>(items: T[]) =>
+  items.filter(item => item.flag === null || FEATURE_FLAGS[item.flag])
+
+const NAV_PRIMARY = filterByFlag(PRIMARY_NAV)
+const NAV_SECONDARY = filterByFlag(SECONDARY_NAV)
+const NAV_TOOLS = filterByFlag(TOOLS_NAV)
+const NAV_ITEMS = [...NAV_PRIMARY, ...NAV_SECONDARY, ...NAV_TOOLS]
 
 // ── Donut ring ────────────────────────────────────────────────────────────────
 function DonutRing({ pct, size = 96 }: { pct: number; size?: number }) {
@@ -193,7 +207,7 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
           <TreeDeciduous className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-sm font-bold tracking-tight text-foreground leading-tight">Outverse</h1>
+          <h1 className="text-sm font-bold tracking-tight text-foreground leading-tight">Family Graph</h1>
           <div className="flex items-center gap-1">
             <p className="text-[11px] text-muted-foreground truncate">{familyName}</p>
             <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
@@ -284,29 +298,83 @@ export function AppSidebar({ onInsightsClick, onFeedClick, feedCount }: AppSideb
       </div>
 
       {/* ── Navigation ───────────────────────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto space-y-0.5 px-2 py-2" style={{ scrollbarWidth: 'none' }}>
-        {NAV_ITEMS.map(item => {
-          const isActive = pathname === item.href
-          const isInvite = item.href === '/invite'
-          return (
-            <Link key={item.href} href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-muted/40 text-primary border-l-2 border-primary pl-[10px]'
-                  : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground border-l-2 border-transparent pl-[10px]'
-              )}>
-              <item.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : item.color)} />
-              {item.label}
-              {isInvite && unclaimedCount > 0 && (
-                <Badge className="ml-auto h-4 px-1.5 text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/30 tabular-nums">
-                  {unclaimedCount}
-                </Badge>
-              )}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 overflow-y-auto px-2 py-2" style={{ scrollbarWidth: 'none' }}>
+        {/* Primary: matrimony + family management */}
+        <div className="space-y-0.5">
+          {NAV_PRIMARY.map(item => {
+            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
+            const isInvite = item.href === '/invite'
+            return (
+              <Link key={item.href} href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-muted/40 text-primary border-l-2 border-primary pl-[10px]'
+                    : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground border-l-2 border-transparent pl-[10px]'
+                )}>
+                <item.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : item.color)} />
+                {item.label}
+                {isInvite && unclaimedCount > 0 && (
+                  <Badge className="ml-auto h-4 px-1.5 text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/30 tabular-nums">
+                    {unclaimedCount}
+                  </Badge>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+
+        {/* Secondary: memories & history */}
+        {NAV_SECONDARY.length > 0 && (
+          <>
+            <Separator className="my-2" />
+            <div className="space-y-0.5">
+              {NAV_SECONDARY.map(item => {
+                const isActive = pathname === item.href
+                return (
+                  <Link key={item.href} href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-muted/40 text-primary border-l-2 border-primary pl-[10px]'
+                        : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground border-l-2 border-transparent pl-[10px]'
+                    )}>
+                    <item.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : item.color)} />
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Tools: power features behind flags */}
+        {NAV_TOOLS.length > 0 && (
+          <>
+            <Separator className="my-2" />
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">Tools</p>
+            <div className="space-y-0.5">
+              {NAV_TOOLS.map(item => {
+                const isActive = pathname === item.href
+                return (
+                  <Link key={item.href} href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-muted/40 text-primary border-l-2 border-primary pl-[10px]'
+                        : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground border-l-2 border-transparent pl-[10px]'
+                    )}>
+                    <item.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : item.color)} />
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </div>
+          </>
+        )}
 
         <Separator className="my-2" />
 

@@ -72,7 +72,7 @@ function EmailSignUp() {
       router.push(nextPath); router.refresh(); return
     }
     const { data: profile } = await supabase.from('profiles').select('family_id').eq('id', data.user.id).single()
-    router.push(!profile?.family_id ? '/onboarding' : '/dashboard')
+    router.push(!profile?.family_id ? '/onboarding' : '/matches')
     router.refresh()
   }
 
@@ -315,8 +315,8 @@ function SignUpContent() {
             <path d="M12 10v3M8 14l-1.5 2M16 14l1.5 2" strokeLinecap="round" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-foreground mb-1">Build your family tree</h1>
-        <p className="text-muted-foreground text-sm">Your family&apos;s history, all in one place — free forever</p>
+        <h1 className="text-2xl font-bold text-foreground mb-1">Find your life partner</h1>
+        <p className="text-muted-foreground text-sm">Family-verified matrimony — free to start</p>
       </div>
 
       {/* Google — primary, most prominent CTA */}

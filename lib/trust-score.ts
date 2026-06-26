@@ -48,7 +48,10 @@ export interface TrustScoreComponent {
 }
 
 export type TrustScoreBucket = '0-40' | '40-70' | '70-100'
+/** Legacy 3-tier kept for analytics backward-compat. */
 export type TrustScoreTier = 'low' | 'medium' | 'high'
+/** 5-tier display system shown in UI badges and trust strip. */
+export type TrustScoreTier5 = 'unverified' | 'basic' | 'trusted' | 'family_verified' | 'elite'
 
 export interface TrustScoreResult {
   /** Total score, 0–100 (capped). */
@@ -56,8 +59,12 @@ export interface TrustScoreResult {
   components: TrustScoreComponent[]
   /** Analytics bucket per SPEC §24.6 (`trust_score_bucket`). */
   bucket: TrustScoreBucket
-  /** Display tier for badges. */
+  /** Legacy 3-tier for analytics. */
   tier: TrustScoreTier
+  /** 5-tier display tier shown in UI. */
+  tier5: TrustScoreTier5
+  /** Human-readable label for the 5-tier. */
+  tierLabel: string
 }
 
 const isClaimed = (n?: Pick<FamilyMember, 'isClaimed' | 'claimedByUserId'>): boolean =>
@@ -93,7 +100,7 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
     components.reduce((sum, c) => sum + (c.earned ? c.points : 0), 0),
   )
 
-  return { total, components, bucket: trustScoreBucket(total), tier: trustScoreTier(total) }
+  return { total, components, bucket: trustScoreBucket(total), tier: trustScoreTier(total), tier5: trustScoreTier5(total), tierLabel: trustScoreTierLabel(total) }
 }
 
 /** Analytics bucket per SPEC §24.6. */
@@ -108,4 +115,26 @@ export function trustScoreTier(total: number): TrustScoreTier {
   if (total < 40) return 'low'
   if (total < 70) return 'medium'
   return 'high'
+}
+
+/** 5-tier display system: 0–19 Unverified, 20–39 Basic, 40–59 Trusted, 60–79 Family-Verified, 80–100 Elite. */
+export function trustScoreTier5(total: number): TrustScoreTier5 {
+  if (total < 20) return 'unverified'
+  if (total < 40) return 'basic'
+  if (total < 60) return 'trusted'
+  if (total < 80) return 'family_verified'
+  return 'elite'
+}
+
+/** Human-readable label for the 5-tier. */
+export function trustScoreTierLabel(total: number): string {
+  const tier = trustScoreTier5(total)
+  const labels: Record<TrustScoreTier5, string> = {
+    unverified: 'Unverified',
+    basic: 'Basic',
+    trusted: 'Trusted',
+    family_verified: 'Family Verified',
+    elite: 'Elite',
+  }
+  return labels[tier]
 }

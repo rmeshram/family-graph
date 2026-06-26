@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Inter, Cormorant_Garamond } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import Script from 'next/script'
 import { AuthProvider } from '@/hooks/use-auth'
@@ -13,33 +13,45 @@ const inter = Inter({
   preload: true,
 })
 
+// Audit fix: Premium display typeface for hero headlines and biodata.
+// Cormorant Garamond is warm, editorial, and carries Indian-luxury aesthetic
+// (used in premium fashion/jewellery publishing). Applied via --font-display.
+const cormorant = Cormorant_Garamond({
+  subsets: ['latin'],
+  variable: '--font-display',
+  weight: ['400', '500', '600', '700'],
+  style: ['normal', 'italic'],
+  display: 'swap',
+  preload: false,
+})
+
 export const metadata: Metadata = {
-  title: 'Outverse — Find matches your family can trust',
+  title: 'Family Graph — Find matches your family can trust',
   description: 'The only matrimony platform where every match comes with a verified family tree. Gotra matching, family verification, and trusted introductions.',
   generator: 'v0.app',
   manifest: '/manifest.json',
   keywords: ['matrimony', 'Indian matrimony', 'family tree', 'gotra matching', 'verified matches', 'NRI matrimony', 'rishta', 'shaadi'],
-  authors: [{ name: 'Outverse' }],
+  authors: [{ name: 'Family Graph' }],
   openGraph: {
     type: 'website',
     locale: 'en_IN',
-    url: 'https://outverse.in',
-    title: 'Outverse — Find matches your family can trust',
+    url: 'https://familygraph.in',
+    title: 'Family Graph — Find matches your family can trust',
     description: 'The only matrimony platform where every match comes with a verified family tree. Gotra compatible. Family verified.',
-    siteName: 'Outverse',
+    siteName: 'Family Graph',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Outverse — Verified matrimony matches with family trees',
+        alt: 'Family Graph — Verified matrimony matches with family trees',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Outverse - Map Your Entire Family Network',
-    description: 'India\'s first AI-powered family intelligence platform. Discover lost relatives, check gotra compatibility, preserve elder stories.',
+    title: 'Family Graph — Verified matrimony with verified family trees',
+    description: 'The only matrimony platform where every match comes with a verified family tree. Gotra matched. Parents verified.',
     images: ['/og-image.png'],
   },
   icons: {
@@ -74,7 +86,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${cormorant.variable}`}>
       <head>
         {/* Restore theme before first paint — raw script runs synchronously, no FOUC */}
         <script

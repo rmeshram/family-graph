@@ -4,6 +4,12 @@
  * All disabled features are hidden from the UI but code is preserved.
  */
 export const FEATURE_FLAGS = {
+  /** Demo / sample-data fallback. When TRUE, logged-out visitors and any failed
+   *  DB query fall back to sample profiles so the app is never empty (ideal for
+   *  demos & pitches). Set FALSE for public launch — otherwise real users can
+   *  see and "Send Interest" to fabricated profiles. Flip on whenever you want a
+   *  populated demo. */
+  enableDemoData: true,
   /** Google Gemini-powered AI Copilot — requires GOOGLE_AI_API_KEY env var */
   enableAICopilot: true,
   /** Stripe subscription / upgrade flow — not yet integrated */
@@ -85,6 +91,12 @@ export const FEATURE_FLAGS = {
   enableKundliIntegration: false,
   /** Matrimony-first 3-screen onboarding (SPEC §4.3). */
   enableMatrimonyFirstOnboarding: true,
+  /** Lifestyle intelligence: 6-slider wealth vector + persona reveal shown to matches. */
+  enableLifestyleIntelligence: true,
+  /** Social trust graph: vouch for traits on family members. */
+  enableVouches: true,
+  /** Match vault: compatibility heatmap + decision moment for mutual matches. */
+  enableMatchVault: true,
 
   // ─────────────────────────────────────────────────────────────────────────
   // SPEC §2.2 — V2 flags (Days 31–90). Default OFF.

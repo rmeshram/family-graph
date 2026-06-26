@@ -1,5 +1,7 @@
 "use client"
 
+import { redirect } from "next/navigation"
+import { FEATURE_FLAGS } from "@/lib/feature-flags"
 import { useState, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -36,6 +38,7 @@ function parseCityFromPlace(place?: string): string | null {
 type ViewMode = "both" | "birthplace" | "current"
 
 export default function MigrationPage() {
+  if (!FEATURE_FLAGS.enableMigrationMap) redirect("/dashboard")
   const { user, familyId, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
   const isDemoMode = !authLoading && !user

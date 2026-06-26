@@ -1,5 +1,7 @@
 "use client"
 
+import { redirect } from "next/navigation"
+import { FEATURE_FLAGS } from "@/lib/feature-flags"
 import { useState, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -63,6 +65,7 @@ interface TimelineEvent {
 }
 
 export default function TimelinePage() {
+  if (!FEATURE_FLAGS.enableTimeline) redirect("/dashboard")
   const { familyId, user, loading: authLoading } = useAuth()
   const { members: dbMembers, loading } = useMembers(familyId)
   const isDemoMode = !authLoading && !user

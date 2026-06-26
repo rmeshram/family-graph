@@ -19,25 +19,36 @@ export interface BiodataShareInput {
   profileUrl: string
   /** Verified family size, e.g. "Verified family of 12 members". */
   familyMemberCount?: number
+  /** Number of verified (claimed) members in the family. */
+  verifiedMemberCount?: number
+  /** Number of generations in the family tree. */
+  generationCount?: number
 }
 
 /**
  * Build the WhatsApp share message body for a biodata profile.
  * Plain text + emoji only (WhatsApp does not render markdown in deep links).
+ * Leads with family context line per audit spec §7.2.
  */
 export function buildBiodataShareText(input: BiodataShareInput): string {
   const lines: string[] = []
-  const headline = [input.name, input.age != null ? `${input.age}` : null]
+
+  // Family context line — leads the message (most important trust signal)
+  if (typeof input.familyMemberCount === 'number' && input.familyMemberCount > 0) {
+    const genPart = input.generationCount ? `${input.generationCount} generation${input.generationCount > 1 ? 's' : ''}, ` : ''
+    const verifiedPart = input.verifiedMemberCount ? `, ${input.verifiedMemberCount} verified` : ''
+    lines.push(`👨‍👩‍👧‍👦 Family background: ${genPart}${input.familyMemberCount} member${input.familyMemberCount > 1 ? 's' : ''}${verifiedPart}`)
+    lines.push('')
+  }
+
+  const headline = [input.name, input.age != null ? `${input.age} yrs` : null]
     .filter(Boolean)
     .join(', ')
   lines.push(`🪔 ${headline}`)
   if (input.gotra?.trim()) lines.push(`Gotra: ${input.gotra.trim()}`)
   if (input.city?.trim()) lines.push(`📍 ${input.city.trim()}`)
-  if (typeof input.familyMemberCount === 'number' && input.familyMemberCount > 0) {
-    lines.push(`✅ Verified family of ${input.familyMemberCount} members`)
-  }
   lines.push('')
-  lines.push(`View full biodata: ${input.profileUrl}`)
+  lines.push(`View full biodata & family tree: ${input.profileUrl}`)
   return lines.join('\n')
 }
 

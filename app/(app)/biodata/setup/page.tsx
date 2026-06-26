@@ -169,7 +169,22 @@ export default function BiodataSetupPage() {
 function BiodataSetupContent() {
   const router = useRouter()
   const { user, profile } = useAuth()
-  const memberId = (profile as any)?.member_id as string | null
+  const [memberId, setMemberId] = useState<string | null>((profile as any)?.member_id ?? null)
+
+  /* Resolve the user's own member node. Prefer profile.member_id; if the account
+     isn't linked there, fall back to the node they've claimed. Without this,
+     handleSave silently no-ops for unlinked accounts (the "button does nothing" bug). */
+  useEffect(() => {
+    const pid = (profile as any)?.member_id as string | null
+    if (pid) { setMemberId(pid); return }
+    if (!user) return
+    createClient()
+      .from("family_members")
+      .select("id")
+      .eq("claimed_by_user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setMemberId((data as any).id) })
+  }, [profile, user])
 
   const [step, setStep] = useState(0)
   const [dir, setDir] = useState<Dir>(1)
@@ -183,6 +198,7 @@ function BiodataSetupContent() {
   const photoRef = useRef<HTMLInputElement>(null)
 
   /* step 1 — personal */
+  const [birthYear, setBirthYear] = useState("")
   const [heightCm, setHeightCm] = useState("")
   const [maritalStatus, setMaritalStatus] = useState("")
   const [bloodGroup, setBloodGroup] = useState("")
@@ -207,12 +223,13 @@ function BiodataSetupContent() {
     if (!memberId) return
     const supabase = createClient()
     supabase.from("family_members")
-      .select("height_cm,marital_status,blood_group,education_level,education_field,occupation_category,annual_income_range,family_type,number_of_brothers,number_of_sisters,family_income_range,preferred_age_min,preferred_age_max,partner_expectations,biodata_photo_url")
+      .select("birth_year,height_cm,marital_status,blood_group,education_level,education_field,occupation_category,annual_income_range,family_type,number_of_brothers,number_of_sisters,family_income_range,preferred_age_min,preferred_age_max,partner_expectations,biodata_photo_url")
       .eq("id", memberId)
       .maybeSingle()
       .then(({ data }) => {
         if (!data) return
         const d = data as any
+        if (d.birth_year) setBirthYear(String(d.birth_year))
         if (d.height_cm) setHeightCm(String(d.height_cm))
         if (d.marital_status) setMaritalStatus(d.marital_status)
         if (d.blood_group) setBloodGroup(d.blood_group)
@@ -241,7 +258,17 @@ function BiodataSetupContent() {
 
   /* ── save ── */
   async function handleSave() {
-    if (!memberId || !user) return
+    if (!user) return
+    if (!memberId) {
+      setError("Your account isn't linked to a family member yet. Add yourself on the family tree, then return here.")
+      return
+    }
+    const yr = parseInt(birthYear)
+    if (!birthYear || isNaN(yr) || yr < 1940 || yr > new Date().getFullYear() - 18) {
+      setError("Please enter a valid birth year (you must be 18+). It's required so your biodata can be matched.")
+      setStep(1)
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -262,6 +289,7 @@ function BiodataSetupContent() {
       }
 
       const patch: Record<string, unknown> = {
+        birth_year: yr,
         marital_status: maritalStatus || null,
         blood_group: bloodGroup || null,
         height_cm: heightCm ? parseInt(heightCm) : null,
@@ -434,6 +462,24 @@ function BiodataSetupContent() {
                       <p className="text-[13px] text-slate-500 mt-1">Basic details shown on your biodata card.</p>
                     </div>
 
+                    {/* Birth year — required for matching & eligibility */}
+                    <div>
+                      <FieldLabel label="Birth year" />
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="e.g. 1996"
+                        min={1940}
+                        max={new Date().getFullYear() - 18}
+                        value={birthYear}
+                        onChange={e => setBirthYear(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-[14px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                      {birthYear && /^\d{4}$/.test(birthYear) && (
+                        <p className="text-[12px] text-slate-500 mt-1">Age {new Date().getFullYear() - parseInt(birthYear)}</p>
+                      )}
+                    </div>
+
                     {/* Height */}
                     <div>
                       <FieldLabel label="Height" />
@@ -473,13 +519,20 @@ function BiodataSetupContent() {
                       onChange={setBloodGroup}
                     />
 
+                    {error && (
+                      <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                        <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                        <p className="text-[13px] text-red-700">{error}</p>
+                      </div>
+                    )}
+
                     <div className="flex gap-2 pt-1">
                       <button type="button" onClick={() => nav(-1)} className="flex items-center gap-1 rounded-xl border border-gray-200 px-4 py-3 text-[13px] font-semibold text-slate-600 hover:bg-gray-50 transition-colors">
                         <ArrowLeft className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
-                        onClick={() => nav(1)}
+                        onClick={() => { setError(null); nav(1) }}
                         className="flex-1 rounded-xl bg-blue-700 py-3 text-[14px] font-semibold text-white hover:bg-blue-800 transition-colors flex items-center justify-center gap-2"
                       >
                         Continue <ArrowRight className="h-4 w-4" />

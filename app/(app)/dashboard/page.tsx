@@ -1579,7 +1579,7 @@ export default function FamilyGraphApp() {
               <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">Beta</span>
               <span className="text-muted-foreground/40 text-[10px]">·</span>
               <a
-                href="mailto:meshram22rahul@gmail.com?subject=Outverse%20Feedback"
+                href="mailto:meshram22rahul@gmail.com?subject=Family%20Graph%20Feedback"
                 className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors underline-offset-2 hover:underline"
               >
                 Send feedback
@@ -2013,72 +2013,124 @@ export default function FamilyGraphApp() {
                 Handles: new admin, unlinked user, viewer on empty family.
                 This is the highest-priority overlay — prevents blank screen. */}
             {!isDemoMode && !dbLoading && !authLoading && members.length === 0 && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8 text-center z-20">
-                <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 border border-primary/20">
-                  <TreePine className="h-10 w-10 text-primary/50" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center z-20 overflow-y-auto">
+                {/* Ghost tree visual */}
+                <div className="flex flex-col items-center gap-1 select-none">
+                  {/* Generation row: Father + Mother ghost nodes */}
+                  <div className="flex items-end gap-8 sm:gap-14">
+                    {([
+                      { label: 'Add Father', rel: 'father' as QuickRelType, color: 'blue', emoji: '👨' },
+                      { label: 'Add Mother', rel: 'mother' as QuickRelType, color: 'pink', emoji: '👩' },
+                    ] as const).map(slot => (
+                      <button
+                        key={slot.rel}
+                        onClick={() => {
+                          if (selfMember && handleAddRelative) handleAddRelative(selfMember.id, slot.rel)
+                          else setIsAddDialogOpen(true)
+                        }}
+                        className={cn(
+                          'flex flex-col items-center gap-2 group pointer-events-auto',
+                          !isViewer && !isDemoMode ? 'cursor-pointer' : 'cursor-default opacity-50'
+                        )}
+                        disabled={isViewer}
+                      >
+                        <div className={cn(
+                          'flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed transition-all group-hover:scale-105',
+                          slot.color === 'blue'
+                            ? 'border-blue-500/50 bg-blue-500/8 group-hover:border-blue-500/80 group-hover:bg-blue-500/15 group-hover:shadow-lg group-hover:shadow-blue-500/20'
+                            : 'border-pink-500/50 bg-pink-500/8 group-hover:border-pink-500/80 group-hover:bg-pink-500/15 group-hover:shadow-lg group-hover:shadow-pink-500/20',
+                          'animate-[pulse_3s_ease-in-out_infinite]'
+                        )}>
+                          <span className="text-xl opacity-60">{slot.emoji}</span>
+                        </div>
+                        <p className={cn('text-[11px] font-semibold', slot.color === 'blue' ? 'text-blue-400/70' : 'text-pink-400/70')}>
+                          {slot.label}
+                        </p>
+                        <span className={cn('text-[10px] rounded-full px-2 py-0.5',
+                          slot.color === 'blue' ? 'bg-blue-500/10 text-blue-400/60' : 'bg-pink-500/10 text-pink-400/60'
+                        )}>+15 pts</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Connector lines */}
+                  <div className="relative flex items-start justify-center w-40 sm:w-56 h-8">
+                    <div className="absolute left-1/4 w-px h-full bg-border/30" />
+                    <div className="absolute right-1/4 w-px h-full bg-border/30" />
+                    <div className="absolute left-1/4 right-1/4 top-0 h-px bg-border/30" />
+                  </div>
+
+                  {/* Self node (center) */}
+                  {(identityState === 'unlinked' || !selfMember) ? (
+                    <button
+                      onClick={() => setIsAddDialogOpen(true)}
+                      className="flex flex-col items-center gap-2 group pointer-events-auto"
+                    >
+                      <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary/50 bg-primary/10 group-hover:border-primary group-hover:bg-primary/20 transition-all shadow-lg shadow-primary/10">
+                        <UserPlus className="h-6 w-6 text-primary/70 group-hover:text-primary" />
+                      </div>
+                      <p className="text-sm font-bold text-primary">Add yourself</p>
+                      <span className="text-[10px] bg-primary/10 text-primary/70 rounded-full px-2 py-0.5">+10 pts</span>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary/60 bg-primary/10 shadow-lg shadow-primary/10">
+                        {selfMember.photoUrl
+                          ? <img src={selfMember.photoUrl} alt={selfMember.name} className="h-full w-full rounded-full object-cover" />
+                          : <span className="text-lg font-bold text-primary">{selfMember.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</span>
+                        }
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">{selfMember.name.split(' ')[0]}</p>
+                      <p className="text-[10px] text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-full">You</p>
+                    </div>
+                  )}
+
+                  {/* Connector down */}
+                  <div className="w-px h-6 bg-border/30" />
+
+                  {/* Sibling ghost node */}
+                  <button
+                    onClick={() => {
+                      if (selfMember && handleAddRelative) handleAddRelative(selfMember.id, 'sibling')
+                      else setIsAddDialogOpen(true)
+                    }}
+                    className="flex flex-col items-center gap-2 group pointer-events-auto"
+                    disabled={isViewer}
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-violet-500/40 bg-violet-500/5 group-hover:border-violet-500/70 group-hover:bg-violet-500/10 transition-all animate-[pulse_3s_ease-in-out_0.5s_infinite]">
+                      <span className="text-lg opacity-60">👤</span>
+                    </div>
+                    <p className="text-[11px] font-semibold text-violet-400/70">Add Sibling</p>
+                    <span className="text-[10px] bg-violet-500/10 text-violet-400/60 rounded-full px-2 py-0.5">+10 pts</span>
+                  </button>
                 </div>
 
-                {(identityState === 'unlinked' || !selfMember) ? (
-                  <>
-                    <div>
-                      <h2 className="text-xl font-bold text-foreground mb-2">Welcome! Your family tree starts here 🌱</h2>
-                      <p className="text-muted-foreground text-sm max-w-xs">
-                        Add yourself first, then your parents and siblings. Once your close family is mapped, connect with relatives across families.
-                      </p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-center gap-3">
-                      <Button
-                        size="lg"
-                        onClick={() => setIsAddDialogOpen(true)}
-                        className="h-12 px-8 gap-2 text-base font-semibold"
-                      >
-                        <UserPlus className="h-5 w-5" />
-                        Add yourself first
-                      </Button>
-                      <Link href="/onboarding">
-                        <Button variant="outline" className="h-12 px-6 gap-1.5 text-sm">
-                          Or redo setup →
-                        </Button>
-                      </Link>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <h2 className="text-xl font-bold text-foreground mb-2">Your branch starts here 🌱</h2>
-                      <p className="text-muted-foreground text-sm max-w-xs">
-                        Add your father or mother first. Once your close family is mapped, invite relatives to connect across families.
-                      </p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-center gap-3">
-                      <Button
-                        size="lg"
-                        onClick={() => setIsAddDialogOpen(true)}
-                        className="h-12 px-8 gap-2 text-base font-semibold"
-                      >
-                        <UserPlus className="h-5 w-5" />
-                        Add a family member
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => { setShowInviteWidget(true); setShowAIWidget(false) }}
-                        className="h-12 px-6 gap-1.5 text-sm"
-                      >
-                        Invite family instead →
-                      </Button>
-                    </div>
-                  </>
-                )}
+                {/* Trust score connection message */}
+                <div className="mt-1 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-5 py-3 max-w-xs">
+                  <p className="text-[12px] font-semibold text-amber-400 mb-1">Your tree is 0% complete</p>
+                  <p className="text-[11px] text-amber-400/70">
+                    Add 3 family members to see your first match. Each verified member boosts your trust score.
+                  </p>
+                </div>
 
-                {/* Step hint */}
-                <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-[11px] text-muted-foreground/60">
-                  <span className="flex items-center gap-1"><span className="text-green-400">①</span> Add yourself</span>
-                  <span>→</span>
-                  <span className="flex items-center gap-1"><span className="text-primary/60">②</span> Add parents</span>
-                  <span>→</span>
-                  <span className="flex items-center gap-1"><span className="text-violet-400/60">③</span> Invite relatives</span>
-                  <span>→</span>
-                  <span className="flex items-center gap-1"><span className="text-amber-400/70">④</span> Connect families</span>
+                {/* CTA buttons */}
+                <div className="flex flex-col sm:flex-row items-center gap-2 mt-1">
+                  <Button
+                    size="sm"
+                    onClick={() => setIsAddDialogOpen(true)}
+                    className="h-9 px-5 gap-1.5 text-sm font-semibold"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Add first member
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setShowInviteWidget(true); setShowAIWidget(false) }}
+                    className="h-9 px-4 gap-1.5 text-sm"
+                  >
+                    Invite family instead →
+                  </Button>
                 </div>
               </div>
             )}
@@ -2340,6 +2392,19 @@ export default function FamilyGraphApp() {
                 >
                   <Users2 className="h-4 w-4" />
                   <span>Members</span>
+                </button>
+              )}
+
+            {/* Mobile add-member FAB (+) — right side, mirrors the Members FAB on the left */}
+            {isMobile && !isDemoMode && !isViewer && (viewMode === 'graph' || viewMode === 'universe')
+              && !(viewMode === 'universe' && selectedMemberId && !detailMemberId) && (
+                <button
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="absolute bottom-[3.75rem] right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full shadow-lg backdrop-blur-md transition-all active:scale-95 border border-primary/40"
+                  style={{ background: 'hsl(var(--primary))' }}
+                  aria-label="Add family member"
+                >
+                  <span className="text-xl font-light text-primary-foreground leading-none">+</span>
                 </button>
               )}
 
