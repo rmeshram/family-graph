@@ -57,6 +57,16 @@ function fmtEdu(level: string | null): string {
   return level.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
 }
 
+/* ── lifestyle compatibility ── */
+const VECTOR_KEYS = ['comfort', 'travel', 'housing', 'spending', 'luxury', 'growth']
+const MAX_DIST = Math.sqrt(VECTOR_KEYS.length * 100 * 100) // ~244.9
+
+function vectorCompatibility(a: Record<string, number>, b: Record<string, number> | null | undefined): number {
+  if (!b) return 50 // no vector → neutral score
+  const dist = Math.sqrt(VECTOR_KEYS.reduce((sum, k) => sum + Math.pow((a[k] ?? 50) - (b[k] ?? 50), 2), 0))
+  return Math.round((1 - dist / MAX_DIST) * 100)
+}
+
 function fmtIncome(range: string | null): string | null {
   if (!range) return null
   const r = range.toLowerCase().trim()
@@ -223,6 +233,7 @@ export default function MatchesPage() {
   const [inboxCount, setInboxCount] = useState(0)
   const [trustScore, setTrustScore] = useState<number | null>(null)
   const [trustDismissed, setTrustDismissed] = useState(false)
+  const [ownVector, setOwnVector] = useState<Record<string, number> | null>(null)
 
   /* ── search ── */
   const [searchOpen, setSearchOpen] = useState(false)
@@ -247,7 +258,11 @@ export default function MatchesPage() {
       setMyNodeId("demo-node")
       setMyGender("male")
       setInboxCount(2)
-      // Deterministic fake family stats for demo profiles
+      // Use localStorage vector if available for demo compatibility preview
+      try {
+        const stored = localStorage.getItem('fg_lifestyle_vector')
+        if (stored) setOwnVector(JSON.parse(stored))
+      } catch { }
       const dm = new Map<string, { total: number; verified: number }>()
         ; (sampleMatrimonyProfiles as any[]).forEach((p, i) => {
           dm.set(p.family_id ?? `demo-fam-${i}`, { total: 8 + i * 4, verified: 3 + i * 2 })
@@ -307,6 +322,21 @@ export default function MatchesPage() {
         setTrustScore(score.total)
       }
 
+      /* fetch own lifestyle/wealth vector for compatibility sorting */
+      const { data: ownProfile } = await (supabase.from('profiles') as any)
+        .select('wealth_vector')
+        .eq('id', user.id)
+        .maybeSingle()
+      const vec = (ownProfile as any)?.wealth_vector ?? null
+      setOwnVector(vec)
+      // Fall back to localStorage if DB has nothing yet
+      if (!vec) {
+        try {
+          const stored = localStorage.getItem('fg_lifestyle_vector')
+          if (stored) setOwnVector(JSON.parse(stored))
+        } catch { }
+      }
+
       /* inbox unread count — pending interests aimed at my node */
       if (nodeId) {
         const { count } = await (supabase
@@ -357,7 +387,15 @@ export default function MatchesPage() {
       const finalProfiles = dbProfiles.length > 0
         ? dbProfiles
         : (FEATURE_FLAGS.enableDemoData ? (sampleMatrimonyProfiles as unknown as BiodataProfile[]) : [])
-      setProfiles(finalProfiles)
+
+      /* sort by lifestyle compatibility if own vector is available */
+      const sortedProfiles = vec
+        ? [...finalProfiles].sort((a, b) =>
+            vectorCompatibility(vec, (a as any).wealth_vector) -
+            vectorCompatibility(vec, (b as any).wealth_vector)
+          ).reverse()
+        : finalProfiles
+      setProfiles(sortedProfiles)
 
       /* batch-fetch family member counts for all displayed profiles */
       const fids = [...new Set(finalProfiles.map(p => p.family_id).filter(Boolean))]
@@ -645,7 +683,7 @@ export default function MatchesPage() {
                   : "Boost visibility — complete your biodata to reach more families"}
             </p>
           </div>
-          <Link href="/biodata/setup">
+          <Link href="/upgrade">
             <button
               className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold text-amber-800 border border-amber-300 bg-white hover:bg-amber-50 transition-colors"
             >
@@ -810,6 +848,7 @@ export default function MatchesPage() {
                   key={profile.id}
                   profile={profile}
                   familyStats={familyStats.get(profile.family_id)}
+                  compatScore={ownVector ? vectorCompatibility(ownVector, (profile as any).wealth_vector) : undefined}
                   onLike={() => handleLike(profile)}
                   onPass={() => handlePass(profile)}
                   onConnect={() => setConnectTarget(profile)}
@@ -861,12 +900,14 @@ export default function MatchesPage() {
 function MatchListCard({
   profile,
   familyStats,
+  compatScore,
   onLike,
   onPass,
   onConnect,
 }: {
   profile: BiodataProfile
   familyStats?: { total: number; verified: number }
+  compatScore?: number
   onLike: () => void
   onPass: () => void
   onConnect: () => void
@@ -968,7 +1009,7 @@ function MatchListCard({
             )}
           </div>
 
-          {/* Gotra + Trust */}
+          {/* Gotra + Trust + Lifestyle Compat */}
           <div className="flex items-center gap-3 flex-wrap">
             {profile.gotra && (
               <span className="text-[11px]" style={{ color: "#374151" }}>
@@ -980,12 +1021,23 @@ function MatchListCard({
                 Manglik: {profile.manglik ? "Yes" : "No"}
               </span>
             )}
-            {FEATURE_FLAGS.enableTrustScore && (
-              <div className="ml-auto flex items-center gap-1.5">
-                <span className="text-[10px]" style={{ color: "#9CA3AF" }}>Trust</span>
-                <span className="font-bold text-sm" style={{ color: trustPct >= 60 ? "#059669" : "#D97706" }}>{trustPct}</span>
-              </div>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {compatScore !== undefined && FEATURE_FLAGS.enableLifestyleIntelligence && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px]" style={{ color: "#9CA3AF" }}>Lifestyle</span>
+                  <span className="font-bold text-sm"
+                    style={{ color: compatScore >= 75 ? "#7C3AED" : compatScore >= 55 ? "#059669" : "#D97706" }}>
+                    {compatScore}%
+                  </span>
+                </div>
+              )}
+              {FEATURE_FLAGS.enableTrustScore && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px]" style={{ color: "#9CA3AF" }}>Trust</span>
+                  <span className="font-bold text-sm" style={{ color: trustPct >= 60 ? "#059669" : "#D97706" }}>{trustPct}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Why this match */}

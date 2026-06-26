@@ -8,6 +8,8 @@ import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Sparkles, Share2, CheckCircle2, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { useAuth } from '@/hooks/use-auth'
+import { createClient } from '@/lib/supabase/client'
 
 const LS_KEY = 'fg_lifestyle_vector'
 
@@ -99,6 +101,9 @@ function computePersona(v: SliderValues): Persona {
 export default function LifestylePage() {
   if (!FEATURE_FLAGS.enableLifestyleIntelligence) redirect('/dashboard')
 
+  const { user, profile } = useAuth()
+  const supabase = createClient()
+
   const [values, setValues] = useState<SliderValues>(DEFAULT_VALUES)
   const [phase, setPhase] = useState<'quiz' | 'reveal'>('quiz')
   const [saved, setSaved] = useState(false)
@@ -112,11 +117,21 @@ export default function LifestylePage() {
 
   const persona = computePersona(values)
 
-  function handleSave() {
+  async function handleSave() {
+    // Always persist locally
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(values))
       localStorage.setItem('fg_lifestyle_persona', persona.name)
     } catch { }
+
+    // Persist to DB if signed in
+    if (user && profile) {
+      await (supabase.from('profiles') as any).update({
+        wealth_vector: values,
+        lifestyle_persona: persona.name,
+      }).eq('id', (profile as any).id)
+    }
+
     setSaved(true)
   }
 
