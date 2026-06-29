@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation"
 import { FEATURE_FLAGS } from "@/lib/feature-flags"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { motion, AnimatePresence } from "framer-motion"
@@ -109,6 +109,8 @@ export default function MatchesInboxPage() {
   const [actioning, setActioning] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [vaultProfile, setVaultProfile] = useState<SenderProfile | null>(null)
+  const [showCelebration, setShowCelebration] = useState(false)
+  const celebrationShown = useRef(false)
 
   const isDemoMode = forceDemo || (!authLoading && !user)
 
@@ -207,6 +209,14 @@ export default function MatchesInboxPage() {
   const pendingRequests = requests.filter(r => r.status === "pending")
   const totalUnread = pendingRequests.length + likes.length
 
+  function switchTab(t: Tab) {
+    setTab(t)
+    if (t === "mutual" && mutual.length > 0 && !celebrationShown.current) {
+      celebrationShown.current = true
+      setShowCelebration(true)
+    }
+  }
+
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "requests", label: "Introductions", count: pendingRequests.length || undefined },
     { id: "likes", label: "Interests", count: likes.length || undefined },
@@ -287,7 +297,7 @@ export default function MatchesInboxPage() {
         {tabs.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => switchTab(t.id)}
             className={cn(
               "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
               tab === t.id
@@ -357,6 +367,95 @@ export default function MatchesInboxPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* mutual match celebration overlay */}
+      <AnimatePresence>
+        {showCelebration && mutual[0]?.profile && (
+          <motion.div
+            key="celebration"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6"
+            style={{ background: "linear-gradient(160deg, rgba(124,58,237,0.95) 0%, rgba(109,40,217,0.98) 100%)" }}
+            onClick={() => setShowCelebration(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.7, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+              className="text-center space-y-5 max-w-xs w-full"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* confetti dots */}
+              {[...Array(12)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute w-2 h-2 rounded-full"
+                  style={{
+                    background: ["#FDE68A", "#F9A8D4", "#A5F3FC", "#6EE7B7", "#FCA5A5"][i % 5],
+                    left: `${10 + (i * 7) % 80}%`,
+                    top: `${5 + (i * 11) % 35}%`,
+                  }}
+                  initial={{ y: 0, opacity: 0 }}
+                  animate={{ y: [0, -30, 20, -15, 0], opacity: [0, 1, 1, 1, 0] }}
+                  transition={{ duration: 2, delay: i * 0.08, ease: "easeOut" }}
+                />
+              ))}
+
+              {/* avatar ring */}
+              <div className="relative mx-auto w-28 h-28">
+                <div className="absolute inset-0 rounded-full animate-ping"
+                  style={{ background: "rgba(253,230,138,0.3)", animationDuration: "1.4s" }} />
+                <div className="relative w-28 h-28 rounded-full overflow-hidden"
+                  style={{ border: "3px solid #FDE68A", boxShadow: "0 0 30px rgba(253,230,138,0.6)" }}>
+                  {mutual[0].profile!.biodata_photo_url ? (
+                    <img src={mutual[0].profile!.biodata_photo_url} alt={mutual[0].profile!.name}
+                      className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-white"
+                      style={{ background: "linear-gradient(135deg, #D97706, #F59E0B)" }}>
+                      {mutual[0].profile!.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* text */}
+              <div className="space-y-1">
+                <p className="text-4xl font-bold text-white leading-tight">It's a Match!</p>
+                <p className="text-purple-200 text-base">
+                  You and <span className="text-white font-semibold">{mutual[0].profile!.name.split(" ")[0]}</span> both liked each other
+                </p>
+              </div>
+
+              {/* CTAs */}
+              <div className="flex flex-col gap-3 pt-2">
+                <Button
+                  className="w-full h-12 font-bold text-base gap-2"
+                  style={{ background: "#FDE68A", color: "#78350F" }}
+                  onClick={() => {
+                    const p = mutual[0].profile!
+                    const text = `Hi, we matched on Outverse! I'd love to connect — ${p.name}, ${p.current_place ?? ""}`
+                    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank")
+                    setShowCelebration(false)
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                  Connect via WhatsApp
+                </Button>
+                <button
+                  className="text-purple-300 text-sm font-medium"
+                  onClick={() => setShowCelebration(false)}
+                >
+                  View all matches →
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* vault */}
       {FF.enableMatchVault && (

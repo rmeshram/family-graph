@@ -12,11 +12,12 @@ import {
   ArrowLeft, Heart, X, MessageCircle, Sparkles,
   Briefcase, GraduationCap, Users, CheckCircle2,
   Send, RefreshCw, Loader2, Inbox,
-  Search, SlidersHorizontal,
+  Search, SlidersHorizontal, ShieldCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { computeTrustScore, trustScoreTierLabel } from "@/lib/trust-score"
+import { getAuraTier } from "@/lib/aura"
 
 /* ── types ── */
 interface BiodataProfile {
@@ -209,8 +210,11 @@ export default function MatchesPage() {
   const supabase = createClient()
 
   const [forceDemo, setForceDemo] = useState(false)
+  const [showWelcome, setShowWelcome] = useState(false)
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('demo') === '1') setForceDemo(true)
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('demo') === '1') setForceDemo(true)
+    if (params.get('welcome') === '1') setShowWelcome(true)
   }, [])
 
   const [profiles, setProfiles] = useState<BiodataProfile[]>([])
@@ -538,7 +542,7 @@ export default function MatchesPage() {
   /* ── loading ── */
   if ((authLoading && !isDemoMode) || loading) {
     return (
-      <div className="flex flex-col h-full overflow-hidden" style={{ background: "#F8F9FA" }}>
+      <div className="flex flex-col h-full overflow-hidden" style={{ background: "#F4F1EA" }}>
         {/* header skeleton */}
         <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-100 bg-white shrink-0">
           <div className="h-6 w-32 rounded-lg bg-gray-200 animate-pulse" />
@@ -585,7 +589,7 @@ export default function MatchesPage() {
   /* ── no own node ── */
   if (!authLoading && !myNodeId && !loading && profiles.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center" style={{ background: "#F8F9FA" }}>
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center" style={{ background: "#F4F1EA" }}>
         <Sparkles className="h-10 w-10 text-blue-700" />
         <h2 className="font-bold text-xl">Complete your profile first</h2>
         <p className="text-sm text-gray-500 max-w-xs">You need a biodata profile before you can browse matches.</p>
@@ -597,7 +601,7 @@ export default function MatchesPage() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ background: "#F8F9FA" }}>
+    <div className="flex flex-col h-full overflow-hidden" style={{ background: "#F4F1EA" }}>
       {/* header */}
       <header className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-100 bg-white shrink-0">
         <Link href="/dashboard">
@@ -699,6 +703,34 @@ export default function MatchesPage() {
           </button>
         </div>
       )}
+
+      {/* search panel */}
+      <AnimatePresence>
+        {showWelcome && (
+          <motion.div
+            key="welcome"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="mx-4 mt-3 rounded-2xl px-4 py-3 flex items-start gap-3 shrink-0"
+            style={{ background: "linear-gradient(135deg, #EDE9FE, #F5F3FF)", border: "1px solid #C4B5FD" }}
+          >
+            <Sparkles className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "#7C3AED" }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold" style={{ color: "#5B21B6" }}>Welcome to Outverse!</p>
+              <p className="text-xs mt-0.5" style={{ color: "#7C3AED" }}>
+                Complete your biodata to unlock better matches and appear higher in search results.
+              </p>
+              <Link href="/biodata/setup" className="inline-block mt-1.5">
+                <span className="text-xs font-bold underline" style={{ color: "#5B21B6" }}>Complete my profile →</span>
+              </Link>
+            </div>
+            <button onClick={() => setShowWelcome(false)} className="shrink-0" style={{ color: "#7C3AED" }}>
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* search panel */}
       <AnimatePresence>
@@ -924,50 +956,55 @@ function MatchListCard({
 
   return (
     <div
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
-      style={{ boxShadow: "0 2px 12px -4px rgba(0,0,0,0.08)" }}
+      className="group premium-rise overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-0.5"
+      style={{ background: "#FBF8F2", border: "1px solid rgba(76,60,40,0.10)", boxShadow: "0 2px 16px -6px rgba(76,60,40,0.20)" }}
     >
       <div className="flex">
         {/* Photo column */}
         <div
           className="shrink-0 relative"
-          style={{ width: 96, minHeight: 200, background: "linear-gradient(135deg, #B45309, #F59E0B)" }}
+          style={{ width: 108, minHeight: 208, background: "linear-gradient(150deg, #92400E, #D97706)" }}
         >
           {profile.biodata_photo_url ? (
             <img
               src={profile.biodata_photo_url}
               alt={profile.name}
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl font-bold text-white">{initials}</span>
+              <span className="font-display text-[28px] font-bold text-white/95">{initials}</span>
             </div>
           )}
+          {/* legibility scrim for the verified pill */}
           {isVerified && (
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold whitespace-nowrap"
-              style={{ background: "#D1FAE5", color: "#065F46" }}>
-              <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
-              Verified
-            </div>
+            <>
+              <div className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
+                style={{ background: "linear-gradient(to top, rgba(20,12,4,0.55), transparent)" }} />
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold whitespace-nowrap"
+                style={{ background: "#047857", color: "#fff", boxShadow: "0 2px 8px rgba(4,120,87,0.4)" }}>
+                <ShieldCheck className="h-3 w-3 shrink-0" />
+                Verified
+              </div>
+            </>
           )}
         </div>
 
         {/* Content column */}
-        <div className="flex-1 min-w-0 p-3.5 space-y-2.5">
-          {/* Name + badges */}
+        <div className="flex-1 min-w-0 p-4 space-y-2.5">
+          {/* Name + hero verification */}
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-bold text-[15px]" style={{ color: "#111827" }}>{profile.name}</h3>
+              <h3 className="font-display font-bold text-[17px] leading-tight" style={{ color: "#1B2230" }}>{profile.name}</h3>
               {isFamilyVerified && (
-                <span className="rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-0.5"
-                  style={{ background: "#D1FAE5", color: "#065F46" }}>
-                  <CheckCircle2 className="h-2.5 w-2.5" />
+                <span className="rounded-full px-2.5 py-1 text-[10px] font-bold flex items-center gap-1"
+                  style={{ background: "#ECFBF3", color: "#047857", border: "1px solid rgba(4,120,87,0.20)" }}>
+                  <ShieldCheck className="h-3 w-3" />
                   Family Verified
                 </span>
               )}
             </div>
-            <p className="text-[12px] mt-0.5" style={{ color: "#6B7280" }}>
+            <p className="text-[12.5px] mt-1" style={{ color: "#57534E" }}>
               {[
                 age ? `${age} yrs` : null,
                 profile.height_cm ? fmtHeight(profile.height_cm) : null,
@@ -975,8 +1012,9 @@ function MatchListCard({
               ].filter(Boolean).join(" · ")}
             </p>
             {familyStats && familyStats.total > 0 && (
-              <p className="text-[10px]" style={{ color: "#9CA3AF" }}>
-                {familyStats.total} members · {familyStats.verified} verified on platform
+              <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: "#9C7A3C" }}>
+                <Users className="h-3 w-3 shrink-0" />
+                <span><span className="font-semibold">{familyStats.total}</span> in family tree · <span className="font-semibold">{familyStats.verified}</span> verified</span>
               </p>
             )}
           </div>
@@ -984,26 +1022,26 @@ function MatchListCard({
           {/* Tags */}
           <div className="flex flex-wrap gap-1.5">
             {profile.education_level && (
-              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{ background: "#EFF6FF", color: "#1D4ED8" }}>
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium"
+                style={{ background: "#EFF4FF", color: "#1D4ED8" }}>
                 <GraduationCap className="h-3 w-3" />{fmtEdu(profile.education_level)}
               </span>
             )}
             {profile.occupation && (
-              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{ background: "#F0FDF4", color: "#15803D" }}>
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium"
+                style={{ background: "#ECFBF3", color: "#047857" }}>
                 <Briefcase className="h-3 w-3" />{profile.occupation}
               </span>
             )}
             {income && (
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                style={{ background: "#FFFBEB", color: "#92400E" }}>
+              <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                style={{ background: "#FBF3E6", color: "#92400E" }}>
                 {income}
               </span>
             )}
             {profile.religion && (
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{ background: "#FDF2F8", color: "#9D174D" }}>
+              <span className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
+                style={{ background: "#FBF0F5", color: "#9D174D" }}>
                 {profile.religion}{profile.caste ? ` · ${profile.caste}` : ""}
               </span>
             )}
@@ -1012,42 +1050,54 @@ function MatchListCard({
           {/* Gotra + Trust + Lifestyle Compat */}
           <div className="flex items-center gap-3 flex-wrap">
             {profile.gotra && (
-              <span className="text-[11px]" style={{ color: "#374151" }}>
-                Gotra: <span className="font-semibold">{profile.gotra}</span>
+              <span className="text-[11.5px]" style={{ color: "#57534E" }}>
+                Gotra: <span className="font-semibold" style={{ color: "#1B2230" }}>{profile.gotra}</span>
               </span>
             )}
             {profile.manglik !== null && profile.manglik !== undefined && (
-              <span className="text-[11px]" style={{ color: "#6B7280" }}>
+              <span className="text-[11.5px]" style={{ color: "#57534E" }}>
                 Manglik: {profile.manglik ? "Yes" : "No"}
               </span>
             )}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2.5">
               {compatScore !== undefined && FEATURE_FLAGS.enableLifestyleIntelligence && (
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px]" style={{ color: "#9CA3AF" }}>Lifestyle</span>
-                  <span className="font-bold text-sm"
-                    style={{ color: compatScore >= 75 ? "#7C3AED" : compatScore >= 55 ? "#059669" : "#D97706" }}>
+                  <span className="text-[10px]" style={{ color: "#9C9486" }}>Lifestyle</span>
+                  <span className="font-display font-bold text-[15px]"
+                    style={{ color: compatScore >= 75 ? "#7C3AED" : compatScore >= 55 ? "#047857" : "#B45309" }}>
                     {compatScore}%
                   </span>
                 </div>
               )}
-              {FEATURE_FLAGS.enableTrustScore && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px]" style={{ color: "#9CA3AF" }}>Trust</span>
-                  <span className="font-bold text-sm" style={{ color: trustPct >= 60 ? "#059669" : "#D97706" }}>{trustPct}</span>
-                </div>
-              )}
+              {FEATURE_FLAGS.enableTrustScore && (() => {
+                const tier = getAuraTier(trustPct)
+                return (
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                    style={{
+                      background: tier.bg,
+                      color: tier.color,
+                      border: `1px solid ${tier.border}`,
+                      boxShadow: tier.glow,
+                    }}
+                  >
+                    {tier.label}
+                  </span>
+                )
+              })()}
             </div>
           </div>
 
+          <div className="gold-hairline my-0.5" />
+
           {/* Why this match */}
-          <div className="rounded-xl p-2.5" style={{ background: "#F0FDF4", border: "1px solid #D1FAE5" }}>
-            <p className="text-[9px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#15803D" }}>Why this match?</p>
+          <div className="rounded-xl p-2.5" style={{ background: "#ECFBF3", border: "1px solid rgba(4,120,87,0.16)" }}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.06em] mb-1.5" style={{ color: "#047857" }}>Why this match?</p>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1">
               {reasons.map(r => (
                 <div key={r} className="flex items-center gap-1">
-                  <CheckCircle2 className="h-2.5 w-2.5 shrink-0" style={{ color: "#059669" }} />
-                  <span className="text-[10px] font-medium leading-tight" style={{ color: "#166534" }}>{r}</span>
+                  <CheckCircle2 className="h-2.5 w-2.5 shrink-0" style={{ color: "#047857" }} />
+                  <span className="text-[10.5px] font-medium leading-tight" style={{ color: "#15603C" }}>{r}</span>
                 </div>
               ))}
             </div>
@@ -1056,16 +1106,18 @@ function MatchListCard({
           {/* Actions */}
           <div className="flex gap-1.5 pt-0.5">
             <button onClick={onPass}
-              className="rounded-xl px-3 py-2 text-[11px] font-medium border border-gray-200 text-gray-400 hover:bg-gray-50 transition-colors">
+              className="rounded-xl px-3 py-2.5 text-[11.5px] font-medium transition-colors hover:bg-black/[0.04]"
+              style={{ border: "1px solid rgba(76,60,40,0.16)", color: "#9C9486" }}>
               Skip
             </button>
             <button onClick={onConnect}
-              className="flex-1 rounded-xl px-2 py-2 text-[11px] font-semibold border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors flex items-center justify-center gap-1">
+              className="flex-1 rounded-xl px-2 py-2.5 text-[11.5px] font-semibold transition-colors flex items-center justify-center gap-1"
+              style={{ border: "1px solid rgba(29,78,216,0.28)", color: "#1D4ED8", background: "#F5F8FF" }}>
               <MessageCircle className="h-3.5 w-3.5" />Request Intro
             </button>
             <button onClick={onLike}
-              className="flex-1 rounded-xl px-2 py-2 text-[11px] font-bold text-white hover:opacity-90 transition-opacity flex items-center justify-center gap-1"
-              style={{ background: "#DB2777" }}>
+              className="flex-1 rounded-xl px-2 py-2.5 text-[11.5px] font-bold text-white transition-transform active:scale-[0.97] flex items-center justify-center gap-1"
+              style={{ background: "#DB2777", boxShadow: "0 2px 10px -2px rgba(219,39,119,0.45)" }}>
               <Heart className="h-3.5 w-3.5 fill-current" />Interested
             </button>
           </div>

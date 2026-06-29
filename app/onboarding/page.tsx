@@ -266,7 +266,7 @@ function OnboardingContent() {
       if (pendingInvite?.startsWith("/join/")) {
         window.location.href = pendingInvite
       } else if (intent === "matrimony" || intent === "both") {
-        window.location.href = "/biodata/setup"
+        window.location.href = "/matches?welcome=1"
       } else {
         window.location.href = "/dashboard?welcome=1"
       }
